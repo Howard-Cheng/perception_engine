@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Nova Perception Engine</title>
+  <meta http-equiv="refresh" content="3"> <!-- auto-refresh every 3 sec -->
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0b0c10;
+      color: #c5c6c7;
+      margin: 0;
+      padding: 20px;
+      text-align: center;
+    }
+    h1 {
+      color: #66fcf1;
+      margin-bottom: 5px;
+    }
+    h2 {
+      color: #45a29e;
+      font-weight: normal;
+      margin-top: 5px;
+      font-size: 16px;
+    }
+    .header {
+      margin-bottom: 20px;
+    }
+    .card-container {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .card {
+      background: #1f2833;
+      padding: 15px;
+      border-radius: 12px;
+      width: 280px;
+      min-height: 120px;
+      box-shadow: 0px 4px 10px rgba(0,0,0,0.4);
+      text-align: left;
+    }
+    .wide-card {
+      background: #1f2833;
+      padding: 15px;
+      border-radius: 12px;
+      margin-top: 20px;
+      width: 90%;
+      max-width: 1000px;
+      margin-left: auto;
+      margin-right: auto;
+      box-shadow: 0px 4px 10px rgba(0,0,0,0.4);
+      text-align: left;
+    }
+    .label {
+      font-weight: bold;
+      color: #45a29e;
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+    .value {
+      font-size: 16px;
+      color: #ffffff;
+      white-space: pre-line;
+    }
+    .summary-banner {
+      background: #162027;
+      color: #ffffff;
+      padding: 12px;
+      margin: 10px auto 25px auto;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: bold;
+      width: 80%;
+      box-shadow: 0px 3px 6px rgba(0,0,0,0.4);
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <h1>
+      <img src="/static/ferrari.png" alt="Ferrari"
+           style="height:50px; width:50px; border-radius:50%; object-fit:cover; vertical-align:middle; margin-right:12px;">
+      Nova Perception Engine
+    </h1>
+    <h2>Built piece by piece, engineered for speed</h2>
+  </div>
+
+  <!-- One-liner Banner -->
+  <div class="summary-banner">
+    👁️ {{ context['fusion_summary'] if context['fusion_summary'] else "Nova is perceiving your environment..." }}
+  </div>
+
+  <!-- Perception cards -->
+  <div class="card-container">
+<div class="card">
+  <div class="label">🖥 Screen</div>
+  <div class="value">
+    {% if context['screen'].get('active_app') %}
+      <b>Active App:</b> {{ context['screen']['active_app']['name'] }} — {{ context['screen']['active_app']['window'] }}<br><br>
+    {% else %}
+      No active app<br>
+    {% endif %}
+    
+    {% if context['screen'].get('apps') %}
+      <b>Other Apps:</b>
+      <span style="font-size: 14px; color: #bbb;">
+        {% set apps = context['screen']['apps'] %}
+        {% for app in apps[:5] %}
+          {{ app['name'] }}{% if not loop.last %}, {% endif %}
+        {% endfor %}
+        {% if apps|length > 5 %}
+          ... +{{ apps|length - 5 }} more
+        {% endif %}
+      </span>
+    {% else %}
+      No other apps detected
+    {% endif %}
+  </div>
+</div>
+    <div class="card">
+      <div class="label">🎤 Voice</div>
+      <div class="value">
+        {{ context['voice'].get('text', '...') }}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">📷 Camera</div>
+      <div class="value">
+        {% if context['camera'].get('objects') %}
+          {{ ", ".join(context['camera']['objects']) }}
+        {% else %}
+          No objects detected
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">⚙️ System Metrics</div>
+      <div class="value">
+        Latency: {{ "%.2fs" % context.get('latency', 0) }}
+        {% if context.get('latency',0) < 1.5 %}(Fast){% elif context.get('latency',0) < 3 %}(Medium){% else %}(Slow){% endif %}<br>
+        Events: {{ context.get('events_processed', 0) }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Fusion Context -->
+  <div class="wide-card">
+    <div class="label">🔗 Fused Context</div>
+    <div class="value">
+      {{ context['fusion_detailed'] }}
+    </div>
+    <small style="color:#aaa;">Last updated at: {{ context.get('last_updated','') }}</small>
+  </div>
+
+  <!-- Recommendations -->
+  <div class="wide-card">
+    <div class="label">✨ Recommendations</div>
+    <div class="value">
+      {% if context.get('recommendations') %}
+        <ul>
+          {% for rec in context['recommendations'] %}
+            <li>{{ rec }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        No recommendations yet
+      {% endif %}
+    </div>
+    <small style="color:#aaa;">Last updated at: {{ context.get('last_updated','') }}</small>
+  </div>
+</body>
+</html>

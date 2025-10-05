@@ -11,7 +11,7 @@ from openai import OpenAI
 # -----------------------------
 
 # OpenAI API configuration
-api_key = os.getenv("OPENAI_API_KEY", "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")
+api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=api_key)
 
 app = FastAPI()

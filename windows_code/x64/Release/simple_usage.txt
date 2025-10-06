@@ -1,0 +1,9 @@
+1、快速启动
+     管理员方式运行控制台，切换到当前目录，输入命令：PerceptionEngine.exe --console，即可测试http请求数据。
+     或者直接双击运行StartEngineAmdin.bat即可完成上述操作。
+
+2、注册windows服务
+    安装服务：PerceptionEngine.exe --install
+    启动服务：PerceptionEngine.exe --start
+    停止服务：PerceptionEngine.exe --stop
+    卸载服务：PerceptionEngine.exe --install

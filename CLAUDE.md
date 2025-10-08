@@ -1,873 +1,1046 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides comprehensive guidance to Claude Code when working with code in this repository.
+
+---
 
 ## Project Overview
 
-**Nova Perception Engine** is a multi-modal perception system that fuses real-time data from multiple perception sources (screen activity, screen OCR, voice input, system audio, camera vision) to generate AI-powered contextual recommendations. Currently supports **macOS** (Python) and **Windows** (C++/Python hybrid) platforms, with a shared fusion engine using GPT-4o-mini.
+**Nova Perception Engine** is a multi-modal perception system that fuses real-time data from three sources (screen activity + OCR, voice input, camera vision) to generate AI-powered contextual recommendations.
 
-**Design Philosophy:**
-- **CPU-first architecture** with optional GPU acceleration
-- **Local-first processing** for privacy (all models run on-device)
-- **Platform-specific implementations** optimized for each OS
-- **Quantized models** for efficient CPU inference
-- **Real-time streaming** for audio and vision
+**Current Implementation:** Windows using Python for rapid prototyping
+**Future Plan:** C++ migration for production deployment with 2-5x performance improvement
 
-### Architecture Overview
+---
 
-The system has **two platform implementations**:
+## Design Philosophy
 
-#### **Shared Components (Cross-Platform)**
-1. **FastAPI Server** (`server.py`) - Central fusion engine that:
-   - Receives perception data from platform-specific clients
-   - Runs AI-powered context fusion via GPT-4o-mini
-   - Serves live dashboard at `http://127.0.0.1:8000/dashboard`
-   - Provides debug API at `/get_context`
+- **CPU-first architecture** - All models optimized for CPU inference (no GPU required)
+- **Local-first processing** - Privacy-focused, all perception runs on-device
+- **Real-time streaming** - Continuous perception with minimal latency
+- **Modular design** - Each perception source is an independent client
+- **API-driven** - Clients POST to fusion server via HTTP
 
-2. **Dashboard** (`templates/dashboard.html`) - Web UI that auto-refreshes every 3 seconds
+---
 
-#### **macOS Implementation** (Python-based)
-Three independent perception clients that POST to the server:
-- `mac_screen_v5.py` - Active app/window monitoring via AppleScript
-- `mac_voice_stream.py` - Real-time speech recognition using Vosk
-- `mac_camera_yolo.py` - Object detection using YOLOv8
+## System Architecture
 
-#### **Windows Implementation** (C++ Core + Optional Python)
-Located in `windows_code/` directory:
+### High-Level Overview
 
-**Primary Architecture: Pure C++ (Recommended)**
-- **PerceptionEngine.exe** - Single executable with all perception capabilities:
-  - **Screen Monitoring** (Win32 SetWinEventHook) - 2μs latency ✅ Implemented
-  - **Screen OCR** (ONNX Runtime + PaddleOCR) - 80-130ms latency
-  - **Camera Vision** (ONNX Runtime + FastVLM-0.5B) - 200-400ms latency
-  - **Microphone ASR** (whisper.cpp) - 200-300ms latency
-  - **System Audio ASR** (WASAPI Loopback + whisper.cpp) - 200-300ms latency
-  - **System Metrics** (CPU, memory, battery, network, GPS) ✅ Implemented
-  - **HTTP API** on port 8777 (`/context` endpoint) ✅ Implemented
-  - **HTTP Client** to POST to fusion server (port 8000)
-  - Can run as Windows Service or console app (`--console`)
+```
+┌─────────────────────────────────────────────────────────┐
+│                  Windows Perception Engine              │
+│                     (Python Prototype)                  │
+└─────────────────────────────────────────────────────────┘
 
-**Alternative: Hybrid C++/Python (Faster Prototyping)**
-- C++ service handles screen monitoring + system metrics
-- Python clients handle ML inference (OCR, vision, ASR)
-- See `windows_code/README.md` for C++ service documentation
+   ┌──────────────┐  ┌───────────────┐  ┌──────────────┐
+   │ Screen OCR   │  │ Camera Vision │  │  Audio ASR   │
+   │ (PaddleOCR)  │  │  (FastVLM)    │  │   (Vosk)     │
+   └──────┬───────┘  └───────┬───────┘  └──────┬───────┘
+          │                  │                  │
+          │    POST /update_context            │
+          └──────────────────┼──────────────────┘
+                             ▼
+                  ┌────────────────────┐
+                  │  FastAPI Server    │
+                  │  (Fusion Engine)   │
+                  │  GPT-4o-mini       │
+                  └─────────┬──────────┘
+                            ▼
+                     [Web Dashboard]
+               http://127.0.0.1:8000/dashboard
+```
 
-**Data Flow:**
-- Platform clients POST to server's `/update_context` endpoint with device-specific data
-- Server stores latest state in `global_context` dict
-- On each update, `run_fusion_and_recommendations()` generates 3 recommendations via GPT-4o-mini
-- Dashboard renders fused context in real-time
+### Component Details
+
+The system consists of **4 Python components**:
+
+1. **FastAPI Fusion Server** ([server.py](server.py))
+   - Central hub that receives perception data
+   - Runs AI context fusion via GPT-4o-mini
+   - Generates 3 actionable recommendations
+   - Serves live dashboard at http://127.0.0.1:8000/dashboard
+
+2. **Screen Monitor + OCR** ([win_screen_ocr.py](win_screen_ocr.py))
+   - Monitors active window/app via Win32 API
+   - Lists all running applications
+   - Extracts screen text via PaddleOCR
+
+3. **Camera Vision** ([win_camera_vision.py](win_camera_vision.py))
+   - Analyzes physical environment via webcam
+   - Generates scene descriptions using FastVLM-0.5B
+   - Updates every 10 seconds
+
+4. **Voice/Microphone** ([win_audio_asr.py](win_audio_asr.py))
+   - Captures real-time speech transcription via Vosk
+   - Continuous streaming audio processing
 
 ---
 
 ## Technology Stack
 
-### **Core Perception Models (CPU-Optimized)**
+### Core Perception Models (CPU-Optimized)
 
-All models are designed to run efficiently on CPU with optional GPU acceleration.
+| Component | Technology | Latency | Update Frequency |
+|-----------|-----------|---------|------------------|
+| **Screen Monitor** | Win32 API | <5ms | On window change |
+| **Screen OCR** | PaddleOCR v5 (ONNX) | 155-340ms | On window change (~3s) |
+| **Camera Vision** | FastVLM-0.5B (PyTorch) | 5-10s | Every 10 seconds |
+| **Voice/Mic** | Vosk (offline ASR) | 100-200ms | Continuous stream |
+| **AI Fusion** | OpenAI GPT-4o-mini | 300-500ms | On perception update |
 
-| Component | Technology | Model | Size | CPU Latency | GPU Latency |
-|-----------|-----------|-------|------|-------------|-------------|
-| **Screen OCR** | ONNX Runtime | PaddleOCR v5 (quantized) | 14MB | 80-130ms | 40-60ms |
-| **Camera Vision** | ONNX Runtime | FastVLM-0.5B (INT8) | ~300MB | 200-400ms | 50-100ms |
-| **Microphone ASR** | whisper.cpp | Whisper tiny.en (q8_0) | 40MB | 200-300ms | 20-30ms |
-| **System Audio ASR** | whisper.cpp | Whisper tiny.en (q8_0) | 40MB | 200-300ms | 20-30ms |
+### Python Dependencies
 
-**Total Model Size:** ~400MB (all models combined)
+```txt
+# Web Server
+fastapi==0.115.5
+uvicorn==0.32.1
+jinja2==3.1.4
 
-### **Windows C++ Stack**
+# AI/ML
+openai==1.54.5
+paddleocr==2.9.1
+paddlepaddle==3.0.0b2
+torch==2.5.1
+transformers==4.46.3
+vosk==0.3.45
 
-| Component | Library | Purpose | Version |
-|-----------|---------|---------|---------|
-| **ONNX Runtime** | `onnxruntime.dll` | ML inference engine | 1.17+ |
-| **DirectML** (optional) | Windows built-in | GPU acceleration | - |
-| **whisper.cpp** | `whisper.dll` | Audio transcription | Latest |
-| **Win32 API** | Windows SDK | Screen/window monitoring | 10.0.22621+ |
-| **WASAPI** | Windows Core Audio | Audio capture (mic + loopback) | Windows 10+ |
-| **WinRT** | Windows SDK | GPS/location services | Windows 10+ |
-| **Winsock 2** | Windows built-in | HTTP client/server | - |
-| **RapidJSON** | Header-only | JSON parsing | - |
+# Media Processing
+opencv-python==4.10.0.84
+sounddevice==0.5.1
+pillow==11.0.0
 
-### **macOS Python Stack**
+# Windows APIs
+pywin32==308
+psutil==6.1.0
 
-| Component | Library | Purpose |
-|-----------|---------|---------|
-| **FastAPI** | `fastapi` | Fusion server |
-| **OpenAI SDK** | `openai` | GPT-4o-mini integration |
-| **Vosk** | `vosk` | Speech recognition |
-| **YOLOv8** | `ultralytics` | Object detection |
-| **OpenCV** | `opencv-python` | Camera/video capture |
-| **sounddevice** | `sounddevice` | Audio capture |
-
-### **Shared Components**
-
-| Component | Purpose | Platform |
-|-----------|---------|----------|
-| **FastAPI Server** | Fusion engine + dashboard | Cross-platform |
-| **GPT-4o-mini** | Context fusion + recommendations | Cloud API |
-| **Dashboard** (HTML/JS) | Real-time visualization | Cross-platform |
-
-## Development Commands
-
-### Setup
-
-#### **macOS Setup**
-```bash
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Models should already be present:
-# - yolov8n.pt (YOLOv8 model in root directory)
-# - models/vosk-model-small-en-us-0.15/ (Vosk speech model)
+# Utilities
+requests==2.32.3
+numpy==1.26.4
 ```
 
-#### **Windows Setup**
-```bash
-# Install Python dependencies
-pip install -r requirements.txt
+---
 
-# Build and install C++ Windows Service (run as Administrator)
-cd windows_code
-install.bat
+## File Structure
 
-# Or manually:
-PerceptionEngine.exe --install
-PerceptionEngine.exe --start
+### Production Files (Windows Python Implementation)
 
-# Models same as macOS (yolov8n.pt, Vosk model)
+```
+perception_engine/
+├── server.py                        # FastAPI fusion server
+├── win_screen_ocr.py               # Screen monitoring + OCR client
+├── win_camera_vision.py            # Camera vision client
+├── win_audio_asr.py                # Voice/microphone client
+├── templates/
+│   └── dashboard.html              # Web dashboard UI
+├── models/
+│   └── vosk-model-small-en-us-0.15/  # Vosk ASR model (~40MB)
+├── requirements_windows.txt        # Python dependencies
+├── download_models_windows.py      # Model downloader script
+├── start_windows_perception.bat    # Quick start script
+├── .env.example                    # Environment variables template
+├── .gitignore                      # Git ignore rules
+├── README.md                       # User-facing documentation
+└── CLAUDE.md                       # This file (technical guide)
 ```
 
-### Running the System
+### Archive (Reference Only)
 
-#### **On macOS**
-Start in separate terminals (order matters):
-```bash
-# Terminal 1: Start the FastAPI server
-python server.py
-
-# Terminal 2: Start screen monitoring
-python mac_screen_v5.py
-
-# Terminal 3: Start voice streaming
-python mac_voice_stream.py
-
-# Terminal 4: Start camera detection
-python mac_camera_yolo.py
+```
+archive/
+├── mac_*.py                        # Original macOS Python clients
+├── test_*.py                       # Test and debug scripts
+└── old_docs/                       # Legacy documentation
 ```
 
-#### **On Windows**
-Start in separate terminals:
-```bash
-# Terminal 1: Start the FastAPI server
-python server.py
+---
 
-# Terminal 2: Start C++ Windows Service (console mode for testing)
-cd windows_code\x64\Release
-PerceptionEngine.exe --console
+## Data Flow & API Contracts
 
-# Terminal 3: Start screen monitoring (fetches from C++ service)
-python win_screen.py
+### Client → Server Data Format
 
-# Terminal 4: Start voice streaming
-python win_voice_stream.py
+All clients POST to `http://127.0.0.1:8000/update_context` with this structure:
 
-# Terminal 5: Start camera detection
-python win_camera_yolo.py
-```
-
-**Access dashboard (both platforms):**
-```
-http://127.0.0.1:8000/dashboard
-```
-
-**Debug APIs:**
-```
-http://127.0.0.1:8000/get_context  (Fusion server)
-http://127.0.0.1:8777/context      (Windows C++ service)
-```
-
-### Testing Individual Components
-
-#### **macOS**
-```bash
-python mac_screen_v5.py    # Test screen capture
-python mac_voice_stream.py # Test voice recognition
-python mac_camera_yolo.py  # Test camera vision
-```
-
-#### **Windows**
-```bash
-# Test C++ service
-cd windows_code\x64\Release
-PerceptionEngine.exe --console
-curl http://localhost:8777/context
-
-# Test Python clients
-python win_screen.py
-python win_voice_stream.py
-python win_camera_yolo.py
-```
-
-## Key Implementation Details
-
-### Server Context Structure
-The `global_context` dict in `server.py` maintains:
 ```python
 {
-    "screen": {"active_app": {name, window}, "apps": [...], "keywords": [...]},
-    "voice": {"text": "..."},
-    "camera": {"objects": [...]},
-    "fusion_detailed": "...",  # Full breakdown for dashboard
-    "fusion_summary": "...",   # One-liner banner
-    "recommendations": [...],  # 3 AI-generated recommendations
+    "device": "device_name",  # "screen", "Voice", or "Camera"
+    "data": {
+        # Device-specific payload
+    }
+}
+```
+
+### Device-Specific Payloads
+
+#### Screen Client ([win_screen_ocr.py](win_screen_ocr.py))
+
+```python
+payload = {
+    "device": "screen",  # MUST be lowercase
+    "data": {
+        "active_app": {
+            "name": "chrome.exe",
+            "window": "Google - Chrome"
+        },
+        "apps": [
+            {"name": "chrome.exe", "window": "Google - Chrome"},
+            {"name": "Code.exe", "window": "VS Code"},
+            # ... more apps
+        ],
+        "screen_text": "def main():\n    print('Hello')"  # OCR extracted text
+    }
+}
+```
+
+#### Voice Client ([win_audio_asr.py](win_audio_asr.py))
+
+```python
+payload = {
+    "device": "Voice",  # MUST have capital V
+    "data": {
+        "text": "hey who are you I don't think so"
+    }
+}
+```
+
+#### Camera Client ([win_camera_vision.py](win_camera_vision.py))
+
+```python
+payload = {
+    "device": "Camera",  # MUST have capital C
+    "data": {
+        "environment_caption": "A person sitting at desk with laptop",
+        "latency_ms": 7200
+    }
+}
+```
+
+### Server Context Structure
+
+The `global_context` dict in [server.py](server.py) maintains:
+
+```python
+{
+    "screen": {
+        "active_app": {"name": "...", "window": "..."},
+        "apps": [{"name": "...", "window": "..."}, ...],
+        "screen_text": "..."  # OCR extracted text
+    },
+    "voice": {
+        "text": "..."  # Transcribed speech
+    },
+    "camera": {
+        "environment_caption": "...",  # Scene description
+        "latency_ms": 7500
+    },
+    "fusion_detailed": "...",     # Full breakdown for dashboard
+    "fusion_summary": "...",      # One-liner banner
+    "recommendations": [...],     # 3 AI-generated recommendations
     "latency": 0.0,
     "events_processed": 0,
     "last_updated": "..."
 }
 ```
 
-### Device Names
-Client scripts must POST with exact device names:
-- Screen: `"device": "screen"` (lowercase)
-- Voice: `"device": "Voice"`
-- Camera: `"device": "Camera"`
+---
 
-### Fusion Engine
-`run_fusion_and_recommendations()` in `server.py:69`:
-- Fuses screen, voice, and camera signals into coherent context
-- Calls GPT-4o-mini with max_tokens=150, temp=0.5
-- Generates exactly 3 numbered recommendations
-- Updates `fusion_detailed`, `fusion_summary`, and `recommendations`
+## Key Implementation Details
 
-### **Model Details & Download**
+### 1. Screen Monitoring + OCR ([win_screen_ocr.py](win_screen_ocr.py))
 
-#### **PaddleOCR (Screen Text Extraction)**
-- **Source**: https://huggingface.co/marsena/paddleocr-onnx-models
-- **Models Required**:
-  - `PP-OCRv5_server_det_infer.onnx` (88MB) - Text detection
-  - `PP-OCRv5_server_rec_infer.onnx` (84MB) - Text recognition
-- **Format**: ONNX (quantized versions available)
-- **Input**: Screenshot of active window
-- **Output**: Extracted text (e.g., "function main() { console.log('Hello'); }")
-- **Use Case**: Understanding what text user is reading/writing
+**Technology:**
+- Win32 API for window detection
+- PaddleOCR v5 (ONNX Runtime) for text extraction
 
-#### **FastVLM-0.5B (Camera Environment Understanding)**
-- **Source**: https://huggingface.co/onnx-community/FastVLM-0.5B-ONNX
-- **Model**: FastVLM-0.5B with INT8 quantization (~300MB)
-- **Format**: ONNX
-- **Input**: Camera frame (384x384 for CPU, 672x672 for GPU)
-- **Output**: Natural language caption (e.g., "Person at desk with laptop, coffee mug visible, window with daylight in background")
-- **Use Case**: Understanding physical environment and user activity
-- **Performance**:
-  - CPU (INT8): 200-400ms
-  - GPU (FP16): 50-100ms
+**Key Logic:**
+```python
+# Get active window
+hwnd = win32gui.GetForegroundWindow()
+window_title = win32gui.GetWindowText(hwnd)
 
-#### **Whisper tiny.en (Audio Transcription)**
-- **Source**: https://huggingface.co/ggerganov/whisper.cpp
-- **Model**: `ggml-tiny.en-q8_0.bin` (40MB quantized)
-- **Format**: GGML (whisper.cpp format)
-- **Input**:
-  - Microphone audio stream (16kHz PCM)
-  - System audio loopback (WASAPI on Windows)
-- **Output**: Real-time transcription
-  - User speech: "Can you help me debug this?"
-  - Device audio: "Tutorial: Introduction to async programming"
-- **Streaming**: Processes 500ms chunks with ~200-300ms latency
-- **Use Case**: Understanding user intent and consumed content
+# Capture screenshot
+screenshot = ImageGrab.grab()
 
-#### **Legacy Models (macOS Only)**
-- `models/vosk-model-small-en-us-0.15/` - Vosk ASR (used by macOS Python clients)
-- `yolov8n.pt` - YOLOv8 object detection (macOS camera client)
-- `models/camera/` - MobileNet-SSD Caffe (deprecated)
+# Resize for OCR performance
+max_width = 480  # Balance speed vs quality
+screenshot.thumbnail((max_width, max_width))
 
-### **Models Directory Structure**
-```
-perception_engine/
-├── models/
-│   ├── whisper/
-│   │   └── ggml-tiny.en-q8_0.bin           # 40MB (Windows)
-│   ├── vision/
-│   │   └── FastVLM-0.5B-q8.onnx            # ~300MB (Windows)
-│   ├── ocr/
-│   │   ├── PP-OCRv5_server_det_infer.onnx  # 88MB (Windows)
-│   │   └── PP-OCRv5_server_rec_infer.onnx  # 84MB (Windows)
-│   ├── vosk-model-small-en-us-0.15/        # Vosk model (macOS)
-│   └── camera/                             # Legacy (macOS)
-└── yolov8n.pt                              # YOLOv8 (macOS)
+# Run OCR
+ocr = PaddleOCR(use_angle_cls=True, lang='en', use_gpu=False)
+result = ocr.ocr(np.array(screenshot), cls=True)
 ```
 
-### Platform-Specific Components
+**Performance Tuning:**
+- Input resolution: 480px max width (340ms latency)
+- For ultra-fast: 320px (155ms latency)
+- For quality: 640px (615ms latency)
+- Update frequency: Every 3 seconds (on window change)
 
-#### **macOS**
-- **Screen**: AppleScript (`osascript`) queries System Events for active app/window
-- **Voice**: Vosk + `sounddevice` library for microphone streaming
-- **Camera**: YOLOv8 + OpenCV for object detection (legacy approach)
-- **Permissions**: Requires microphone and camera access in System Preferences
+**Important Notes:**
+- PaddleOCR models auto-download on first run (~170MB)
+- Use NO ONNX optimizations (baseline is fastest!)
+- Win32 API requires `pywin32` package
 
-#### **Windows**
-- **Screen Monitoring**: Win32 SetWinEventHook (2μs latency)
-- **Screen OCR**: ONNX Runtime + PaddleOCR (80-130ms)
-- **Camera Vision**: ONNX Runtime + FastVLM (200-400ms)
-- **Microphone**: WASAPI + whisper.cpp (200-300ms)
-- **System Audio**: WASAPI Loopback + whisper.cpp (200-300ms)
-- **System Metrics**: CPU, memory, battery, network, GPS
-- **Permissions**: Requires microphone and camera access in Windows Settings
-- **C++ Service**: See `windows_code/README.md` for installation/management
+---
 
-## Common Modifications
+### 2. Camera Vision ([win_camera_vision.py](win_camera_vision.py))
 
-**To change update frequency:**
-- Modify `time.sleep(2)` in perception clients (currently 2 seconds)
-- Modify `<meta http-equiv="refresh" content="3">` in dashboard.html (currently 3 seconds)
-- For Windows C++ service: modify update interval in `ContextCollector.cpp` (currently 1 second cache)
+**Technology:**
+- OpenCV for camera capture
+- FastVLM-0.5B (Apple) for scene description
+- PyTorch CPU inference
 
-**To change number of recommendations:**
-- Update prompt in `server.py:119` and adjust slicing in `server.py:134`
+**Key Logic:**
+```python
+# Load model (happens once at startup)
+model_id = "apple/FastVLM-0.5B"
+processor = AutoProcessor.from_pretrained(model_id)
+model = FastVLMForCausalLM.from_pretrained(model_id)
 
-**To add new perception source:**
-1. Create new client script that POSTs to `/update_context` with unique device name
-2. Update `global_context` structure in `server.py`
-3. Update fusion logic in `run_fusion_and_recommendations()`
-4. Add new card to `dashboard.html`
+# Capture frame
+cap = cv2.VideoCapture(0)  # Camera index 0
+ret, frame = cap.read()
+image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
-**To change AI model:**
-- Modify `model="gpt-4o-mini"` in `server.py:126`
-- Adjust OpenAI client initialization at `server.py:14`
+# Resize for CPU performance
+image = image.resize((224, 224))
 
-## Windows Implementation Details
-
-### **Architecture: Pure C++ (Recommended)**
-
-The Windows implementation is a **single C++ executable** (`PerceptionEngine.exe`) that includes all perception capabilities:
-
-```
-PerceptionEngine.exe
-├── Screen Monitor (Win32 SetWinEventHook)         ✅ Implemented
-├── System Metrics (CPU, memory, battery, GPS)     ✅ Implemented
-├── HTTP Server (port 8777)                        ✅ Implemented
-├── Screen OCR (ONNX Runtime + PaddleOCR)          🔨 To Implement
-├── Camera Vision (ONNX Runtime + FastVLM)         🔨 To Implement
-├── Microphone ASR (whisper.cpp)                   🔨 To Implement
-├── System Audio ASR (WASAPI Loopback + whisper)   🔨 To Implement
-└── HTTP Client (POST to fusion server)            🔨 To Implement
+# Generate caption
+inputs = processor(text=prompt, images=image, return_tensors="pt")
+output = model.generate(**inputs, max_new_tokens=50)
+caption = processor.decode(output[0], skip_special_tokens=True)
 ```
 
-**Design Rationale:**
-- ✅ **Single executable** - Easy deployment, no Python dependency
-- ✅ **CPU-optimized** - Quantized ONNX models for efficient inference
-- ✅ **Optional GPU** - DirectML acceleration when available
-- ✅ **Native performance** - Win32 APIs for microsecond-latency monitoring
-- ✅ **Windows Service** - Runs in background, auto-starts with OS
+**Performance Tuning:**
+- Input size: 224x224 (CPU-optimized)
+- Max tokens: 50 (short captions only)
+- Greedy decoding (no sampling for speed)
+- Update frequency: Every 10 seconds
+- Latency: 5-10 seconds (acceptable for ambient context)
 
-### **C++ Components to Implement**
+**Important Notes:**
+- FastVLM auto-downloads on first run (~1GB)
+- Model runs in float32 on CPU (no quantization yet)
+- Camera index may vary (0, 1, 2...) - adjust if needed
 
-#### **1. Screen OCR Module**
-```cpp
-class ScreenOCREngine {
-private:
-    Ort::Session* m_detSession;  // Text detection
-    Ort::Session* m_recSession;  // Text recognition
+---
 
-public:
-    std::string ExtractScreenText() {
-        // 1. Capture active window (10ms)
-        auto screenshot = CaptureActiveWindow();
+### 3. Voice Transcription ([win_audio_asr.py](win_audio_asr.py))
 
-        // 2. Detect text regions (50ms)
-        auto regions = DetectTextRegions(screenshot);
+**Technology:**
+- Vosk (offline ASR, no internet required)
+- sounddevice for microphone capture
+- 16kHz sampling rate
 
-        // 3. Recognize text (30ms)
-        auto texts = RecognizeText(regions);
+**Key Logic:**
+```python
+# Load model
+model = vosk.Model("models/vosk-model-small-en-us-0.15")
+recognizer = vosk.KaldiRecognizer(model, 16000)
 
-        return JoinText(texts);
-    }
-};
+# Capture audio stream
+def audio_callback(indata, frames, time, status):
+    if recognizer.AcceptWaveform(bytes(indata)):
+        result = json.loads(recognizer.Result())
+        text = result.get("text", "")
+        # Send to server
+        send_to_server(text)
+
+with sd.RawInputStream(samplerate=16000, callback=audio_callback):
+    # Runs continuously
+    pass
 ```
 
-**Dependencies:**
-- ONNX Runtime (onnxruntime.dll)
-- PaddleOCR models (PP-OCRv5_server_det_infer.onnx, PP-OCRv5_server_rec_infer.onnx)
+**Performance Tuning:**
+- Sample rate: 16kHz (optimal for Vosk)
+- Latency: 100-200ms (near real-time)
+- Continuous streaming (no batching)
 
-#### **2. Camera Vision Module**
-```cpp
-class CameraVisionMonitor {
-private:
-    Ort::Session* m_visionSession;
-    cv::VideoCapture m_camera;
+**Important Notes:**
+- Vosk model MUST exist in `models/vosk-model-small-en-us-0.15/`
+- Requires microphone permissions in Windows Settings
+- Offline model (~40MB) - no internet required
 
-public:
-    std::string AnalyzeEnvironment() {
-        // 1. Capture camera frame (15ms)
-        cv::Mat frame;
-        m_camera >> frame;
+---
 
-        // 2. Resize for CPU efficiency (384x384)
-        cv::resize(frame, frame, cv::Size(384, 384));
+### 4. Fusion Server ([server.py](server.py))
 
-        // 3. Generate caption (200-400ms on CPU)
-        auto caption = GenerateCaption(frame);
+**Technology:**
+- FastAPI for web server
+- Uvicorn ASGI server
+- OpenAI GPT-4o-mini for fusion
+- Jinja2 templates for dashboard
 
-        return caption;
-    }
-};
-```
-
-**Dependencies:**
-- ONNX Runtime
-- FastVLM-0.5B-q8.onnx
-- OpenCV (for camera capture)
-
-#### **3. Audio ASR Module (Dual-Channel)**
-```cpp
-class AudioMonitor {
-private:
-    whisper_context* m_whisperCtx;
-
-    // Microphone capture
-    IAudioClient* m_micClient;
-    IAudioCaptureClient* m_micCapture;
-
-    // System audio loopback
-    IAudioClient* m_loopbackClient;
-    IAudioCaptureClient* m_loopbackCapture;
-
-public:
-    void Initialize() {
-        // Load whisper model
-        m_whisperCtx = whisper_init_from_file(
-            "models/whisper/ggml-tiny.en-q8_0.bin"
-        );
-
-        // Initialize microphone (WASAPI)
-        InitializeMicrophone();
-
-        // Initialize system audio loopback
-        InitializeLoopback();
-    }
-
-    std::string GetUserSpeech() {
-        // Capture from microphone
-        auto audioData = CaptureMicrophone();
-        return Transcribe(audioData);
-    }
-
-    std::string GetDeviceAudio() {
-        // Capture from system audio (loopback)
-        auto audioData = CaptureLoopback();
-        return Transcribe(audioData);
-    }
-};
-```
-
-**WASAPI Loopback Implementation:**
-```cpp
-void InitializeLoopback() {
-    // Get default audio endpoint (what's playing)
-    IMMDeviceEnumerator* enumerator;
-    CoCreateInstance(__uuidof(MMDeviceEnumerator), ...);
-
-    IMMDevice* device;
-    enumerator->GetDefaultAudioEndpoint(
-        eRender,      // Capture rendered audio
-        eConsole,
-        &device
-    );
-
-    // Activate audio client
-    device->Activate(IID_IAudioClient, ..., &m_loopbackClient);
-
-    // Initialize in loopback mode
-    m_loopbackClient->Initialize(
-        AUDCLNT_SHAREMODE_SHARED,
-        AUDCLNT_STREAMFLAGS_LOOPBACK,  // Key flag!
-        hnsBufferDuration,
-        0,
-        pWaveFormat,
-        NULL
-    );
-
-    // Start capture
-    m_loopbackClient->Start();
-}
-```
-
-**Dependencies:**
-- whisper.cpp (whisper.dll or static lib)
-- WASAPI (Windows Core Audio)
-- ggml-tiny.en-q8_0.bin
-
-#### **4. HTTP Client to Fusion Server**
-```cpp
-class FusionServerClient {
-private:
-    std::string m_serverUrl = "http://127.0.0.1:8000/update_context";
-
-public:
-    void PostPerceptionData() {
-        // Collect all perception data
-        Json payload;
-        payload.set("device", "windows");
-
-        Json data;
-        data.set("active_app", GetForegroundAppName());
-        data.set("screen_text", GetScreenOCR());
-        data.set("camera_caption", GetCameraCaption());
-        data.set("user_speech", GetUserSpeech());
-        data.set("device_audio", GetDeviceAudio());
-        data.set("cpu_usage", GetCPUUsage());
-        data.set("memory_usage", GetMemoryUsage());
-
-        payload.setRaw("data", data.toString());
-
-        // POST to fusion server
-        HttpPost(m_serverUrl, payload.toString());
-    }
-};
-```
-
-### **Performance Profile (CPU-Only Laptop)**
-
-| Component | Update Frequency | CPU Load | Latency |
-|-----------|------------------|----------|---------|
-| Screen Monitoring | 500ms | <1% | 2μs |
-| Screen OCR (on change) | Variable | 5-10% | 80-130ms |
-| Camera Vision | 3s | 10-15% | 200-400ms |
-| Microphone ASR | Streaming | 8-12% | 200-300ms |
-| System Audio ASR | Streaming | 8-12% | 200-300ms |
-| **Total** | - | **30-45%** | **~500ms E2E** |
-
-**With GPU acceleration (integrated GPU):**
-- Total CPU load drops to **15-25%**
-- End-to-end latency: **~150ms**
-
-### **Running Windows Service**
-```bash
-# Console mode for development/debugging
-cd windows_code\x64\Release
-PerceptionEngine.exe --console
-
-# Install as Windows Service (requires Administrator)
-PerceptionEngine.exe --install
-PerceptionEngine.exe --start
-
-# Check service status
-sc query PerceptionEngine
-
-# View service API
-curl http://localhost:8777/context
-
-# Stop and uninstall
-PerceptionEngine.exe --stop
-PerceptionEngine.exe --uninstall
-```
-
-### **Build Requirements**
-
-**Development Environment:**
-- Windows 10/11 (version 1903+)
-- Visual Studio 2022 with C++ workload
-- Windows SDK 10.0.22621.0+
-- C++17 or later
-
-**Dependencies (via vcpkg or manual):**
-- ONNX Runtime (GPU optional: with DirectML provider)
-- whisper.cpp (build from source or use pre-built)
-- OpenCV 4.x
-- RapidJSON (header-only)
-
-**Build Command:**
-```bash
-# Using Visual Studio
-cd windows_code
-msbuild PerceptionEngine.sln /p:Configuration=Release /p:Platform=x64
-
-# Or use CMake (if configured)
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . --config Release
-```
-
-### **Alternative: Hybrid C++/Python Approach**
-
-For **rapid prototyping**, you can keep the C++ service for screen monitoring and add Python clients:
+**Key Endpoints:**
 
 ```python
-# win_perception.py - Python client that uses C++ service + adds ML
-import requests
-from transformers import pipeline
+@app.post("/update_context")
+async def update_context(payload: dict):
+    """Receive perception data from clients"""
+    device = payload["device"]
+    data = payload["data"]
 
-# Fetch from C++ service
-cpp_context = requests.get("http://localhost:8777/context").json()
+    # Update global context
+    if device == "screen":
+        global_context["screen"] = data
+    elif device == "Voice":
+        global_context["voice"] = data
+    elif device == "Camera":
+        global_context["camera"] = data
 
-# Add ML inference
-vision_model = pipeline("image-to-text", model="onnx-community/FastVLM-0.5B-ONNX")
-camera_caption = vision_model(capture_camera())
+    # Run fusion
+    run_fusion_and_recommendations()
 
-# Post to fusion server
-payload = {
-    "device": "windows",
-    "data": {
-        "active_app": cpp_context["activeApp"],
-        "cpu_usage": cpp_context["cpuUsage"],
-        "camera_caption": camera_caption,
-        # ... other fields
-    }
-}
-requests.post("http://127.0.0.1:8000/update_context", json=payload)
+    return {"status": "ok"}
+
+@app.get("/dashboard")
+async def dashboard():
+    """Serve web dashboard"""
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "context": global_context
+    })
+
+@app.get("/get_context")
+async def get_context():
+    """API endpoint for debugging"""
+    return global_context
 ```
 
-**When to use hybrid approach:**
-- Faster prototyping (Python is quicker to iterate)
-- Testing different ML models
-- Development/debugging
+**Fusion Logic ([server.py:82](server.py#L82)):**
 
-**When to use pure C++:**
-- Production deployment
-- Single executable requirement
-- Maximum performance
+```python
+def run_fusion_and_recommendations():
+    """Fuse all perception signals and generate recommendations"""
+
+    # Build fusion prompt
+    prompt = f"""
+You are a context-aware AI assistant analyzing multi-modal perception data.
+
+Screen: {global_context['screen']}
+Voice: {global_context['voice']}
+Camera: {global_context['camera']}
+
+Generate:
+1. A detailed context summary
+2. A one-line summary banner
+3. Exactly 3 numbered actionable recommendations
+
+Be concise and specific.
+"""
+
+    # Call GPT-4o-mini
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=150,
+        temperature=0.5
+    )
+
+    # Parse response
+    text = response.choices[0].message.content
+
+    # Extract recommendations (lines starting with numbers)
+    recommendations = [
+        line.strip() for line in text.split('\n')
+        if line.strip() and line.strip()[0].isdigit()
+    ][:3]
+
+    # Update global context
+    global_context["fusion_detailed"] = text
+    global_context["fusion_summary"] = recommendations[0] if recommendations else "Processing..."
+    global_context["recommendations"] = recommendations
+```
+
+**Configuration:**
+- Model: `gpt-4o-mini` (fast, cheap)
+- Max tokens: 150 (keep responses short)
+- Temperature: 0.5 (balanced creativity)
+- Timeout: 5 seconds
+- Requires `OPENAI_API_KEY` environment variable
 
 ---
 
-## Quick Start Guide
+## Model Details & Performance
 
-### **macOS (Python)**
+### PaddleOCR (Screen Text Extraction)
 
-```bash
-# 1. Install dependencies
-pip install -r requirements.txt
+**Model Details:**
+- Version: PaddleOCR v5
+- Format: ONNX (quantized for CPU)
+- Size: ~170MB (auto-downloaded)
+- Input: Screenshot image (resized to 480x480 max)
+- Output: Extracted text with bounding boxes
 
-# 2. Start fusion server
-python server.py
+**Performance:**
+| Resolution | Latency | Quality |
+|-----------|---------|---------|
+| 320x320 | ~155ms | Good |
+| 480x480 | ~340ms | Better (default) |
+| 640x640 | ~615ms | Best |
 
-# 3. Start perception clients (separate terminals)
-python mac_screen_v5.py
-python mac_voice_stream.py
-python mac_camera_yolo.py
-
-# 4. Open dashboard
-open http://127.0.0.1:8000/dashboard
-```
-
-### **Windows (C++ Service)**
-
-```bash
-# 1. Build and install C++ service
-cd windows_code
-install.bat  # Run as Administrator
-
-# 2. Start service in console mode (for testing)
-cd x64\Release
-PerceptionEngine.exe --console
-
-# 3. Verify service is running
-curl http://localhost:8777/context
-
-# 4. Start fusion server (separate terminal)
-python server.py
-
-# 5. Open dashboard
-start http://127.0.0.1:8000/dashboard
-```
-
-**Note:** Currently, Windows C++ service only implements screen monitoring and system metrics. Screen OCR, camera vision, and audio ASR are planned for future implementation.
+**Key Optimizations:**
+- Use NO ONNX optimizations (baseline is fastest!)
+- Resize input image before OCR
+- CPU-only inference (GPU doesn't help much for small images)
 
 ---
 
-## Model Downloads
+### FastVLM-0.5B (Camera Environment Understanding)
 
-### **Windows Models (Required for Full Perception)**
+**Model Details:**
+- Model: Apple's FastVLM-0.5B
+- Format: PyTorch (Transformers library)
+- Size: ~1GB (auto-downloaded from HuggingFace)
+- Input: Camera frame (224x224 optimized for CPU)
+- Output: Natural language caption
 
-```bash
-# Create models directory structure
-mkdir models\whisper models\vision models\ocr
+**Performance:**
+- Latency: 5-10 seconds (CPU)
+- Resolution: 224x224 (balance speed/quality)
+- Max tokens: 50 (short captions only)
+- Decoding: Greedy (no sampling)
 
-# 1. Whisper (Audio ASR)
-# Download from: https://huggingface.co/ggerganov/whisper.cpp/tree/main
-# File: ggml-tiny.en-q8_0.bin (40MB)
-# Place in: models/whisper/
+**Key Optimizations:**
+- Low resolution (224x224)
+- Short generation (50 tokens max)
+- Greedy decoding (faster than sampling)
+- Float32 on CPU (no quantization yet)
 
-# 2. FastVLM (Camera Vision)
-# Download from: https://huggingface.co/onnx-community/FastVLM-0.5B-ONNX
-# File: FastVLM-0.5B-q8.onnx (~300MB, may need to quantize yourself)
-# Place in: models/vision/
+**Future Improvements:**
+- ONNX export: 5-10s → 2-4s potential
+- C++ implementation: 5-10s → 1-3s potential
+- Quantization: Further 30-50% speedup
 
-# 3. PaddleOCR (Screen Text)
-# Download from: https://huggingface.co/marsena/paddleocr-onnx-models
-# Files: PP-OCRv5_server_det_infer.onnx (88MB)
-#        PP-OCRv5_server_rec_infer.onnx (84MB)
-# Place in: models/ocr/
+---
+
+### Vosk (Voice Transcription)
+
+**Model Details:**
+- Model: vosk-model-small-en-us-0.15
+- Size: ~40MB (included in repo)
+- Format: Vosk native format
+- Input: Microphone stream (16kHz PCM)
+- Output: Real-time transcription
+
+**Performance:**
+- Latency: 100-200ms
+- Streaming: Continuous audio processing
+- Accuracy: Good for clear speech, decent for noisy environments
+
+**Key Features:**
+- Offline (no internet required)
+- Privacy-focused (all processing on-device)
+- Lightweight (40MB model)
+
+---
+
+### GPT-4o-mini (Context Fusion)
+
+**Model Details:**
+- Provider: OpenAI
+- Model: gpt-4o-mini
+- API Version: v1
+- Cost: $0.15/1M input tokens, $0.60/1M output tokens
+
+**Performance:**
+- TTFT (Time to First Token): ~300ms
+- Full response: ~500ms (150 tokens)
+- Rate limit: 10,000 requests/min (Tier 2)
+
+**Configuration:**
+```python
+response = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": prompt}],
+    max_tokens=150,      # Short responses only
+    temperature=0.5,     # Consistent recommendations
+    timeout=5.0          # Fail fast
+)
 ```
 
-### **macOS Models (Already Present)**
+---
 
-- `models/vosk-model-small-en-us-0.15/` - Vosk ASR model
-- `yolov8n.pt` - YOLOv8 object detection (root directory)
+## Development Commands
+
+### Setup
+
+```bash
+# Create virtual environment
+python -m venv venv
+venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements_windows.txt
+
+# Download models (optional - auto-downloads on first run)
+python download_models_windows.py
+
+# Set OpenAI API key
+set OPENAI_API_KEY=sk-your-key-here
+```
+
+### Running the System
+
+**Start in 4 separate terminals (order matters):**
+
+```bash
+# Terminal 1: Start the FastAPI fusion server
+python server.py
+
+# Terminal 2: Start screen monitoring + OCR
+python win_screen_ocr.py
+
+# Terminal 3: Start camera vision
+python win_camera_vision.py
+
+# Terminal 4: Start voice/microphone transcription
+python win_audio_asr.py
+```
+
+**Access dashboard:**
+```
+http://127.0.0.1:8000/dashboard
+```
+
+**Debug API:**
+```
+http://127.0.0.1:8000/get_context
+```
+
+### Testing Individual Components
+
+```bash
+# Test screen monitoring only
+python win_screen_ocr.py
+
+# Test camera vision only
+python win_camera_vision.py
+
+# Test voice transcription only
+python win_audio_asr.py
+
+# Server will log when clients connect
+```
 
 ---
 
 ## Performance Benchmarks
 
-### **Windows (CPU-Only)**
+### Windows (CPU-Only Laptop)
 
-| Component | Latency | CPU Usage | Update Frequency |
-|-----------|---------|-----------|------------------|
-| Screen monitoring | 2μs | <1% | 500ms |
-| Screen OCR | 80-130ms | 5-10% | On window change |
-| Camera vision | 200-400ms | 10-15% | Every 3 seconds |
-| Microphone ASR | 200-300ms | 8-12% | Streaming |
-| System audio ASR | 200-300ms | 8-12% | Streaming |
-| **Total** | **~500ms** | **30-45%** | - |
+| Component | CPU Load | RAM Usage | Latency | Update Frequency |
+|-----------|----------|-----------|---------|------------------|
+| Screen monitoring | 2-3% | ~50MB | <5ms | On window change |
+| Screen OCR | 3-5% | ~200MB | 155-340ms | On window change (~3s) |
+| Camera vision | 15-20% | ~500MB | 5-10s | Every 10 seconds |
+| Voice/Mic | 10-15% | ~100MB | 100-200ms | Continuous stream |
+| Fusion server | 2-5% | ~100MB | 300-500ms | On perception update |
+| **Total** | **32-48%** | **~950MB** | - | - |
 
-**Hardware Tested:** Intel Core i5/i7 (4+ cores, 2.5GHz+)
+**Hardware Tested:** Intel Core i5/i7 laptop (4+ cores, 8GB+ RAM, no GPU)
 
-### **Windows (With Integrated GPU)**
+**Expected Improvements with C++ Migration:**
+- Camera: 5-10s → 1-3s (ONNX Runtime + quantization)
+- Screen OCR: 155-340ms → 50-100ms (native ONNX Runtime)
+- Voice: 100-200ms → 50-100ms (whisper.cpp or native Vosk)
+- **Total CPU load: 32-48% → 15-25%**
+- **Total RAM: 950MB → 400MB**
 
-| Component | Latency | CPU Usage | GPU Usage |
-|-----------|---------|-----------|-----------|
-| Screen OCR | 40-60ms | 2-3% | 15-20% |
-| Camera vision | 50-100ms | 3-5% | 25-35% |
-| Audio ASR | 20-30ms | 2-3% | 10-15% |
-| **Total** | **~150ms** | **15-25%** | **40-60%** |
+---
 
-**Hardware:** Intel Iris Xe, AMD Radeon, or NVIDIA GTX/RTX
+## Common Modifications
 
-### **macOS (Python)**
+### Change Update Frequency
 
-| Component | Latency | CPU Usage |
-|-----------|---------|-----------|
-| Screen monitoring | ~50ms | 1-2% |
-| Voice (Vosk) | 100-150ms | 10-15% |
-| Camera (YOLOv8) | 30-50ms | 15-20% |
-| **Total** | **~200ms** | **25-35%** |
+**Screen:**
+```python
+# win_screen_ocr.py - line ~100
+time.sleep(3)  # Update every 3 seconds (on window change)
+```
 
-**Hardware:** M1/M2 MacBook (optimized for Apple Silicon)
+**Camera:**
+```python
+# win_camera_vision.py - line ~163
+time.sleep(10)  # Update every 10 seconds
+```
+
+**Dashboard:**
+```html
+<!-- templates/dashboard.html - line 8 -->
+<meta http-equiv="refresh" content="3">  <!-- Refresh every 3 seconds -->
+```
+
+### Change Number of Recommendations
+
+```python
+# server.py - line ~155
+recommendations = [
+    line.strip() for line in text.split('\n')
+    if line.strip() and line.strip()[0].isdigit()
+][:3]  # Change to [:5] for 5 recommendations
+```
+
+**Also update prompt at [server.py:140](server.py#L140):**
+```python
+prompt = """
+...
+Generate exactly 5 numbered recommendations.  # Change from 3 to 5
+...
+"""
+```
+
+### Change AI Model
+
+```python
+# server.py - line ~140
+model="gpt-4o-mini"  # Fast, cheap (default)
+# model="gpt-4o"     # Slower, better quality
+# model="gpt-4"      # Highest quality, expensive
+```
+
+### Add New Perception Source
+
+1. **Create new client script** that POSTs to `/update_context`:
+```python
+import requests
+
+payload = {
+    "device": "new_device",  # Unique device name
+    "data": {
+        "key": "value"
+    }
+}
+
+response = requests.post(
+    "http://127.0.0.1:8000/update_context",
+    json=payload
+)
+```
+
+2. **Update [server.py](server.py) to handle new device:**
+```python
+# Add to global_context
+global_context["new_device"] = {}
+
+# Handle in update_context endpoint
+if device == "new_device":
+    global_context["new_device"] = data
+```
+
+3. **Update fusion logic** at [server.py:82](server.py#L82):
+```python
+prompt = f"""
+...
+New Device: {global_context['new_device']}
+...
+"""
+```
+
+4. **Add to dashboard** at [templates/dashboard.html](templates/dashboard.html):
+```html
+<div class="card">
+    <h2>New Device</h2>
+    <pre>{{ context.new_device }}</pre>
+</div>
+```
 
 ---
 
 ## Troubleshooting
 
-### **Windows Service Issues**
+### Server Won't Start
 
-**Service won't start:**
 ```bash
-# Check if port 8777 is already in use
-netstat -ano | findstr :8777
+# Check if port 8000 is in use
+netstat -ano | findstr :8000
 
-# View service logs (Debug Output)
-# Use DebugView from Sysinternals
+# Kill process using port 8000
+taskkill /PID <PID> /F
+
+# Set OpenAI API key (required for recommendations)
+set OPENAI_API_KEY=sk-your-key-here
+
+# Check if API key is set
+echo %OPENAI_API_KEY%
 ```
 
-**Service installed but not responding:**
-```bash
-# Uninstall and reinstall
-PerceptionEngine.exe --uninstall
-PerceptionEngine.exe --install
-PerceptionEngine.exe --start
+### Screen OCR Not Working
 
-# Or run in console mode to see errors
-PerceptionEngine.exe --console
+**Issue:** PaddleOCR models not found
+
+```bash
+# Re-run download script
+python download_models_windows.py
+
+# Or let PaddleOCR auto-download on first run (requires internet)
 ```
 
-**ONNX Runtime errors:**
-- Ensure `onnxruntime.dll` is in the same directory as `PerceptionEngine.exe`
-- Download from: https://github.com/microsoft/onnxruntime/releases
+**Issue:** pywin32 not installed
 
-**Whisper.cpp errors:**
-- Ensure model file exists: `models/whisper/ggml-tiny.en-q8_0.bin`
-- Check file is not corrupted (re-download if needed)
-
-### **macOS Issues**
-
-**Vosk model not found:**
 ```bash
-# Download and extract Vosk model
-cd models
-wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
-unzip vosk-model-small-en-us-0.15.zip
+pip install pywin32
 ```
 
-**AppleScript permissions:**
-- System Preferences → Security & Privacy → Privacy → Accessibility
-- Add Terminal or your IDE to allowed apps
+**Issue:** OCR too slow
 
-**Microphone permissions:**
-- System Preferences → Security & Privacy → Privacy → Microphone
-- Allow Python or Terminal
-
-### **Fusion Server Issues**
-
-**OpenAI API errors:**
-```bash
-# Set API key
-export OPENAI_API_KEY="sk-..."  # macOS/Linux
-set OPENAI_API_KEY=sk-...       # Windows
+```python
+# win_screen_ocr.py - line ~60
+max_width = 320  # Ultra-fast (~155ms)
+# max_width = 480  # Balanced (~340ms) [default]
+# max_width = 640  # Quality (~615ms)
 ```
 
-**Dashboard not loading:**
-- Ensure FastAPI server is running: `python server.py`
-- Check server logs for errors
-- Verify port 8000 is not blocked by firewall
+### Camera Not Detected
+
+```python
+# win_camera_vision.py - line ~150
+cap = cv2.VideoCapture(0)  # Try different indices: 0, 1, 2...
+```
+
+**Check available cameras:**
+```python
+import cv2
+for i in range(5):
+    cap = cv2.VideoCapture(i)
+    if cap.isOpened():
+        print(f"Camera {i} available")
+        cap.release()
+```
+
+**Check Windows permissions:**
+- Go to Settings → Privacy → Camera
+- Enable camera access for Python
+
+### Voice Transcription Errors
+
+**Issue:** Vosk model not found
+
+```bash
+# Check model exists
+dir models\vosk-model-small-en-us-0.15
+
+# If missing, download from:
+# https://alphacephei.com/vosk/models
+```
+
+**Issue:** Microphone not accessible
+
+- Go to Settings → Privacy → Microphone
+- Enable microphone access for Python
+
+**Issue:** No audio detected
+
+```python
+# win_audio_asr.py - list available devices
+import sounddevice as sd
+print(sd.query_devices())
+```
+
+### Dashboard Not Showing Updates
+
+**Check all clients are running:**
+```bash
+# Should see 4 Python processes
+tasklist | findstr python
+```
+
+**Check server logs:**
+```bash
+# Server should log when clients connect
+INFO:     127.0.0.1:xxxxx - "POST /update_context HTTP/1.1" 200 OK
+```
+
+**Verify clients posting to correct URL:**
+```python
+# All clients should POST to:
+http://127.0.0.1:8000/update_context
+```
+
+**Check network connectivity:**
+```bash
+curl http://127.0.0.1:8000/get_context
+```
+
+### High CPU Usage
+
+**Reduce update frequencies:**
+```python
+# win_screen_ocr.py
+time.sleep(5)  # Update every 5 seconds instead of 3
+
+# win_camera_vision.py
+time.sleep(15)  # Update every 15 seconds instead of 10
+```
+
+**Use smaller OCR resolution:**
+```python
+# win_screen_ocr.py
+max_width = 320  # Ultra-fast mode
+```
+
+**Disable camera if not needed:**
+```bash
+# Don't run win_camera_vision.py
+# Fusion will still work with screen + voice only
+```
 
 ---
 
-## Project Status
+## Project Status & Roadmap
 
-### **✅ Completed**
-- macOS Python implementation (3 perception clients)
-- FastAPI fusion server
-- Web dashboard
-- Windows C++ service foundation (screen monitoring + system metrics)
+### ✅ Completed (Windows Python Prototype - v1.0)
+- Screen monitoring + OCR (PaddleOCR)
+- Camera vision (FastVLM)
+- Voice/microphone transcription (Vosk)
+- Fusion server + dashboard (FastAPI)
+- Real-time AI recommendations (GPT-4o-mini)
+- CPU-optimized (no GPU required)
+- Local-first processing (privacy-focused)
 
-### **🔨 In Progress**
-- Windows C++ perception modules:
-  - Screen OCR (ONNX Runtime + PaddleOCR)
-  - Camera vision (ONNX Runtime + FastVLM)
-  - Audio ASR (whisper.cpp + WASAPI)
+### ❌ Not Implemented
+- **System audio capture** (device playback/loopback)
+  - Requires WASAPI implementation (Windows-specific)
+  - Complex to implement in Python
+  - Deferred to C++ migration
 
-### **📋 Planned**
-- Android implementation (Kotlin + native perception)
-- Cross-device fusion (sync multiple devices)
-- Cloud sync infrastructure
-- Enhanced privacy controls
-- Mobile dashboard app
+### 🔨 Future Work (C++ Migration - v2.0)
+
+**Goals:**
+- Port all components to C++ for production deployment
+- 2-5x performance improvement
+- Single executable deployment (no Python runtime)
+- System audio capture via WASAPI
+
+**Expected Improvements:**
+| Component | Python (Current) | C++ (Target) | Improvement |
+|-----------|-----------------|--------------|-------------|
+| Screen OCR | 155-340ms | 50-100ms | 2-3x faster |
+| Camera Vision | 5-10s | 1-3s | 3-5x faster |
+| Voice ASR | 100-200ms | 50-100ms | 2x faster |
+| CPU Usage | 32-48% | 15-25% | 2x reduction |
+| RAM Usage | 950MB | 400MB | 2.4x reduction |
+
+**Technologies for C++ Version:**
+- ONNX Runtime for PaddleOCR + FastVLM
+- whisper.cpp or native Vosk for voice
+- WASAPI for system audio loopback
+- Qt 6 or native Win32 for UI
+- CMake + vcpkg for build system
+
+**Timeline:**
+- Research & prototyping: 2-3 weeks
+- Core implementation: 4-6 weeks
+- Testing & optimization: 2-3 weeks
+- **Total: 8-12 weeks**
 
 ---
 
-## Contributing
+## Security & Privacy
 
-When adding new perception sources or modifying the fusion logic:
+### Data Handling
+- **Local-first:** All perception processing happens on-device
+- **No telemetry:** No usage data sent to external servers (except OpenAI API)
+- **API keys:** Stored in environment variables (never committed to git)
 
-1. **Update `server.py`**:
-   - Add new device type to `global_context`
-   - Update `run_fusion_and_recommendations()` to include new signals
-   - Adjust fusion prompt if needed
+### API Key Security
 
-2. **Update `dashboard.html`**:
-   - Add new card/section for the perception source
-   - Update auto-refresh logic if needed
+**NEVER commit API keys to git!**
 
-3. **Update this document**:
-   - Add new perception source to architecture diagram
-   - Document new models/dependencies
-   - Add setup/troubleshooting instructions
+```bash
+# Use environment variables
+set OPENAI_API_KEY=sk-your-key-here
+
+# Or create .env file (gitignored)
+echo OPENAI_API_KEY=sk-your-key-here > .env
+```
+
+**The `.gitignore` includes:**
+```
+.env
+*.key
+credentials.json
+```
+
+### OpenAI API Usage
+
+**Data sent to OpenAI:**
+- Screen: App names, window titles, OCR text
+- Voice: Transcribed speech
+- Camera: Scene descriptions (NOT raw images)
+
+**Data retention:**
+- OpenAI retains API data for 30 days (see https://openai.com/policies/usage-policies)
+- Can opt-out of data retention for training
+
+**Alternative: Local LLM**
+
+To avoid sending data to OpenAI, use local LLM:
+
+```python
+# server.py - replace OpenAI with local model
+from transformers import pipeline
+
+fusion_model = pipeline(
+    "text-generation",
+    model="mistralai/Mistral-7B-Instruct-v0.2",
+    device="cpu"
+)
+
+# Update run_fusion_and_recommendations()
+response = fusion_model(prompt, max_new_tokens=150)
+```
+
+**Note:** Local LLM will be slower (5-10s vs 500ms) but fully private.
 
 ---
 
 ## License & Credits
 
-**License:** Proprietary
+**License:** Proprietary - Nova Perception Engine Team
 
-**Models & Libraries:**
-- **PaddleOCR**: Apache 2.0 License
-- **FastVLM**: Apple Research (check license)
-- **Whisper**: MIT License (OpenAI)
-- **whisper.cpp**: MIT License
-- **ONNX Runtime**: MIT License
-- **YOLOv8**: AGPL-3.0 License
-
-**Third-Party Licenses:** See `THIRD_PARTY_LICENSES.md` (to be created)
+**Third-Party Libraries:**
+- **PaddleOCR:** Apache 2.0 License - https://github.com/PaddlePaddle/PaddleOCR
+- **FastVLM:** Apple Research - https://github.com/apple/ml-fastvlm
+- **Vosk:** Apache 2.0 License - https://alphacephei.com/vosk/
+- **OpenAI API:** Commercial License - https://openai.com/policies/terms-of-use
+- **FastAPI:** MIT License - https://fastapi.tiangolo.com/
+- **PyTorch:** BSD License - https://pytorch.org/
+- **OpenCV:** Apache 2.0 License - https://opencv.org/
 
 ---
 
-**Last Updated:** 2025-10-06
+## Contributing Guidelines
+
+When modifying the perception system:
+
+1. **Update [server.py](server.py):**
+   - Add new device type to `global_context` if needed
+   - Update `run_fusion_and_recommendations()` to include new signals
+   - Maintain data format consistency
+
+2. **Update [templates/dashboard.html](templates/dashboard.html):**
+   - Add new card/section for perception source
+   - Follow existing styling patterns (dark theme)
+
+3. **Update this document (CLAUDE.md):**
+   - Add new perception source to architecture
+   - Document models/dependencies
+   - Add troubleshooting tips
+   - Update performance benchmarks
+
+4. **Update [README.md](README.md):**
+   - Add high-level user-facing documentation
+   - Update quick start guide if needed
+
+5. **Test thoroughly:**
+   - Test each client individually
+   - Test with fusion server
+   - Verify dashboard displays correctly
+   - Check performance benchmarks
+
+---
+
+**Last Updated:** 2025-10-08
+**Version:** 1.0.0 (Python Prototype for Windows)
 **Maintained By:** Nova Perception Engine Team

@@ -10,9 +10,21 @@ from openai import OpenAI
 # CONFIG
 # -----------------------------
 
-# OpenAI API configuration
+# OpenAI API configuration - load from environment variable
 api_key = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=api_key)
+if not api_key:
+    print("⚠️  WARNING: OPENAI_API_KEY environment variable not set!")
+    print("   Fusion engine will not work without it.")
+    print("   Set it with: $env:OPENAI_API_KEY='your-key-here'")
+    client = None
+else:
+    try:
+        client = OpenAI(api_key=api_key)
+        print("✅ OpenAI client initialized successfully")
+    except Exception as e:
+        print(f"❌ Failed to initialize OpenAI client: {e}")
+        print("   Try upgrading: pip install --upgrade openai httpx")
+        client = None
 
 app = FastAPI()
 
@@ -62,7 +74,6 @@ async def update_context(request: Request):
 
     return {"status": "ok", "fused_context": global_context["fusion_detailed"]}
 
-
 # -----------------------------
 # FUSION ENGINE + RECOMMENDATIONS
 # -----------------------------
@@ -70,10 +81,18 @@ async def update_context(request: Request):
 def run_fusion_and_recommendations():
     """Fuse perception signals into a crisp context + actionable recs."""
     try:
-        screen_active = global_context.get("screen", {}).get("active_app", {})
-        screen_apps = global_context.get("screen", {}).get("apps", [])
+        screen_data = global_context.get("screen", {})
+        screen_active = screen_data.get("active_app", {})
+        screen_apps = screen_data.get("apps", [])
+        screen_blip = screen_data.get("screen_caption_blip", "")  # BLIP caption (demo)
+        screen_text = screen_data.get("text_detected", "")  # OCR text
         voice_text = global_context.get("voice", {}).get("text", "")
-        camera_objs = global_context.get("camera", {}).get("objects", [])
+
+        # Camera context - support both old (objects) and new (caption + OCR) formats
+        camera_data = global_context.get("camera", {})
+        camera_objs = camera_data.get("objects", [])  # Old format (YOLO)
+        camera_caption = camera_data.get("environment_caption", "")  # New format (vision)
+        camera_ocr = camera_data.get("text_detected", "")  # New format (OCR detection)
 
         # ---------------- Detailed Fusion ----------------
         fusion_lines = []
@@ -85,12 +104,22 @@ def run_fusion_and_recommendations():
         if screen_apps:
             other_names = [app['name'] for app in screen_apps if app['name'] != screen_active.get("name")]
             if other_names:
-                fusion_lines.append("Other Apps: " + ", ".join(other_names))
+                fusion_lines.append("Other Apps: " + ", ".join(other_names[:5]))  # Limit to 5
+
+        # Screen content (BLIP or OCR)
+        if screen_blip:
+            fusion_lines.append(f"Screen BLIP Caption: {screen_blip}")
+        if screen_text:
+            fusion_lines.append(f"Screen Text (OCR): {screen_text[:200]}")  # Limit to 200 chars
 
         if voice_text:
             fusion_lines.append(f"Voice Context: \"{voice_text}\"")
 
-        if camera_objs:
+        # Camera perception (new or old format)
+        if camera_caption:
+            ocr_note = f" (text: {camera_ocr})" if camera_ocr and camera_ocr != "no_text" else ""
+            fusion_lines.append(f"Camera: {camera_caption}{ocr_note}")
+        elif camera_objs:
             fusion_lines.append("Camera sees: " + ", ".join(camera_objs))
 
         if not fusion_lines:
@@ -104,7 +133,9 @@ def run_fusion_and_recommendations():
             summary_parts.append(f"Focused on {screen_active.get('name')}")
         if voice_text:
             summary_parts.append(f"heard: \"{voice_text}\"")
-        if camera_objs:
+        if camera_caption:
+            summary_parts.append(f"camera: {camera_caption}")
+        elif camera_objs:
             summary_parts.append(f"camera: {', '.join(camera_objs)}")
 
         if not summary_parts:
@@ -115,24 +146,33 @@ def run_fusion_and_recommendations():
         global_context["fusion_summary"] = fusion_summary
 
         # ---------------- Recommendations ----------------
-        user_prompt = (
-            "You are the Nova Recommendation Engine.\n"
-            "Generate exactly 3 crisp, executive-level actionable recommendations.\n"
-            "Do not explain — only output numbered bullet points.\n\n"
-            f"Fusion Context:\n{global_context['fusion_detailed']}\n"
-        )
+        if client is not None:
+            user_prompt = (
+                "You are the Nova Recommendation Engine.\n"
+                "Generate exactly 3 crisp, executive-level actionable recommendations.\n"
+                "Do not explain — only output numbered bullet points.\n\n"
+                f"Fusion Context:\n{global_context['fusion_detailed']}\n"
+            )
 
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "system", "content": user_prompt}],
-            max_tokens=150,
-            temperature=0.5,
-        )
+            resp = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "system", "content": user_prompt}],
+                max_tokens=150,
+                temperature=0.5,
+            )
 
-        recs_text = resp.choices[0].message.content.strip()
-        recs = [line.strip(" -") for line in recs_text.split("\n") if line.strip()]
+            recs_text = resp.choices[0].message.content.strip()
+            recs = [line.strip(" -") for line in recs_text.split("\n") if line.strip()]
 
-        global_context["recommendations"] = recs[:3]
+            global_context["recommendations"] = recs[:3]
+        else:
+            # Fallback when OpenAI client not available
+            global_context["recommendations"] = [
+                "OpenAI API not configured - set OPENAI_API_KEY",
+                "Fusion working, but recommendations require API key",
+                "See server logs for setup instructions"
+            ]
+
         global_context["last_updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
 
     except Exception as e:
@@ -163,3 +203,19 @@ async def dashboard(request: Request):
 @app.get("/get_context")
 async def get_context():
     return JSONResponse(content=global_context, indent=2)
+
+
+# -----------------------------
+# RUN SERVER
+# -----------------------------
+
+if __name__ == "__main__":
+    import uvicorn
+    print("\n" + "="*60)
+    print("🚀 NOVA PERCEPTION ENGINE - FUSION SERVER")
+    print("="*60)
+    print(f"📊 Dashboard: http://127.0.0.1:8000/dashboard")
+    print(f"🔍 Debug API: http://127.0.0.1:8000/get_context")
+    print("="*60 + "\n")
+
+    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")

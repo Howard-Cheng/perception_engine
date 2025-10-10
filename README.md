@@ -8,6 +8,8 @@
 
 ## 🚀 Quick Start
 
+> **👉 First time setup? See [QUICK_START.md](QUICK_START.md) for a streamlined guide!**
+
 ### ⚡ Automated Setup (Recommended)
 
 **The easiest way to get started:**
@@ -449,15 +451,16 @@ Serves the web dashboard UI.
 
 ## 📚 Documentation
 
-- **[CLAUDE.md](CLAUDE.md)** - Complete technical documentation
-  - System architecture
-  - Component deep-dive
-  - Build system details
+- **[QUICK_START.md](QUICK_START.md)** - 🚀 Quick reference for colleagues (START HERE!)
+- **[SETUP_VALIDATION.md](SETUP_VALIDATION.md)** - Comprehensive setup validation checklist
+- **[README.md](README.md)** - This file (user guide with full architecture overview)
+- **[CLAUDE.md](CLAUDE.md)** - Complete technical documentation for developers
+  - System architecture deep-dive
+  - Component implementation details
+  - Build system configuration
   - API reference
   - **Known issues and debugging**
   - Performance analysis
-
-- **[README.md](README.md)** - This file (user guide)
 
 ---
 

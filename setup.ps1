@@ -11,10 +11,12 @@
 #   2. Downloads Silero VAD model (~1.8MB)
 #   3. Downloads OpenCV (~120MB)
 #   4. Downloads ONNX Runtime (~15MB)
-#   5. Builds whisper.cpp
-#   6. Installs Python dependencies
-#   7. Builds PerceptionEngine
-#   8. Copies required files
+#   5. Initializes whisper.cpp git submodule
+#   6. Builds whisper.cpp
+#   7. Installs Python dependencies
+#   8. Builds PerceptionEngine
+#   9. Copies required files
+#   10. Verifies all components
 # ============================================================================
 
 param(
@@ -24,6 +26,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"  # Faster downloads
+
+# Enable TLS 1.2 for downloads (required for HTTPS)
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 # Colors for output
 function Write-Success { param($Message) Write-Host "✅ $Message" -ForegroundColor Green }
@@ -97,7 +102,7 @@ if (Test-Path $whisperModelPath) {
     $whisperUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-q8_0.bin"
 
     try {
-        Invoke-WebRequest -Uri $whisperUrl -OutFile $whisperModelPath
+        Invoke-WebRequest -Uri $whisperUrl -OutFile $whisperModelPath -UseBasicParsing
         Write-Success "Downloaded Whisper model: $whisperModelPath"
     } catch {
         Write-Error-Custom "Failed to download Whisper model: $_"
@@ -124,7 +129,7 @@ if (Test-Path $vadModelPath) {
     $vadUrl = "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx"
 
     try {
-        Invoke-WebRequest -Uri $vadUrl -OutFile $vadModelPath
+        Invoke-WebRequest -Uri $vadUrl -OutFile $vadModelPath -UseBasicParsing
         Write-Success "Downloaded Silero VAD model: $vadModelPath"
     } catch {
         Write-Error-Custom "Failed to download Silero VAD model: $_"
@@ -153,16 +158,31 @@ if (Test-Path $opencvDll) {
 
     try {
         # Download OpenCV self-extracting archive
-        Invoke-WebRequest -Uri $opencvUrl -OutFile $opencvExe
+        Invoke-WebRequest -Uri $opencvUrl -OutFile $opencvExe -UseBasicParsing
         Write-Success "Downloaded OpenCV installer"
 
         # Extract OpenCV (it's a self-extracting 7z archive)
         Write-Info "Extracting OpenCV (this may take 2-3 minutes)..."
-        Start-Process -FilePath $opencvExe -ArgumentList "-o$opencvDir", "-y" -Wait -NoNewWindow
+
+        # OpenCV .exe is a self-extracting archive, extract to temp then move
+        $tempExtract = "$opencvDir\temp_extract"
+        Start-Process -FilePath $opencvExe -ArgumentList "-o$tempExtract", "-y" -Wait -NoNewWindow
+
+        # Move extracted content to correct location
+        if (Test-Path "$tempExtract\opencv") {
+            Move-Item -Path "$tempExtract\opencv" -Destination $opencvDir -Force
+            Remove-Item $tempExtract -Recurse -Force -ErrorAction SilentlyContinue
+        }
 
         # Clean up installer
         Remove-Item $opencvExe -Force
-        Write-Success "OpenCV extracted successfully"
+
+        # Verify extraction
+        if (Test-Path $opencvDll) {
+            Write-Success "OpenCV extracted successfully"
+        } else {
+            throw "OpenCV DLL not found after extraction"
+        }
     } catch {
         Write-Error-Custom "Failed to download/extract OpenCV: $_"
         Write-Info "Please download manually from: $opencvUrl"
@@ -191,7 +211,7 @@ if (Test-Path $onnxDll) {
 
     try {
         # Download ONNX Runtime
-        Invoke-WebRequest -Uri $onnxUrl -OutFile $onnxZip
+        Invoke-WebRequest -Uri $onnxUrl -OutFile $onnxZip -UseBasicParsing
         Write-Success "Downloaded ONNX Runtime"
 
         # Extract ONNX Runtime
@@ -200,12 +220,20 @@ if (Test-Path $onnxDll) {
 
         # Move files to correct location (remove version-specific folder)
         $extractedDir = Get-ChildItem -Path "$onnxDir\temp" -Directory | Select-Object -First 1
-        Copy-Item -Path "$($extractedDir.FullName)\*" -Destination $onnxDir -Recurse -Force
+        if ($extractedDir) {
+            Copy-Item -Path "$($extractedDir.FullName)\*" -Destination $onnxDir -Recurse -Force
+        }
 
         # Clean up
-        Remove-Item "$onnxDir\temp" -Recurse -Force
+        Remove-Item "$onnxDir\temp" -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item $onnxZip -Force
-        Write-Success "ONNX Runtime extracted successfully"
+
+        # Verify extraction
+        if (Test-Path $onnxDll) {
+            Write-Success "ONNX Runtime extracted successfully"
+        } else {
+            throw "ONNX Runtime DLL not found after extraction"
+        }
     } catch {
         Write-Error-Custom "Failed to download/extract ONNX Runtime: $_"
         Write-Info "Please download manually from: $onnxUrl"
@@ -214,24 +242,35 @@ if (Test-Path $onnxDll) {
     }
 }
 
-# Check whisper.cpp
+# ============================================================================
+# Step 5: Initialize whisper.cpp (Git Submodule)
+# ============================================================================
+
+Write-Step "Initializing whisper.cpp"
+
 if (Test-Path "windows_code\third-party\whisper.cpp\include\whisper.h") {
-    Write-Success "whisper.cpp found"
+    Write-Success "whisper.cpp already initialized"
 } else {
-    Write-Error-Custom "whisper.cpp not found - initializing git submodule..."
+    Write-Info "Initializing whisper.cpp git submodule..."
     try {
-        Set-Location "windows_code\third-party"
-        git submodule update --init --recursive whisper.cpp
-        Set-Location "..\..\"
-        Write-Success "whisper.cpp submodule initialized"
+        # Initialize all git submodules
+        git submodule update --init --recursive
+
+        # Verify whisper.cpp was initialized
+        if (Test-Path "windows_code\third-party\whisper.cpp\include\whisper.h") {
+            Write-Success "whisper.cpp submodule initialized"
+        } else {
+            throw "whisper.cpp files not found after submodule init"
+        }
     } catch {
         Write-Error-Custom "Failed to initialize whisper.cpp submodule: $_"
+        Write-Info "Please run manually: git submodule update --init --recursive"
         exit 1
     }
 }
 
 # ============================================================================
-# Step 5: Build whisper.cpp
+# Step 6: Build whisper.cpp
 # ============================================================================
 
 Write-Step "Building whisper.cpp"
@@ -274,7 +313,7 @@ if (Test-Path $whisperLibSource) {
 }
 
 # ============================================================================
-# Step 6: Install Python Dependencies
+# Step 7: Install Python Dependencies
 # ============================================================================
 
 if (-not $SkipPython) {
@@ -293,7 +332,7 @@ if (-not $SkipPython) {
 }
 
 # ============================================================================
-# Step 7: Build PerceptionEngine
+# Step 8: Build PerceptionEngine
 # ============================================================================
 
 if (-not $SkipBuild) {
@@ -323,7 +362,7 @@ if (-not $SkipBuild) {
 }
 
 # ============================================================================
-# Step 8: Copy dashboard.html
+# Step 9: Copy dashboard.html
 # ============================================================================
 
 Write-Step "Copying dashboard.html"
@@ -340,7 +379,7 @@ if (Test-Path $dashboardSource) {
 }
 
 # ============================================================================
-# Step 9: Verify Installation
+# Step 10: Verify Installation
 # ============================================================================
 
 Write-Step "Verifying Installation"
@@ -350,6 +389,7 @@ $dashboardPath = "windows_code\build\bin\Release\dashboard.html"
 
 $allGood = $true
 
+# Verify executable
 if (Test-Path $exePath) {
     Write-Success "PerceptionEngine.exe found"
 } else {
@@ -357,23 +397,50 @@ if (Test-Path $exePath) {
     $allGood = $false
 }
 
+# Verify dashboard
 if (Test-Path $dashboardPath) {
     Write-Success "dashboard.html found"
 } else {
     Write-Warning "dashboard.html NOT found"
 }
 
+# Verify AI models
 if (Test-Path $whisperModelPath) {
-    Write-Success "Whisper model found"
+    $whisperSize = (Get-Item $whisperModelPath).Length / 1MB
+    Write-Success "Whisper model found ($([math]::Round($whisperSize,1))MB)"
 } else {
     Write-Error-Custom "Whisper model NOT found!"
     $allGood = $false
 }
 
 if (Test-Path $vadModelPath) {
-    Write-Success "Silero VAD model found"
+    $vadSize = (Get-Item $vadModelPath).Length / 1MB
+    Write-Success "Silero VAD model found ($([math]::Round($vadSize,1))MB)"
 } else {
     Write-Error-Custom "Silero VAD model NOT found!"
+    $allGood = $false
+}
+
+# Verify third-party libraries
+if (Test-Path $opencvDll) {
+    Write-Success "OpenCV library found"
+} else {
+    Write-Error-Custom "OpenCV NOT found!"
+    $allGood = $false
+}
+
+if (Test-Path $onnxDll) {
+    Write-Success "ONNX Runtime found"
+} else {
+    Write-Error-Custom "ONNX Runtime NOT found!"
+    $allGood = $false
+}
+
+# Verify whisper.lib
+if (Test-Path "windows_code\third-party\whisper.cpp\build\Release\whisper.lib") {
+    Write-Success "whisper.cpp library found"
+} else {
+    Write-Error-Custom "whisper.lib NOT found!"
     $allGood = $false
 }
 

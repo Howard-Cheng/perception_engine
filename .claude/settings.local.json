@@ -65,7 +65,9 @@
       "Bash(cmd /c \"del /F /Q \"\"C:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\PE\\windows_code\\README.md\"\"\")",
       "Bash(cmd /c \"dir /b C:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\PE\\*.md\")",
       "Bash(powershell:*)",
-      "Bash(git check-ignore:*)"
+      "Bash(git check-ignore:*)",
+      "Bash(cmd /c \"dir /b \"\"C:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\PE\\setup.bat\"\" 2>nul\")",
+      "Bash(cmd /c \"type nul > \"\"C:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\PE\\setup.bat\"\"\")"
     ],
     "deny": [],
     "ask": []

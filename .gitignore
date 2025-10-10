@@ -23,12 +23,19 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Models (too large for git)
+# Models (too large for git - download via setup.bat)
 models/
 *.onnx
 *.pt
 *.bin
 yolov8n.pt
+
+# Third-party binaries (too large for git - download via setup.bat)
+windows_code/third-party/opencv/
+windows_code/third-party/onnxruntime/
+# Keep only headers and source for whisper.cpp (git submodule)
+windows_code/third-party/whisper.cpp/build/
+windows_code/third-party/llama.cpp/
 
 # Windows build artifacts
 windows_code/build/

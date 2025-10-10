@@ -507,6 +507,38 @@ pillow==11.0.0
 
 ## 7. Building from Source
 
+### ⚡ Automated Setup (Recommended)
+
+**The easiest way to build the project:**
+
+```powershell
+# Clone repository
+git clone <repo-url> PE
+cd PE
+
+# Run automated setup script
+.\setup.bat
+```
+
+**What it does:**
+1. Downloads Whisper model (~43MB)
+2. Downloads Silero VAD model (~1.8MB)
+3. Verifies third-party libraries (OpenCV, ONNX Runtime)
+4. Builds whisper.cpp
+5. Installs Python dependencies
+6. Builds PerceptionEngine
+7. Copies dashboard.html
+
+**Time:** 10-15 minutes (depending on internet speed and CPU)
+
+**See [SETUP_GUIDE.md](../SETUP_GUIDE.md) for troubleshooting and manual setup.**
+
+---
+
+### 🛠️ Manual Build Steps
+
+If automated setup fails or you prefer manual control:
+
 ### Prerequisites
 
 **Required:**

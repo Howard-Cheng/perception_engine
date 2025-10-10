@@ -8,29 +8,64 @@
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### ⚡ Automated Setup (Recommended)
+
+**The easiest way to get started:**
+
+```powershell
+# Clone the repository
+git clone <your-repo-url> PE
+cd PE
+
+# Run automated setup (downloads models, builds everything)
+.\setup.bat
+```
+
+**What it does:**
+1. ✅ Downloads Whisper model (~43MB)
+2. ✅ Downloads Silero VAD model (~1.8MB)
+3. ✅ Verifies third-party libraries
+4. ✅ Builds whisper.cpp
+5. ✅ Installs Python dependencies
+6. ✅ Builds PerceptionEngine.exe
+
+**Time:** 10-15 minutes
+
+**See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed setup instructions and troubleshooting.**
+
+---
+
+### 📋 Prerequisites
+
 - **Windows 10/11** (x64)
 - **Visual Studio 2022** (with C++ development tools)
 - **CMake 3.20+**
 - **Python 3.8+** (for camera vision client)
 - **Webcam + Microphone**
 
-### Build Instructions
+### 🛠️ Manual Build Instructions
+
+If you prefer to build manually or the automated setup fails:
 
 ```bash
-# 1. Navigate to windows_code directory
+# 1. Download models (see SETUP_GUIDE.md)
+# 2. Build whisper.cpp (see SETUP_GUIDE.md)
+
+# 3. Navigate to windows_code directory
 cd windows_code
 
-# 2. Create build directory
+# 4. Create build directory
 mkdir build
 cd build
 
-# 3. Configure CMake
+# 5. Configure CMake
 "C:\Program Files\CMake\bin\cmake.exe" .. -G "Visual Studio 17 2022" -A x64
 
-# 4. Build the project (Release mode)
+# 6. Build the project (Release mode)
 "C:\Program Files\CMake\bin\cmake.exe" --build . --config Release
 ```
+
+**For complete manual setup instructions, see [SETUP_GUIDE.md](SETUP_GUIDE.md)**
 
 ### Running the System
 

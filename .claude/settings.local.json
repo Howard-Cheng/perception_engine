@@ -64,7 +64,8 @@
       "Bash(cmd /c \"cd /d C:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\PE\\windows_code && del /F /Q export_silero_vad.py download_onnxruntime.py download_opencv.py fix_fastvlm_onnx.py fix_onnx_shapes.py export_fastvlm_proper.py simplify_onnx.py download_fastvlm_f16.py export_fastvlm_vision_encoder.py simplify_with_data.py use_mobileclip_direct.py win_camera_fastvlm_gguf.py test_camera.py test_camera_capture.py\")",
       "Bash(cmd /c \"del /F /Q \"\"C:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\PE\\windows_code\\README.md\"\"\")",
       "Bash(cmd /c \"dir /b C:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\PE\\*.md\")",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(git check-ignore:*)"
     ],
     "deny": [],
     "ask": []

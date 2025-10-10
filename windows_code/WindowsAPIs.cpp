@@ -55,18 +55,18 @@ std::string GetAppNameFromWindowInfo(const WindowInfo& info);
 
 std::string GetForegroundAppName() {
     try {
-        // ·½·¨1: ³¢ÊÔ»ñÈ¡Ç°Ì¨´°¿Ú±êÌâ (ÔöÇ¿°æ - Ö§³ÖUnicode)
+        // ï¿½ï¿½ï¿½ï¿½1: ï¿½ï¿½ï¿½Ô»ï¿½È¡Ç°Ì¨ï¿½ï¿½ï¿½Ú±ï¿½ï¿½ï¿½ (ï¿½ï¿½Ç¿ï¿½ï¿½ - Ö§ï¿½ï¿½Unicode)
         HWND hwnd = GetForegroundWindow();
         if (hwnd) {
-            // Ê¹ÓÃUnicode°æ±¾µÄAPIÀ´ÕýÈ·´¦ÀíÖÐÎÄ×Ö·û
-            wchar_t buffer[512] = {0};  // Unicode»º³åÇø
+            // Ê¹ï¿½ï¿½Unicodeï¿½æ±¾ï¿½ï¿½APIï¿½ï¿½ï¿½ï¿½È·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½
+            wchar_t buffer[512] = {0};  // Unicodeï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
             int result = GetWindowTextW(hwnd, buffer, sizeof(buffer)/sizeof(wchar_t) - 1);
             
             if (result > 0 && wcslen(buffer) > 0) {
-                // ½«Unicode×ª»»ÎªUTF-8
+                // ï¿½ï¿½Unicode×ªï¿½ï¿½ÎªUTF-8
                 std::string title = WideStringToUtf8(buffer);
                 
-                // ¹ýÂËµôÒ»Ð©ÎÞÒâÒåµÄ±êÌâ
+                // ï¿½ï¿½ï¿½Ëµï¿½Ò»Ð©ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä±ï¿½ï¿½ï¿½
                 if (title != "Program Manager" && 
                     title != "Desktop" && 
                     title != "" &&
@@ -76,13 +76,13 @@ std::string GetForegroundAppName() {
             }
         }
         
-        // ·½·¨2: ½ø³ÌÐÅÏ¢»ñÈ¡ (ÔöÇ¿°æ)
+        // ï¿½ï¿½ï¿½ï¿½2: ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï¢ï¿½ï¿½È¡ (ï¿½ï¿½Ç¿ï¿½ï¿½)
         DWORD processId = 0;
         if (hwnd) {
             GetWindowThreadProcessId(hwnd, &processId);
         }
         
-        // ·½·¨2.1: ³¢ÊÔGetFocus×÷Îªºó±¸
+        // ï¿½ï¿½ï¿½ï¿½2.1: ï¿½ï¿½ï¿½ï¿½GetFocusï¿½ï¿½Îªï¿½ï¿½
         if (processId == 0) {
             HWND focusWindow = GetFocus();
             if (focusWindow) {
@@ -90,7 +90,7 @@ std::string GetForegroundAppName() {
             }
         }
         
-        // ·½·¨2.2: ³¢ÊÔGetActiveWindow
+        // ï¿½ï¿½ï¿½ï¿½2.2: ï¿½ï¿½ï¿½ï¿½GetActiveWindow
         if (processId == 0) {
             HWND activeWindow = GetActiveWindow();
             if (activeWindow) {
@@ -99,13 +99,13 @@ std::string GetForegroundAppName() {
         }
         
         if (processId > 0) {
-            // ÔöÇ¿µÄ½ø³ÌÐÅÏ¢»ñÈ¡
+            // ï¿½ï¿½Ç¿ï¿½Ä½ï¿½ï¿½ï¿½ï¿½ï¿½Ï¢ï¿½ï¿½È¡
             HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processId);
             if (hProcess) {
                 wchar_t processName[MAX_PATH] = {0};
                 DWORD size = sizeof(processName)/sizeof(wchar_t);
                 
-                // ÓÅÏÈÊ¹ÓÃQueryFullProcessImageNameW (Unicode°æ±¾)
+                // ï¿½ï¿½ï¿½ï¿½Ê¹ï¿½ï¿½QueryFullProcessImageNameW (Unicodeï¿½æ±¾)
                 if (QueryFullProcessImageNameW(hProcess, 0, processName, &size)) {
                     CloseHandle(hProcess);
                     
@@ -114,7 +114,7 @@ std::string GetForegroundAppName() {
                     if (lastSlash != std::wstring::npos) {
                         std::wstring exeName = fullPath.substr(lastSlash + 1);
                         
-                        // È¥µô.exeÀ©Õ¹Ãû²¢¸ñÊ½»¯
+                        // È¥ï¿½ï¿½.exeï¿½ï¿½Õ¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê½ï¿½ï¿½
                         size_t dotPos = exeName.find_last_of(L'.');
                         if (dotPos != std::wstring::npos) {
                             exeName = exeName.substr(0, dotPos);
@@ -122,7 +122,7 @@ std::string GetForegroundAppName() {
                         
                         std::string exeNameUtf8 = WideStringToUtf8(exeName);
                         
-                        // ÅÅ³ýÏµÍ³½ø³Ì
+                        // ï¿½Å³ï¿½ÏµÍ³ï¿½ï¿½ï¿½ï¿½
                         if (exeNameUtf8 != "dwm" && 
                             exeNameUtf8 != "winlogon" && 
                             exeNameUtf8 != "csrss" &&
@@ -132,7 +132,7 @@ std::string GetForegroundAppName() {
                         }
                     }
                 } else {
-                    // »ØÍËµ½GetModuleBaseNameW
+                    // ï¿½ï¿½ï¿½Ëµï¿½GetModuleBaseNameW
                     wchar_t baseName[MAX_PATH] = {0};
                     if (GetModuleBaseNameW(hProcess, NULL, baseName, sizeof(baseName)/sizeof(wchar_t))) {
                         CloseHandle(hProcess);
@@ -153,12 +153,12 @@ std::string GetForegroundAppName() {
             }
         }
         
-        // ·½·¨3: ÔöÇ¿µÄ´°¿ÚÃ¶¾Ù (¸üÖÇÄÜµÄ¹ýÂË + UnicodeÖ§³Ö)
+        // ï¿½ï¿½ï¿½ï¿½3: ï¿½ï¿½Ç¿ï¿½Ä´ï¿½ï¿½ï¿½Ã¶ï¿½ï¿½ (ï¿½ï¿½ï¿½ï¿½ï¿½ÜµÄ¹ï¿½ï¿½ï¿½ + UnicodeÖ§ï¿½ï¿½)
         struct WindowInfo {
             HWND bestWindow = NULL;
             std::string title;
             DWORD processId = 0;
-            int score = 0;  // ´°¿ÚÖÊÁ¿ÆÀ·Ö
+            int score = 0;  // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         };
         
         WindowInfo info;
@@ -166,9 +166,9 @@ std::string GetForegroundAppName() {
         EnumWindows([](HWND hwnd, LPARAM lParam) -> BOOL {
             WindowInfo* pInfo = reinterpret_cast<WindowInfo*>(lParam);
             
-            // ¸üÑÏ¸ñµÄ´°¿Ú¼ì²é
+            // ï¿½ï¿½ï¿½Ï¸ï¿½Ä´ï¿½ï¿½Ú¼ï¿½ï¿½
             if (IsWindowVisible(hwnd) && 
-                !IsIconic(hwnd) &&  // ²»ÊÇ×îÐ¡»¯
+                !IsIconic(hwnd) &&  // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¡ï¿½ï¿½
                 !(GetWindowLongA(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW)) {
                 
                 wchar_t title[512] = {0};
@@ -177,21 +177,21 @@ std::string GetForegroundAppName() {
                 if (titleLen > 0) {
                     std::string titleStr = WideStringToUtf8(title);
                     
-                    // ¼ÆËã´°¿ÚÖÊÁ¿ÆÀ·Ö
+                    // ï¿½ï¿½ï¿½ã´°ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
                     int score = 0;
                     
-                    // ÅÅ³ýÏµÍ³´°¿Ú
+                    // ï¿½Å³ï¿½ÏµÍ³ï¿½ï¿½ï¿½ï¿½
                     if (titleStr == "Program Manager" || 
                         titleStr == "Desktop" ||
                         titleStr.find("Windows Default Lock Screen") != std::string::npos) {
-                        return TRUE; // Ìø¹ý
+                        return TRUE; // ï¿½ï¿½ï¿½ï¿½
                     }
                     
-                    // ¼Ó·ÖÏî
-                    if (titleStr.find(" - ") != std::string::npos) score += 10;  // ÓÐÓ¦ÓÃÃû
-                    if (titleLen > 10) score += 5;  // ±êÌâ½Ï³¤
+                    // ï¿½Ó·ï¿½ï¿½ï¿½
+                    if (titleStr.find(" - ") != std::string::npos) score += 10;  // ï¿½ï¿½Ó¦ï¿½ï¿½ï¿½ï¿½
+                    if (titleLen > 10) score += 5;  // ï¿½ï¿½ï¿½ï¿½Ï³ï¿½
                     
-                    // »ñÈ¡´°¿Ú´óÐ¡£¬´ó´°¿Ú¼Ó·Ö
+                    // ï¿½ï¿½È¡ï¿½ï¿½ï¿½Ú´ï¿½Ð¡ï¿½ï¿½ï¿½ó´°¿Ú¼Ó·ï¿½
                     RECT rect;
                     if (GetWindowRect(hwnd, &rect)) {
                         int width = rect.right - rect.left;
@@ -199,7 +199,7 @@ std::string GetForegroundAppName() {
                         if (width > 200 && height > 200) score += 5;
                     }
                     
-                    // Èç¹ûÕâ¸ö´°¿ÚÆÀ·Ö¸ü¸ß£¬Ñ¡ÔñËü
+                    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¸ï¿½ï¿½ß£ï¿½Ñ¡ï¿½ï¿½ï¿½ï¿½
                     if (score > pInfo->score) {
                         pInfo->bestWindow = hwnd;
                         pInfo->title = titleStr;
@@ -208,15 +208,15 @@ std::string GetForegroundAppName() {
                     }
                 }
             }
-            return TRUE; // ¼ÌÐøÃ¶¾Ù
+            return TRUE; // ï¿½ï¿½ï¿½ï¿½Ã¶ï¿½ï¿½
         }, reinterpret_cast<LPARAM>(&info));
         
         if (!info.title.empty() && info.score > 0) {
             return info.title;
         }
         
-        // ·½·¨4: ×îºóµÄ½ø³ÌÃ¶¾Ùºó±¸ (ÐÂÔö)
-        // Èç¹û´°¿Ú·½·¨¶¼Ê§°Ü£¬³¢ÊÔÕÒ×î»îÔ¾µÄ½ø³Ì
+        // ï¿½ï¿½ï¿½ï¿½4: ï¿½ï¿½ï¿½Ä½ï¿½ï¿½ï¿½Ã¶ï¿½Ùºï¿½ (ï¿½ï¿½ï¿½ï¿½)
+        // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ú·ï¿½ï¿½ï¿½ï¿½ï¿½Ê§ï¿½Ü£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ô¾ï¿½Ä½ï¿½ï¿½ï¿½
         try {
             DWORD processes[1024];
             DWORD bytesReturned;
@@ -232,7 +232,7 @@ std::string GetForegroundAppName() {
                             if (GetModuleBaseNameW(hProcess, NULL, processName, sizeof(processName)/sizeof(wchar_t))) {
                                 std::wstring name(processName);
                                 
-                                // Ñ°ÕÒ³£¼ûµÄÓÃ»§Ó¦ÓÃ³ÌÐò
+                                // Ñ°ï¿½Ò³ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ã»ï¿½Ó¦ï¿½Ã³ï¿½ï¿½ï¿½
                                 if (name.find(L"notepad") != std::wstring::npos ||
                                     name.find(L"calc") != std::wstring::npos ||
                                     name.find(L"chrome") != std::wstring::npos ||
@@ -242,7 +242,7 @@ std::string GetForegroundAppName() {
                                     
                                     CloseHandle(hProcess);
                                     
-                                    // È¥µô.exeÀ©Õ¹Ãû
+                                    // È¥ï¿½ï¿½.exeï¿½ï¿½Õ¹ï¿½ï¿½
                                     size_t dotPos = name.find_last_of(L'.');
                                     if (dotPos != std::wstring::npos) {
                                         name = name.substr(0, dotPos);
@@ -256,20 +256,20 @@ std::string GetForegroundAppName() {
                 }
             }
         } catch (...) {
-            // ºöÂÔ½ø³ÌÃ¶¾Ù´íÎó
+            // ï¿½ï¿½ï¿½Ô½ï¿½ï¿½ï¿½Ã¶ï¿½Ù´ï¿½ï¿½ï¿½
         }
         
-        // ·½·¨5: ÖÇÄÜÄ¬ÈÏÖµ (¸Ä½ø)
-        // ¼ì²éÊÇ·ñÕæµÄÊÇ×ÀÃæ×´Ì¬
+        // ï¿½ï¿½ï¿½ï¿½5: ï¿½ï¿½ï¿½ï¿½Ä¬ï¿½ï¿½Öµ (ï¿½Ä½ï¿½)
+        // ï¿½ï¿½ï¿½ï¿½Ç·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×´Ì¬
         HWND desktopWindow = GetDesktopWindow();
         HWND shellWindow = GetShellWindow();
         
         if (hwnd == desktopWindow || hwnd == shellWindow || hwnd == NULL) {
-            // ÕæµÄÊÇ×ÀÃæ×´Ì¬£¬µ«Ìá¹©¸üÓÐÓÃµÄÐÅÏ¢
+            // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×´Ì¬ï¿½ï¿½ï¿½ï¿½ï¿½á¹©ï¿½ï¿½ï¿½ï¿½ï¿½Ãµï¿½ï¿½ï¿½Ï¢
             return "Desktop";
         }
         
-        // Èç¹ûËùÓÐ·½·¨¶¼Ê§°Ü£¬·µ»ØÔöÇ¿µÄÎ´Öª×´Ì¬
+        // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð·ï¿½ï¿½ï¿½ï¿½ï¿½Ê§ï¿½Ü£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ç¿ï¿½ï¿½Î´Öª×´Ì¬
         return "Unknown";
     }
     catch (...) {
@@ -277,7 +277,7 @@ std::string GetForegroundAppName() {
     }
 }
 
-// ¸¨Öúº¯Êý£º½«Unicode×Ö·û´®×ª»»ÎªUTF-8
+// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Unicodeï¿½Ö·ï¿½ï¿½ï¿½×ªï¿½ï¿½ÎªUTF-8
 std::string WideStringToUtf8(const std::wstring& wstr) {
     if (wstr.empty()) return std::string();
     
@@ -292,7 +292,7 @@ std::string WideStringToUtf8(const std::wstring& wstr) {
     }
 }
 
-// ÖØÔØ°æ±¾£º´Ówchar_t*×ª»»
+// ï¿½ï¿½ï¿½Ø°æ±¾ï¿½ï¿½ï¿½ï¿½wchar_t*×ªï¿½ï¿½
 std::string WideStringToUtf8(const wchar_t* wstr) {
     if (!wstr || wcslen(wstr) == 0) return std::string();
     return WideStringToUtf8(std::wstring(wstr));
@@ -330,7 +330,7 @@ bool IsCharging() {
 // CPU usage calculation
 double GetCPUUsage() {
     try {
-        // Ê¹ÓÃÏµÍ³ÕûÌåCPUÊ¹ÓÃÂÊ¼ÆËã
+        // Ê¹ï¿½ï¿½ÏµÍ³ï¿½ï¿½ï¿½ï¿½CPUÊ¹ï¿½ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½
         static FILETIME s_ftPrevSysIdle = {0};
         static FILETIME s_ftPrevSysKernel = {0};
         static FILETIME s_ftPrevSysUser = {0};
@@ -338,12 +338,12 @@ double GetCPUUsage() {
         
         FILETIME ftSysIdle, ftSysKernel, ftSysUser;
         
-        // »ñÈ¡ÏµÍ³Ê±¼ä
+        // ï¿½ï¿½È¡ÏµÍ³Ê±ï¿½ï¿½
         if (!GetSystemTimes(&ftSysIdle, &ftSysKernel, &ftSysUser)) {
             return -1.0;
         }
         
-        // µÚÒ»´Îµ÷ÓÃ£¬±£´æµ±Ç°Öµ²¢·µ»Ø0
+        // ï¿½ï¿½Ò»ï¿½Îµï¿½ï¿½Ã£ï¿½ï¿½ï¿½ï¿½æµ±Ç°Öµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½0
         if (s_firstCall) {
             s_ftPrevSysIdle = ftSysIdle;
             s_ftPrevSysKernel = ftSysKernel;
@@ -352,7 +352,7 @@ double GetCPUUsage() {
             return 0.0;
         }
         
-        // ×ª»»Îª64Î»Öµ
+        // ×ªï¿½ï¿½Îª64Î»Öµ
         ULARGE_INTEGER sysIdle, sysKernel, sysUser;
         ULARGE_INTEGER prevSysIdle, prevSysKernel, prevSysUser;
         
@@ -370,27 +370,27 @@ double GetCPUUsage() {
         prevSysUser.LowPart = s_ftPrevSysUser.dwLowDateTime;
         prevSysUser.HighPart = s_ftPrevSysUser.dwHighDateTime;
         
-        // ¼ÆËãÊ±¼ä²î
+        // ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½ï¿½
         ULONGLONG idleDiff = sysIdle.QuadPart - prevSysIdle.QuadPart;
         ULONGLONG kernelDiff = sysKernel.QuadPart - prevSysKernel.QuadPart;
         ULONGLONG userDiff = sysUser.QuadPart - prevSysUser.QuadPart;
         
-        // ×¢Òâ£ºkernelDiff°üº¬ÁËidle time£¬ËùÒÔÐèÒª¼õÈ¥
+        // ×¢ï¿½â£ºkernelDiffï¿½ï¿½ï¿½ï¿½ï¿½ï¿½idle timeï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Òªï¿½ï¿½È¥
         ULONGLONG systemDiff = kernelDiff + userDiff;
         ULONGLONG totalDiff = systemDiff;
         
         double cpuUsage = 0.0;
         if (totalDiff > 0) {
-            // CPUÊ¹ÓÃÂÊ = (×ÜÊ±¼ä - ¿ÕÏÐÊ±¼ä) / ×ÜÊ±¼ä * 100
+            // CPUÊ¹ï¿½ï¿½ï¿½ï¿½ = (ï¿½ï¿½Ê±ï¿½ï¿½ - ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½) / ï¿½ï¿½Ê±ï¿½ï¿½ * 100
             cpuUsage = (double)(totalDiff - idleDiff) * 100.0 / (double)totalDiff;
         }
         
-        // ±£´æµ±Ç°Öµ¹©ÏÂ´ÎÊ¹ÓÃ
+        // ï¿½ï¿½ï¿½æµ±Ç°Öµï¿½ï¿½ï¿½Â´ï¿½Ê¹ï¿½ï¿½
         s_ftPrevSysIdle = ftSysIdle;
         s_ftPrevSysKernel = ftSysKernel;
         s_ftPrevSysUser = ftSysUser;
         
-        // È·±£·µ»ØÖµÔÚºÏÀí·¶Î§ÄÚ
+        // È·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Öµï¿½Úºï¿½ï¿½ï¿½ï¿½ï¿½Î§ï¿½ï¿½
         if (cpuUsage < 0.0) cpuUsage = 0.0;
         if (cpuUsage > 100.0) cpuUsage = 100.0;
         
@@ -406,7 +406,7 @@ double GetMemoryUsage() {
         MEMORYSTATUSEX memInfo;
         memInfo.dwLength = sizeof(MEMORYSTATUSEX);
         if (GlobalMemoryStatusEx(&memInfo)) {
-            // ·µ»ØÄÚ´æÊ¹ÓÃ°Ù·Ö±È
+            // ï¿½ï¿½ï¿½ï¿½ï¿½Ú´ï¿½Ê¹ï¿½Ã°Ù·Ö±ï¿½
             return static_cast<double>(memInfo.dwMemoryLoad);
         }
         return -1.0;
@@ -421,7 +421,7 @@ double GetMemoryUsed() {
         MEMORYSTATUSEX memInfo;
         memInfo.dwLength = sizeof(MEMORYSTATUSEX);
         if (GlobalMemoryStatusEx(&memInfo)) {
-            // ¼ÆËãÒÑÓÃÄÚ´æ²¢×ª»»ÎªGB
+            // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ú´æ²¢×ªï¿½ï¿½ÎªGB
             double usedMemoryBytes = static_cast<double>(memInfo.ullTotalPhys - memInfo.ullAvailPhys);
             double usedMemoryGB = usedMemoryBytes / (1024.0 * 1024.0 * 1024.0);
             return usedMemoryGB;
@@ -438,7 +438,7 @@ double GetTotalMemory() {
         MEMORYSTATUSEX memInfo;
         memInfo.dwLength = sizeof(MEMORYSTATUSEX);
         if (GlobalMemoryStatusEx(&memInfo)) {
-            // ½«×Ö½Ú×ª»»ÎªGB
+            // ï¿½ï¿½ï¿½Ö½ï¿½×ªï¿½ï¿½ÎªGB
             double totalMemoryBytes = static_cast<double>(memInfo.ullTotalPhys);
             double totalMemoryGB = totalMemoryBytes / (1024.0 * 1024.0 * 1024.0);
             return totalMemoryGB;
@@ -521,7 +521,7 @@ std::string GetNetworkType() {
 // Network speed calculation using Performance Counters
 double GetNetworkSpeed() {
     try {
-        // Ê¹ÓÃ´«Í³µÄGetIfTable API (¸üºÃµÄ¼æÈÝÐÔ)
+        // Ê¹ï¿½Ã´ï¿½Í³ï¿½ï¿½GetIfTable API (ï¿½ï¿½ï¿½ÃµÄ¼ï¿½ï¿½ï¿½ï¿½ï¿½)
         static ULONGLONG s_prevBytesReceived = 0;
         static ULONGLONG s_prevBytesSent = 0;
         static std::chrono::steady_clock::time_point s_prevTime;
@@ -531,11 +531,11 @@ double GetNetworkSpeed() {
         ULONGLONG currentBytesSent = 0;
         auto currentTime = std::chrono::steady_clock::now();
         
-        // Ê¹ÓÃGetIfTable»ñÈ¡ÍøÂç½Ó¿ÚÐÅÏ¢ (¼æÈÝÐÔ¸üºÃ)
+        // Ê¹ï¿½ï¿½GetIfTableï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½Ó¿ï¿½ï¿½ï¿½Ï¢ (ï¿½ï¿½ï¿½ï¿½ï¿½Ô¸ï¿½ï¿½ï¿½)
         PMIB_IFTABLE pIfTable = nullptr;
         DWORD dwSize = 0;
         
-        // »ñÈ¡ËùÐè»º³åÇø´óÐ¡
+        // ï¿½ï¿½È¡ï¿½ï¿½ï¿½è»ºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¡
         DWORD dwRetVal = GetIfTable(pIfTable, &dwSize, 0);
         if (dwRetVal == ERROR_INSUFFICIENT_BUFFER) {
             pIfTable = (MIB_IFTABLE*)malloc(dwSize);
@@ -546,18 +546,18 @@ double GetNetworkSpeed() {
             return -1.0;
         }
         
-        // »ñÈ¡½Ó¿Ú±í
+        // ï¿½ï¿½È¡ï¿½Ó¿Ú±ï¿½
         dwRetVal = GetIfTable(pIfTable, &dwSize, 0);
         if (dwRetVal != NO_ERROR) {
             free(pIfTable);
             return -1.0;
         }
         
-        // ±éÀúËùÓÐÍøÂç½Ó¿Ú£¬ÀÛ¼Æ»î¶¯½Ó¿ÚµÄÁ÷Á¿
+        // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¿Ú£ï¿½ï¿½Û¼Æ»î¶¯ï¿½Ó¿Úµï¿½ï¿½ï¿½ï¿½ï¿½
         for (DWORD i = 0; i < pIfTable->dwNumEntries; i++) {
             MIB_IFROW* pIfRow = &pIfTable->table[i];
             
-            // Ö»Í³¼Æ»î¶¯µÄÎïÀíÍøÂç½Ó¿Ú (Ìø¹ý»·»Ø½Ó¿ÚµÈ)
+            // Ö»Í³ï¿½Æ»î¶¯ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¿ï¿½ (ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ø½Ó¿Úµï¿½)
             if (pIfRow->dwOperStatus == MIB_IF_OPER_STATUS_OPERATIONAL &&
                 pIfRow->dwType != MIB_IF_TYPE_LOOPBACK &&
                 (pIfRow->dwType == MIB_IF_TYPE_ETHERNET || 
@@ -572,7 +572,7 @@ double GetNetworkSpeed() {
         
         free(pIfTable);
         
-        // µÚÒ»´Îµ÷ÓÃ£¬±£´æµ±Ç°Öµ²¢·µ»Ø0
+        // ï¿½ï¿½Ò»ï¿½Îµï¿½ï¿½Ã£ï¿½ï¿½ï¿½ï¿½æµ±Ç°Öµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½0
         if (s_firstCall) {
             s_prevBytesReceived = currentBytesReceived;
             s_prevBytesSent = currentBytesSent;
@@ -581,15 +581,15 @@ double GetNetworkSpeed() {
             return 0.0;
         }
         
-        // ¼ÆËãÊ±¼ä¼ä¸ô
+        // ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï¿½
         auto timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - s_prevTime);
         double timeSeconds = timeDiff.count() / 1000.0;
         
         if (timeSeconds <= 0.0) {
-            return -1.0; // ±ÜÃâ³ýÁã
+            return -1.0; // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         }
         
-        // ´¦Àí¼ÆÊýÆ÷»ØÈÆµÄÇé¿ö
+        // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½
         ULONGLONG bytesDiffReceived = 0;
         ULONGLONG bytesDiffSent = 0;
         
@@ -602,17 +602,17 @@ double GetNetworkSpeed() {
         
         ULONGLONG totalBytesDiff = bytesDiffReceived + bytesDiffSent;
         
-        // ¼ÆËãËÙ¶È: ×Ö½Ú/Ãë -> Mbps
+        // ï¿½ï¿½ï¿½ï¿½ï¿½Ù¶ï¿½: ï¿½Ö½ï¿½/ï¿½ï¿½ -> Mbps
         // 1 Mbps = 1,000,000 bits/sec = 125,000 bytes/sec
         double bytesPerSecond = static_cast<double>(totalBytesDiff) / timeSeconds;
-        double mbps = (bytesPerSecond * 8.0) / (1000.0 * 1000.0); // ×ª»»ÎªMbps
+        double mbps = (bytesPerSecond * 8.0) / (1000.0 * 1000.0); // ×ªï¿½ï¿½ÎªMbps
         
-        // ±£´æµ±Ç°Öµ¹©ÏÂ´ÎÊ¹ÓÃ
+        // ï¿½ï¿½ï¿½æµ±Ç°Öµï¿½ï¿½ï¿½Â´ï¿½Ê¹ï¿½ï¿½
         s_prevBytesReceived = currentBytesReceived;
         s_prevBytesSent = currentBytesSent;
         s_prevTime = currentTime;
         
-        // È·±£·µ»ØÖµºÏÀí (ÏÞÖÆ×î´óÖµÎª10Gbps)
+        // È·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Öµï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÖµÎª10Gbps)
         if (mbps < 0.0) mbps = 0.0;
         if (mbps > 10000.0) mbps = 10000.0;
         
@@ -680,8 +680,8 @@ void OnWindowEvent(const WindowInfo& info) {
         std::string appName = GetAppNameFromWindowInfo(info);
         std::string windowTitle = WideStringToUtf8(info.windowTitle);
         
-        // Skip empty or invalid app names
-        if (appName.empty() || appName == "Unknown" || appName == "Desktop") {
+        // Skip empty, invalid, or system app names
+        if (appName.empty() || appName == "Unknown" || appName == "Desktop" || appName == "csc_ui") {
             return;
         }
         
@@ -780,10 +780,13 @@ void CleanupOldRecords() {
 std::vector<ActiveAppRecord> GetRecentPeriodActiveAppList() {
     try {
         std::lock_guard<std::mutex> lock(g_historyMutex);
-        
+
         // Clean up old records first
         CleanupOldRecords();
-        
+
+        // Build result with current app
+        std::vector<ActiveAppRecord> result = g_activeAppHistory;
+
         // Add current active app if it has been running for some time
         auto now = std::chrono::system_clock::now();
         if (!g_lastActiveApp.empty() && g_lastActiveApp != "Unknown" && g_lastActiveApp != "Desktop") {
@@ -793,16 +796,20 @@ std::vector<ActiveAppRecord> GetRecentPeriodActiveAppList() {
                 currentRecord.appName = g_lastActiveApp;
                 currentRecord.timestamp = g_lastAppStartTime;
                 currentRecord.durationSeconds = static_cast<int>(duration.count());
-                currentRecord.windowTitle = g_lastActiveAppWindowTitle; // Use stored window title
-                
-                // Add to temporary result
-                std::vector<ActiveAppRecord> result = g_activeAppHistory;
+                currentRecord.windowTitle = g_lastActiveAppWindowTitle;
+
                 result.push_back(currentRecord);
-                return result;
             }
         }
-        
-        return g_activeAppHistory;
+
+        // Limit to most recent 10 apps to prevent unbounded growth
+        const size_t MAX_RECENT_APPS = 10;
+        if (result.size() > MAX_RECENT_APPS) {
+            // Keep only the last 10 apps (most recent)
+            result.erase(result.begin(), result.begin() + (result.size() - MAX_RECENT_APPS));
+        }
+
+        return result;
     }
     catch (...) {
         return std::vector<ActiveAppRecord>();

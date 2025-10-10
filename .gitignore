@@ -29,3 +29,44 @@ models/
 *.pt
 *.bin
 yolov8n.pt
+
+# Windows build artifacts
+windows_code/build/
+windows_code/.vs/
+windows_code/x64/
+windows_code/Debug/
+windows_code/Release/
+*.exe
+*.dll
+*.lib
+*.obj
+*.pdb
+*.ilk
+*.log
+*.tlog
+*.idb
+*.ipch
+*.suo
+*.user
+*.aps
+*.ncb
+*.opensdf
+*.sdf
+*.cachefile
+*.VC.db
+*.VC.opendb
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+*.cmake
+!CMakeLists.txt
+
+# Windows reserved filenames
+nul
+con
+prn
+aux
+com[1-9]
+lpt[1-9]

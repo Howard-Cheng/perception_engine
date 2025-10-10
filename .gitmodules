@@ -1,0 +1,3 @@
+[submodule "windows_code/third-party/whisper.cpp"]
+	path = windows_code/third-party/whisper.cpp
+	url = https://github.com/ggerganov/whisper.cpp

@@ -478,6 +478,25 @@ numpy==1.26.4
 pillow==11.0.0
 ```
 
+### C++ Third-Party Libraries
+
+**OpenCV 4.10.0** (Required for camera vision in C++)
+- **Location:** `windows_code/third-party/opencv/`
+- **Purpose:** Camera capture and image preprocessing
+- **Usage:** Both C++ (`CameraVisionEngine.cpp`) and Python (`win_camera_fastvlm_pytorch.py`)
+- **Status:** ✅ Already included in repository
+- **If Missing:** Download from https://opencv.org/releases/ and extract to `third-party/opencv/`
+
+**whisper.cpp** (Required for speech recognition)
+- **Location:** `windows_code/third-party/whisper.cpp/`
+- **Purpose:** CPU-optimized Whisper inference
+- **Status:** Git submodule (auto-cloned)
+
+**ONNX Runtime** (Required for Silero VAD)
+- **Location:** `windows_code/third-party/onnxruntime/`
+- **Purpose:** VAD model inference
+- **Status:** Auto-downloaded by CMake
+
 ### Build Tools
 
 - **CMake:** 3.20+
@@ -912,6 +931,29 @@ git submodule update --init --recursive
 # CMake should auto-download
 # Or manually download and place in third-party/onnxruntime/
 ```
+
+**Error: OpenCV not found**
+```
+CMake Error: opencv_world*.lib not found
+# Or
+fatal error C1083: Cannot open include file: 'opencv2/opencv.hpp'
+```
+
+**Solution:**
+OpenCV should already be included in the repository at `windows_code/third-party/opencv/`.
+
+If missing:
+```powershell
+# Download OpenCV 4.10.0 for Windows
+# Visit: https://opencv.org/releases/
+# Download: opencv-4.10.0-windows.exe
+# Extract to: windows_code/third-party/opencv/
+
+# Verify structure:
+dir windows_code\third-party\opencv\opencv\build\x64\vc16\lib\opencv_world4100.lib
+```
+
+**Note:** The repository already contains OpenCV, so your colleague should not need to download it separately. If they're missing it, they may need to re-clone the repository or check their `.gitignore` settings.
 
 ---
 

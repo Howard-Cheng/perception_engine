@@ -39,10 +39,10 @@ void ContextCollector::UpdateCache() {
     auto isCharging = WindowsAPIs::IsCharging();
     
     // Collect system performance data
-    auto cpuUsage = WindowsAPIs::GetCPUUsage();          // CPUʹ�ðٷֱ�
-    auto memoryUsage = WindowsAPIs::GetMemoryUsage();    // �ڴ�ʹ�ðٷֱ�
-    auto memoryUsed = WindowsAPIs::GetMemoryUsed();      // �����ڴ�GB
-    auto totalMemory = WindowsAPIs::GetTotalMemory();    // ���ڴ�GB
+    auto cpuUsage = WindowsAPIs::GetCPUUsage();
+    auto memoryUsage = WindowsAPIs::GetMemoryUsage();
+    auto memoryUsed = WindowsAPIs::GetMemoryUsed();
+    auto totalMemory = WindowsAPIs::GetTotalMemory();
     
     auto networkConnected = WindowsAPIs::IsNetworkConnected();
     auto networkType = WindowsAPIs::GetNetworkType();
@@ -51,6 +51,9 @@ void ContextCollector::UpdateCache() {
     
     // Get recent active apps list
     auto recentApps = WindowsAPIs::GetRecentPeriodActiveAppList();
+    
+    // NEW: Get current active app content using UIA
+    auto activeAppContent = WindowsAPIs::GetCurrentActiveAppContent();
 
     // Lock cacheMutex for the entire JSON building process
     std::lock_guard<std::mutex> lock(cacheMutex);
@@ -72,7 +75,7 @@ void ContextCollector::UpdateCache() {
         cachedContext.setRaw("cpuUsage", "null");
     }
     
-    // memoryUsage �ڴ�ʹ�ðٷֱ�
+    // memoryUsage: Memory usage percentage
     if (memoryUsage >= 0) {
         std::ostringstream memPercentStream;
         memPercentStream << std::fixed << std::setprecision(2) << memoryUsage;
@@ -81,7 +84,7 @@ void ContextCollector::UpdateCache() {
         cachedContext.setRaw("memoryUsage", "null");
     }
     
-    // memoryUsed ��GBΪ��λ
+    // memoryUsed: Used memory in GB
     if (memoryUsed >= 0) {
         std::ostringstream memUsedStream;
         memUsedStream << std::fixed << std::setprecision(2) << memoryUsed;
@@ -90,7 +93,7 @@ void ContextCollector::UpdateCache() {
         cachedContext.setRaw("memoryUsedGB", "null");
     }
     
-    // totalMemory ��GBΪ��λ
+    // totalMemory: Total memory in GB
     if (totalMemory >= 0) {
         std::ostringstream totalMemStream;
         totalMemStream << std::fixed << std::setprecision(2) << totalMemory;
@@ -102,9 +105,9 @@ void ContextCollector::UpdateCache() {
     cachedContext.set("networkConnected", networkConnected);
     cachedContext.set("networkType", networkType);
     
-    // ��ȷ����WinRT location����
+    // Handle WinRT location result properly
     if (location.valid && location.latitude != 0.0 && location.longitude != 0.0) {
-        // ��Ч��GPS����
+        // Valid GPS coordinates
         std::ostringstream latStream, lonStream;
         latStream << std::fixed << std::setprecision(8) << location.latitude;
         lonStream << std::fixed << std::setprecision(8) << location.longitude;
@@ -112,7 +115,7 @@ void ContextCollector::UpdateCache() {
         cachedContext.setRaw("locationLon", lonStream.str());
         cachedContext.setRaw("locationValid", "true");
     } else {
-        // ��Ч���޷���ȡλ��
+        // Invalid or unable to get location
         cachedContext.setRaw("locationLat", "null");
         cachedContext.setRaw("locationLon", "null");
         cachedContext.setRaw("locationValid", "false");
@@ -191,6 +194,14 @@ void ContextCollector::UpdateCache() {
 
     // Use setRaw to set the array as a proper JSON array (not a quoted string)
     cachedContext.setRaw("RecentPeriodActiveApps", recentAppsStream.str());
+    
+    // NEW: Add active app content to JSON
+    if (!activeAppContent.empty()) {
+        cachedContext.set("activeAppContent", activeAppContent);
+    } else {
+        cachedContext.setRaw("activeAppContent", "null");
+    }
+    
     cachedContext.set("timestamp", timestamp);
 
     // cacheMutex is released here automatically
@@ -346,21 +357,21 @@ std::string ContextCollector::GenerateFusedContext(const std::string& voiceText)
     bool isCharging = cachedContext.getBool("isCharging", false);
     if (battery < 20 && !isCharging) {
         if (fused.tellp() > 0) fused << " | ";
-        fused << "⚠️ Low battery: " << battery << "%";
+        fused << "Low battery: " << battery << "%";
     }
 
     // Network status
     bool networkConnected = cachedContext.getBool("networkConnected", true);
     if (!networkConnected) {
         if (fused.tellp() > 0) fused << " | ";
-        fused << "⚠️ Offline";
+        fused << "Offline";
     }
 
     // CPU usage (if high)
     double cpuUsage = cachedContext.getDouble("cpuUsage", 0.0);
     if (cpuUsage > 80.0) {
         if (fused.tellp() > 0) fused << " | ";
-        fused << "⚠️ High CPU: " << static_cast<int>(cpuUsage) << "%";
+        fused << "High CPU: " << static_cast<int>(cpuUsage) << "%";
     }
 
     std::string result = fused.str();

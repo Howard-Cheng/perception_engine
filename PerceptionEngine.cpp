@@ -1,5 +1,6 @@
 ﻿#define WIN32_LEAN_AND_MEAN
 #define _WINSOCKAPI_    // Prevent inclusion of winsock.h
+#include "Logger.h"  // NEW: Add Logger first
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -30,20 +31,20 @@ public:
     
     void OnStart() override {
         try {
-            LogMessage("[DEBUG] Starting PerceptionEngineService...");
+            LOG_INFO("Starting PerceptionEngineService...");
 
             // Initialize context collector
             contextCollector = std::make_unique<ContextCollector>();
             contextCollector->StartPeriodicUpdate();
-            LogMessage("[DEBUG] Context collector started");
+            LOG_INFO("Context collector started");
 
             // Initialize audio capture engine
             audioEngine = std::make_unique<AudioCaptureEngine>();
             if (!audioEngine->Initialize("models/whisper/ggml-tiny.en.bin")) {
-                LogMessage("[WARNING] Failed to initialize audio engine");
+                LOG_WARN("Failed to initialize audio engine");
                 audioEngine.reset();
             } else {
-                LogMessage("[DEBUG] Audio engine initialized");
+                LOG_INFO("Audio engine initialized");
 
                 // Set callback to update context when new transcription arrives
                 audioEngine->SetTranscriptionCallback([this](const std::string& transcription) {
@@ -51,13 +52,13 @@ public:
                         // Get latency from audio engine metrics
                         auto metrics = audioEngine->GetMetrics();
                         contextCollector->UpdateVoiceContext(transcription, metrics.whisperLatencyMs);
-                        LogMessage("[DEBUG] Voice transcription: " + transcription);
+                        LOG_INFO_FMT("Voice transcription: %s", transcription.c_str());
                     }
                 });
 
                 // Start audio capture
                 if (audioEngine->Start()) {
-                    LogMessage("[DEBUG] Audio capture started");
+                    LOG_INFO("Audio capture started");
 
                     // Start polling thread to pull transcriptions
                     audioPollingThread = std::make_unique<std::thread>([this]() {
@@ -67,17 +68,17 @@ public:
                         }
                     });
                 } else {
-                    LogMessage("[WARNING] Failed to start audio capture");
+                    LOG_WARN("Failed to start audio capture");
                 }
             }
 
             // Initialize camera vision engine
             cameraEngine = std::make_unique<CameraVisionEngine>();
             if (!cameraEngine->Initialize("models/fastvlm", 0)) {
-                LogMessage("[WARNING] Failed to initialize camera engine");
+                LOG_WARN("Failed to initialize camera engine");
                 cameraEngine.reset();
             } else {
-                LogMessage("[DEBUG] Camera vision engine initialized");
+                LOG_INFO("Camera vision engine initialized");
 
                 // Start camera processing thread (every 10 seconds)
                 cameraThread = std::make_unique<std::thread>([this]() {
@@ -88,25 +89,25 @@ public:
                                 float latency = cameraEngine->GetLastLatencyMs();
                                 if (contextCollector) {
                                     contextCollector->UpdateCameraContext(description, latency);
-                                    LogMessage("[DEBUG] Camera scene: " + description + " (latency: " + std::to_string(static_cast<int>(latency)) + "ms)");
+                                    LOG_INFO_FMT("Camera scene: %s (latency: %d ms)", description.c_str(), static_cast<int>(latency));
                                 }
                             }
                         }
                         std::this_thread::sleep_for(std::chrono::seconds(10));
                     }
                 });
-                LogMessage("[DEBUG] Camera processing thread started");
+                LOG_INFO("Camera processing thread started");
             }
 
             // Initialize HTTP server
             httpServer = std::make_unique<HttpServer>(8777);
-            LogMessage("[DEBUG] HTTP server created on port 8777");
+            LOG_INFO("HTTP server created on port 8777");
 
             // Set request handler
             httpServer->SetRequestHandler([this](const HttpRequest& request, HttpResponse& response) {
                 HandleContextRequest(request, response);
             });
-            LogMessage("[DEBUG] Request handler set");
+            LOG_INFO("Request handler set");
 
             // Start HTTP server in a separate thread for service mode
             serviceRunning = true;
@@ -114,20 +115,18 @@ public:
                 RunHttpServer();
             });
 
-            LogMessage("[SUCCESS] HTTP server thread started successfully");
-            LogMessage("[INFO] Server accessible at: http://localhost:8777/context");
+            LOG_INFO("HTTP server thread started successfully");
+            LOG_INFO("Server accessible at: http://localhost:8777/context");
         }
         catch (const std::exception& e) {
-            LogMessage("[ERROR] Service start error: " + std::string(e.what()));
-            // Log error to Windows Event Log
-            OutputDebugStringA(("Service start error: " + std::string(e.what())).c_str());
+            LOG_FATAL_FMT("Service start error: %s", e.what());
             throw;
         }
     }
     
     void OnStop() override {
         try {
-            LogMessage("[DEBUG] Stopping PerceptionEngineService...");
+            LOG_INFO("Stopping PerceptionEngineService...");
 
             // Signal service to stop
             serviceRunning = false;
@@ -135,42 +134,42 @@ public:
             // Stop audio engine
             if (audioEngine) {
                 audioEngine->Stop();
-                LogMessage("[DEBUG] Audio engine stopped");
+                LOG_INFO("Audio engine stopped");
             }
 
             // Wait for audio polling thread
             if (audioPollingThread && audioPollingThread->joinable()) {
                 audioPollingThread->join();
-                LogMessage("[DEBUG] Audio polling thread joined");
+                LOG_INFO("Audio polling thread joined");
             }
 
             // Wait for camera thread
             if (cameraThread && cameraThread->joinable()) {
                 cameraThread->join();
-                LogMessage("[DEBUG] Camera thread joined");
+                LOG_INFO("Camera thread joined");
             }
 
             // Clean up camera engine
             if (cameraEngine) {
                 cameraEngine.reset();
-                LogMessage("[DEBUG] Camera engine stopped");
+                LOG_INFO("Camera engine stopped");
             }
 
             if (httpServer) {
                 httpServer->Stop();
-                LogMessage("[DEBUG] HTTP server stop signal sent");
+                LOG_INFO("HTTP server stop signal sent");
             }
 
             // Wait for server thread to finish
             if (serverThread && serverThread->joinable()) {
                 serverThread->join();
-                LogMessage("[DEBUG] HTTP server thread joined");
+                LOG_INFO("HTTP server thread joined");
             }
 
             if (contextCollector) {
                 contextCollector->StopPeriodicUpdate();
                 contextCollector.reset();
-                LogMessage("[DEBUG] Context collector stopped");
+                LOG_INFO("Context collector stopped");
             }
 
             audioEngine.reset();
@@ -178,11 +177,10 @@ public:
             httpServer.reset();
             serverThread.reset();
 
-            LogMessage("[SUCCESS] Service stopped successfully");
+            LOG_INFO("Service stopped successfully");
         }
         catch (...) {
-            LogMessage("[WARNING] Error during shutdown (ignored)");
-            // Ignore errors during shutdown
+            LOG_WARN("Error during shutdown (ignored)");
         }
     }
     
@@ -200,25 +198,25 @@ public:
 private:
     void RunHttpServer() {
         try {
-            LogMessage("[DEBUG] Starting HTTP server in service thread...");
+            LOG_INFO("Starting HTTP server in service thread...");
             
             if (!httpServer->Start()) {
-                LogMessage("[ERROR] Failed to start HTTP server in service mode!");
+                LOG_ERROR("Failed to start HTTP server in service mode!");
                 serviceRunning = false;
                 return;
             }
             
-            LogMessage("[SUCCESS] HTTP server started successfully on port 8777");
-            LogMessage("[INFO] Server is now listening on: http://localhost:8777");
-            LogMessage("[INFO] API endpoint: http://localhost:8777/context");
+            LOG_INFO("HTTP server started successfully on port 8777");
+            LOG_INFO("Server is now listening on: http://localhost:8777");
+            LOG_INFO("API endpoint: http://localhost:8777/context");
             
             // Run the server loop
             httpServer->Run();
             
-            LogMessage("[DEBUG] HTTP server loop ended");
+            LOG_INFO("HTTP server loop ended");
         }
         catch (const std::exception& e) {
-            LogMessage("[ERROR] HTTP server thread exception: " + std::string(e.what()));
+            LOG_ERROR_FMT("HTTP server thread exception: %s", e.what());
             serviceRunning = false;
         }
     }
@@ -235,7 +233,7 @@ private:
 
     void HandleContextRequest(const HttpRequest& request, HttpResponse& response) {
         try {
-            LogMessage("[DEBUG] Handling request: " + request.method + " " + request.path);
+            LOG_DEBUG_FMT("Handling request: %s %s", request.method.c_str(), request.path.c_str());
 
             if (request.path == "/context" && request.method == "GET") {
                 if (contextCollector) {
@@ -243,11 +241,11 @@ private:
                     response.SetHeader("Content-Type", "application/json");
                     response.SetBody(context.toString());
                     response.status = 200;
-                    LogMessage("[DEBUG] Returned context data successfully");
+                    LOG_DEBUG("Returned context data successfully");
                 } else {
                     response.SetBody("{\"error\":\"Service not initialized\"}");
                     response.status = 500;
-                    LogMessage("[ERROR] Context collector not initialized");
+                    LOG_ERROR("Context collector not initialized");
                 }
             }
             else if (request.path == "/dashboard" && request.method == "GET") {
@@ -255,7 +253,7 @@ private:
                 response.SetHeader("Content-Type", "text/html; charset=utf-8");
                 response.SetBody(html);
                 response.status = 200;
-                LogMessage("[DEBUG] Served dashboard HTML");
+                LOG_DEBUG("Served dashboard HTML");
             }
             else if (request.path == "/" && request.method == "GET") {
                 // Redirect root to dashboard
@@ -263,36 +261,31 @@ private:
                 response.SetHeader("Content-Type", "text/html; charset=utf-8");
                 response.SetBody(html);
                 response.status = 200;
-                LogMessage("[DEBUG] Served dashboard HTML from root");
+                LOG_DEBUG("Served dashboard HTML from root");
             }
             else {
                 response.SetBody("{\"error\":\"Not found\"}");
                 response.status = 404;
-                LogMessage("[DEBUG] Path not found: " + request.path);
+                LOG_DEBUG_FMT("Path not found: %s", request.path.c_str());
             }
         }
         catch (const std::exception& e) {
             response.SetBody("{\"error\":\"Internal server error\"}");
             response.status = 500;
-            LogMessage("[ERROR] Exception in request handler: " + std::string(e.what()));
+            LOG_ERROR_FMT("Exception in request handler: %s", e.what());
         }
-    }
-    
-    void LogMessage(const std::string& message) {
-        // For console mode, print to stdout
-        std::cout << message << std::endl;
-        
-        // For service mode, log to Windows Event Log and Debug Output
-        OutputDebugStringA((message + "\n").c_str());
-        
-        // Could also add Windows Event Log here if needed
-        // WriteToEventLog(message);
     }
 };
 
 int main(int argc, char* argv[]) {
-    std::cout << "Perception Engine v1.0" << std::endl;
-    std::cout << "======================" << std::endl;
+    // =========================================
+    // Initialize Logger FIRST (before anything)
+    // =========================================
+    Logger::GetInstance().Initialize("PerceptionEngine.log", LogLevel::DEBUG_L);
+    
+    LOG_INFO("=====================================");
+    LOG_INFO("Perception Engine v1.0");
+    LOG_INFO("=====================================");
     
     // Parse command line arguments
     if (argc > 1) {
@@ -301,50 +294,58 @@ int main(int argc, char* argv[]) {
         PerceptionEngineService service;
         
         if (arg == "--install") {
-            std::cout << "Installing Windows service..." << std::endl;
+            LOG_INFO("Installing Windows service...");
             if (service.Install()) {
-                std::cout << "Service installed successfully." << std::endl;
+                LOG_INFO("Service installed successfully.");
+                Logger::GetInstance().Shutdown();
                 return 0;
             } else {
-                std::cout << "Failed to install service. Run as administrator." << std::endl;
+                LOG_ERROR("Failed to install service. Run as administrator.");
+                Logger::GetInstance().Shutdown();
                 return 1;
             }
         }
         else if (arg == "--uninstall") {
-            std::cout << "Uninstalling Windows service..." << std::endl;
+            LOG_INFO("Uninstalling Windows service...");
             if (service.Uninstall()) {
-                std::cout << "Service uninstalled successfully." << std::endl;
+                LOG_INFO("Service uninstalled successfully.");
+                Logger::GetInstance().Shutdown();
                 return 0;
             } else {
-                std::cout << "Failed to uninstall service. Run as administrator." << std::endl;
+                LOG_ERROR("Failed to uninstall service. Run as administrator.");
+                Logger::GetInstance().Shutdown();
                 return 1;
             }
         }
         else if (arg == "--start") {
-            std::cout << "Starting Windows service..." << std::endl;
+            LOG_INFO("Starting Windows service...");
             if (service.Start()) {
-                std::cout << "Service started successfully." << std::endl;
+                LOG_INFO("Service started successfully.");
+                Logger::GetInstance().Shutdown();
                 return 0;
             } else {
-                std::cout << "Failed to start service." << std::endl;
+                LOG_ERROR("Failed to start service.");
+                Logger::GetInstance().Shutdown();
                 return 1;
             }
         }
         else if (arg == "--stop") {
-            std::cout << "Stopping Windows service..." << std::endl;
+            LOG_INFO("Stopping Windows service...");
             if (service.Stop()) {
-                std::cout << "Service stopped successfully." << std::endl;
+                LOG_INFO("Service stopped successfully.");
+                Logger::GetInstance().Shutdown();
                 return 0;
             } else {
-                std::cout << "Failed to stop service." << std::endl;
+                LOG_ERROR("Failed to stop service.");
+                Logger::GetInstance().Shutdown();
                 return 1;
             }
         }
         else if (arg == "--console") {
             // Run as console application for testing
-            std::cout << "Running Perception Engine as console application..." << std::endl;
-            std::cout << "Press Ctrl+C to stop." << std::endl;
-            std::cout << std::string(50, '-') << std::endl;
+            LOG_INFO("Running Perception Engine as console application...");
+            LOG_INFO("Press Ctrl+C to stop.");
+            LOG_INFO("-----------------------------------------------------");
             
             try {
                 // Create separate instances for console mode
@@ -352,25 +353,25 @@ int main(int argc, char* argv[]) {
                 ContextCollector collector;
                 AudioCaptureEngine audioEngine;
 
-                std::cout << "[DEBUG] Starting context collector..." << std::endl;
+                LOG_INFO("Starting context collector...");
                 collector.StartPeriodicUpdate();
 
                 // Initialize audio engine
-                std::cout << "[DEBUG] Initializing audio engine..." << std::endl;
+                LOG_INFO("Initializing audio engine...");
                 std::atomic<bool> audioRunning{false};
                 std::unique_ptr<std::thread> audioPollingThread;
 
-                if (audioEngine.Initialize("models/whisper/ggml-tiny.en.bin")) {
-                    std::cout << "[DEBUG] Audio engine initialized" << std::endl;
+                if (audioEngine.Initialize("D:/PerceiptionEngine_Howard/perception_engine/windows_code/build/bin/Release/models/whisper/ggml-tiny.en.bin")) {
+                    LOG_INFO("Audio engine initialized");
 
                     // Set callback
                     audioEngine.SetTranscriptionCallback([&collector](const std::string& transcription) {
                         collector.UpdateVoiceContext(transcription);
-                        std::cout << "[DEBUG] Voice: " << transcription << std::endl;
+                        LOG_INFO_FMT("Voice: %s", transcription.c_str());
                     });
 
                     if (audioEngine.Start()) {
-                        std::cout << "[DEBUG] Audio capture started" << std::endl;
+                        LOG_INFO("Audio capture started");
                         audioRunning = true;
 
                         // Start polling thread
@@ -381,57 +382,24 @@ int main(int argc, char* argv[]) {
                             }
                         });
                     } else {
-                        std::cout << "[WARNING] Failed to start audio capture" << std::endl;
+                        LOG_WARN("Failed to start audio capture");
                     }
                 } else {
-                    std::cout << "[WARNING] Failed to initialize audio engine" << std::endl;
+                    LOG_WARN("Failed to initialize audio engine");
                 }
 
-                // NOTE: C++ camera vision disabled - using Python client instead
-                // The Python client (win_camera_fastvlm_pytorch.py) POSTs to /update_context
-                // This avoids camera access conflicts and allows us to use PyTorch FastVLM
-                std::cout << "[INFO] Camera vision: Using Python client (C++ ONNX disabled)" << std::endl;
+                LOG_INFO("Camera vision: Using Python client (C++ ONNX disabled)");
 
-                // Initialize camera vision engine
-                // std::cout << "[DEBUG] Initializing camera vision engine..." << std::endl;
-                // CameraVisionEngine cameraEngine;
-                // std::atomic<bool> cameraRunning{false};
-                // std::unique_ptr<std::thread> cameraThread;
-
-                // if (cameraEngine.Initialize("models/fastvlm", 0)) {
-                //     std::cout << "[DEBUG] Camera vision engine initialized" << std::endl;
-                //     cameraRunning = true;
-
-                //     // Start camera processing thread
-                //     cameraThread = std::make_unique<std::thread>([&cameraEngine, &collector, &cameraRunning]() {
-                //         while (cameraRunning.load()) {
-                //             if (cameraEngine.IsReady()) {
-                //                 std::string description = cameraEngine.DescribeScene();
-                //                 if (!description.empty()) {
-                //                     float latency = cameraEngine.GetLastLatencyMs();
-                //                     collector.UpdateCameraContext(description, latency);
-                //                     std::cout << "[DEBUG] Camera: " << description
-                //                               << " (latency: " << static_cast<int>(latency) << "ms)" << std::endl;
-                //                 }
-                //             }
-                //             std::this_thread::sleep_for(std::chrono::seconds(10));
-                //         }
-                //     });
-                //     std::cout << "[DEBUG] Camera processing thread started" << std::endl;
-                // } else {
-                //     std::cout << "[WARNING] Failed to initialize camera engine" << std::endl;
-                // }
-
-                std::cout << "[DEBUG] Setting up request handler..." << std::endl;
+                LOG_INFO("Setting up request handler...");
                 server.SetRequestHandler([&collector](const HttpRequest& request, HttpResponse& response) {
-                    std::cout << "[DEBUG] Received request: " << request.method << " " << request.path << std::endl;
+                    LOG_DEBUG_FMT("Received request: %s %s", request.method.c_str(), request.path.c_str());
 
                     if (request.path == "/context" && request.method == "GET") {
                         Json context = collector.CollectCurrentContext();
                         response.SetHeader("Content-Type", "application/json");
                         response.SetBody(context.toString());
                         response.status = 200;
-                        std::cout << "[DEBUG] Sent context response" << std::endl;
+                        LOG_DEBUG("Sent context response");
                     }
                     else if (request.path == "/dashboard" || request.path == "/" && request.method == "GET") {
                         std::ifstream file("dashboard.html");
@@ -441,24 +409,23 @@ int main(int argc, char* argv[]) {
                             response.SetHeader("Content-Type", "text/html; charset=utf-8");
                             response.SetBody(html);
                             response.status = 200;
-                            std::cout << "[DEBUG] Served dashboard HTML" << std::endl;
+                            LOG_DEBUG("Served dashboard HTML");
                         } else {
                             response.SetBody("<html><body><h1>Error: dashboard.html not found</h1></body></html>");
                             response.SetHeader("Content-Type", "text/html");
                             response.status = 500;
-                            std::cout << "[ERROR] dashboard.html not found" << std::endl;
+                            LOG_ERROR("dashboard.html not found");
                         }
                     }
                     else if (request.path == "/update_context" && request.method == "POST") {
                         try {
-                            // Simple JSON parsing for {"device":"Camera","data":{"objects":["description"]}}
                             std::string body = request.body;
-                            std::cout << "[DEBUG] POST body: " << body << std::endl;
+                            LOG_DEBUG_FMT("POST body: %s", body.c_str());
 
                             // Extract device type
                             size_t devicePos = body.find("\"device\"");
                             if (devicePos == std::string::npos) {
-                                std::cout << "[ERROR] Missing device field in body" << std::endl;
+                                LOG_ERROR("Missing device field in body");
                                 response.SetBody("{\"error\":\"Missing device field\"}");
                                 response.status = 400;
                             } else {
@@ -467,10 +434,9 @@ int main(int argc, char* argv[]) {
                                 std::string device = body.substr(deviceStart + 1, deviceEnd - deviceStart - 1);
 
                                 if (device == "Camera") {
-                                    // Extract camera description from objects array
                                     std::string caption;
                                     size_t objectsPos = body.find("\"objects\"");
-                                    if (objectsPos != std::string::npos) {
+                                    if (objectsPos != std::wstring::npos) {
                                         size_t captionStart = body.find("\"", objectsPos + 12);
                                         size_t captionEnd = body.find("\"", captionStart + 1);
                                         if (captionStart != std::string::npos && captionEnd != std::string::npos) {
@@ -478,9 +444,8 @@ int main(int argc, char* argv[]) {
                                         }
                                     }
 
-                                    // Update context
                                     collector.UpdateCameraContext(caption, 0.0f);
-                                    std::cout << "[DEBUG] Camera update: " << caption << std::endl;
+                                    LOG_INFO_FMT("Camera update: %s", caption.c_str());
 
                                     response.SetHeader("Content-Type", "application/json");
                                     response.SetBody("{\"status\":\"ok\"}");
@@ -491,7 +456,7 @@ int main(int argc, char* argv[]) {
                                 }
                             }
                         } catch (const std::exception& e) {
-                            std::cout << "[ERROR] Failed to parse update_context: " << e.what() << std::endl;
+                            LOG_ERROR_FMT("Failed to parse update_context: %s", e.what());
                             response.SetBody("{\"error\":\"Invalid JSON\"}");
                             response.status = 400;
                         }
@@ -499,30 +464,31 @@ int main(int argc, char* argv[]) {
                     else {
                         response.SetBody("{\"error\":\"Not found\"}");
                         response.status = 404;
-                        std::cout << "[DEBUG] Sent 404 response for: " << request.path << std::endl;
+                        LOG_DEBUG_FMT("Sent 404 response for: %s", request.path.c_str());
                     }
                 });
                 
-                std::cout << "[DEBUG] Starting HTTP server on port 8777..." << std::endl;
+                LOG_INFO("Starting HTTP server on port 8777...");
                 if (!server.Start()) {
-                    std::cout << "[ERROR] Failed to start HTTP server!" << std::endl;
-                    std::cout << "Possible causes:" << std::endl;
-                    std::cout << "1. Port 8777 is already in use" << std::endl;
-                    std::cout << "2. Insufficient permissions" << std::endl;
-                    std::cout << "3. Firewall blocking the connection" << std::endl;
+                    LOG_ERROR("Failed to start HTTP server!");
+                    LOG_ERROR("Possible causes:");
+                    LOG_ERROR("1. Port 8777 is already in use");
+                    LOG_ERROR("2. Insufficient permissions");
+                    LOG_ERROR("3. Firewall blocking the connection");
+                    Logger::GetInstance().Shutdown();
                     return 1;
                 }
                 
-                std::cout << "[SUCCESS] HTTP server started successfully!" << std::endl;
-                std::cout << "[INFO] Server is now listening on: http://localhost:8777" << std::endl;
-                std::cout << "[INFO] Dashboard: http://localhost:8777/dashboard" << std::endl;
-                std::cout << "[INFO] API endpoint: http://localhost:8777/context" << std::endl;
-                std::cout << std::string(50, '-') << std::endl;
+                LOG_INFO("HTTP server started successfully!");
+                LOG_INFO("Server is now listening on: http://localhost:8777");
+                LOG_INFO("Dashboard: http://localhost:8777/dashboard");
+                LOG_INFO("API endpoint: http://localhost:8777/context");
+                LOG_INFO("-----------------------------------------------------");
                 
-                std::cout << "Starting server loop (blocking)..." << std::endl;
+                LOG_INFO("Starting server loop (blocking)...");
                 server.Run(); // Blocking call
 
-                std::cout << "[DEBUG] Server loop ended, cleaning up..." << std::endl;
+                LOG_INFO("Server loop ended, cleaning up...");
 
                 // Stop audio engine
                 if (audioRunning.load()) {
@@ -531,44 +497,42 @@ int main(int argc, char* argv[]) {
                     if (audioPollingThread && audioPollingThread->joinable()) {
                         audioPollingThread->join();
                     }
-                    std::cout << "[DEBUG] Audio engine stopped" << std::endl;
+                    LOG_INFO("Audio engine stopped");
                 }
-
-                // Stop camera engine
-                // (Camera disabled - using Python client)
-                // if (cameraRunning.load()) {
-                //     cameraRunning = false;
-                //     if (cameraThread && cameraThread->joinable()) {
-                //         cameraThread->join();
-                //     }
-                //     std::cout << "[DEBUG] Camera engine stopped" << std::endl;
-                // }
 
                 collector.StopPeriodicUpdate();
             }
             catch (const std::exception& e) {
-                std::cout << "[ERROR] Exception: " << e.what() << std::endl;
+                LOG_FATAL_FMT("Exception: %s", e.what());
+                Logger::GetInstance().Shutdown();
                 return 1;
             }
             
+            LOG_INFO("Console mode shutting down normally");
+            Logger::GetInstance().Shutdown();
             return 0;
         }
         else {
-            std::cout << "Usage: " << argv[0] << " [--install|--uninstall|--start|--stop|--console]" << std::endl;
+            LOG_ERROR_FMT("Unknown argument: %s", arg.c_str());
+            LOG_INFO("Usage: PerceptionEngine.exe [--install|--uninstall|--start|--stop|--console]");
+            Logger::GetInstance().Shutdown();
             return 1;
         }
     }
     
     // If no arguments, run as Windows service
-    std::cout << "Starting as Windows service..." << std::endl;
+    LOG_INFO("Starting as Windows service...");
     try {
         PerceptionEngineService service;
         WindowsService::RunAsService(&service);
     }
     catch (...) {
-        std::cout << "[ERROR] Failed to start as Windows service" << std::endl;
+        LOG_FATAL("Failed to start as Windows service");
+        Logger::GetInstance().Shutdown();
         return 1;
     }
     
+    LOG_INFO("Application exiting normally");
+    Logger::GetInstance().Shutdown();
     return 0;
 }

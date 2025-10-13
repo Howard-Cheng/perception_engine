@@ -56,6 +56,7 @@ file(GLOB OPENCV_WORLD_LIB "${OpenCV_LIB_DIR}/opencv_world*.lib")
 
 set(PERCEPTION_ENGINE_SOURCES
     PerceptionEngine.cpp
+    Logger.cpp  # NEW: Logger implementation
     ContextCollector.cpp
     HttpServer.cpp
     WindowsAPIs.cpp
@@ -66,9 +67,11 @@ set(PERCEPTION_ENGINE_SOURCES
     SileroVAD.cpp
     CameraVisionEngine.cpp
     FastVLMTokenizer.cpp
+    BrowserContentExtractor.cpp
 )
 
 set(PERCEPTION_ENGINE_HEADERS
+    Logger.h  # NEW: Logger header
     ContextCollector.h
     HttpServer.h
     WindowsAPIs.h
@@ -79,6 +82,7 @@ set(PERCEPTION_ENGINE_HEADERS
     SileroVAD.h
     CameraVisionEngine.h
     FastVLMTokenizer.h
+    BrowserContentExtractor.h
 )
 
 # ============================================================================
@@ -89,7 +93,7 @@ set(PERCEPTION_ENGINE_HEADERS
 add_executable(PerceptionEngine ${PERCEPTION_ENGINE_SOURCES} ${PERCEPTION_ENGINE_HEADERS})
 
 # Audio test program
-add_executable(test_audio test_audio.cpp AudioCaptureEngine.cpp AudioCaptureEngine.h AsyncWhisperQueue.cpp AsyncWhisperQueue.h SileroVAD.cpp SileroVAD.h)
+add_executable(test_audio test_audio.cpp Logger.cpp Logger.h AudioCaptureEngine.cpp AudioCaptureEngine.h AsyncWhisperQueue.cpp AsyncWhisperQueue.h SileroVAD.cpp SileroVAD.h)
 
 # Vision encoder test program
 add_executable(test_vision_encoder test_vision_encoder.cpp)

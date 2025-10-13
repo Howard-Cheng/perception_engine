@@ -1,3 +1,4 @@
+#include "Logger.h"  // NEW: Add Logger
 #include <iostream>
 #include <string>
 #include <thread>
@@ -5,44 +6,46 @@
 #include "AudioCaptureEngine.h"
 
 int main() {
-    std::cout << "Audio Capture Engine Test" << std::endl;
-    std::cout << "==========================" << std::endl;
-    std::cout << std::endl;
+    // Initialize Logger FIRST
+    Logger::GetInstance().Initialize("test_audio.log", LogLevel::DEBUG_L);
+    
+    LOG_INFO("=====================================");
+    LOG_INFO("Audio Capture Engine Test");
+    LOG_INFO("=====================================");
 
     // Create audio engine
     AudioCaptureEngine audioEngine;
 
     // Initialize with whisper model
     std::string modelPath = "models/whisper/ggml-tiny.en.bin";
-    std::cout << "[INFO] Initializing whisper model: " << modelPath << std::endl;
+    LOG_INFO_FMT("Initializing whisper model: %s", modelPath.c_str());
 
     if (!audioEngine.Initialize(modelPath)) {
-        std::cout << "[ERROR] Failed to initialize audio engine!" << std::endl;
-        std::cout << "Make sure the model exists at: " << modelPath << std::endl;
+        LOG_FATAL("Failed to initialize audio engine!");
+        LOG_ERROR_FMT("Make sure the model exists at: %s", modelPath.c_str());
+        Logger::GetInstance().Shutdown();
         return 1;
     }
 
-    std::cout << "[SUCCESS] Audio engine initialized!" << std::endl;
-    std::cout << std::endl;
+    LOG_INFO("Audio engine initialized!");
 
     // Start audio capture
-    std::cout << "[INFO] Starting audio capture..." << std::endl;
+    LOG_INFO("Starting audio capture...");
     if (!audioEngine.Start()) {
-        std::cout << "[ERROR] Failed to start audio capture!" << std::endl;
-        std::cout << "Possible issues:" << std::endl;
-        std::cout << "  1. Microphone not accessible (check permissions)" << std::endl;
-        std::cout << "  2. Audio device not found" << std::endl;
-        std::cout << "  3. WASAPI initialization failed" << std::endl;
+        LOG_FATAL("Failed to start audio capture!");
+        LOG_ERROR("Possible issues:");
+        LOG_ERROR("  1. Microphone not accessible (check permissions)");
+        LOG_ERROR("  2. Audio device not found");
+        LOG_ERROR("  3. WASAPI initialization failed");
+        Logger::GetInstance().Shutdown();
         return 1;
     }
 
-    std::cout << "[SUCCESS] Audio capture started!" << std::endl;
-    std::cout << std::endl;
-    std::cout << "==========================" << std::endl;
-    std::cout << "Speak into your microphone..." << std::endl;
-    std::cout << "Press Ctrl+C to stop" << std::endl;
-    std::cout << "==========================" << std::endl;
-    std::cout << std::endl;
+    LOG_INFO("Audio capture started!");
+    LOG_INFO("=====================================");
+    LOG_INFO("Speak into your microphone...");
+    LOG_INFO("Press Ctrl+C to stop");
+    LOG_INFO("=====================================");
 
     // Main loop - print NEW transcriptions only
     std::string lastUserSpeech = "";
@@ -57,28 +60,27 @@ int main() {
 
             // Only print if it changed
             if (!userSpeech.empty() && userSpeech != lastUserSpeech) {
-                std::cout << "[USER] " << userSpeech << std::endl;
+                LOG_INFO_FMT("[USER] %s", userSpeech.c_str());
                 lastUserSpeech = userSpeech;
             }
 
             // Optionally get system audio (if implemented)
             std::string systemAudio = audioEngine.GetLatestSystemAudio();
             if (!systemAudio.empty() && systemAudio != lastSystemAudio) {
-                std::cout << "[SYSTEM] " << systemAudio << std::endl;
+                LOG_INFO_FMT("[SYSTEM] %s", systemAudio.c_str());
                 lastSystemAudio = systemAudio;
             }
         }
     }
     catch (const std::exception& e) {
-        std::cout << std::endl;
-        std::cout << "[ERROR] Exception: " << e.what() << std::endl;
+        LOG_FATAL_FMT("Exception: %s", e.what());
     }
 
     // Cleanup
-    std::cout << std::endl;
-    std::cout << "[INFO] Stopping audio capture..." << std::endl;
+    LOG_INFO("Stopping audio capture...");
     audioEngine.Stop();
-    std::cout << "[INFO] Cleanup complete" << std::endl;
-
+    LOG_INFO("Cleanup complete");
+    
+    Logger::GetInstance().Shutdown();
     return 0;
 }

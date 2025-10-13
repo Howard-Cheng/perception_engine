@@ -284,6 +284,60 @@
             font-size: 0.9rem;
         }
 
+        /* Active App Details Card */
+        .active-app-details-card {
+            grid-column: span 1;
+            grid-row: span 3;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .active-app-details-card .card-header {
+            flex-shrink: 0;
+        }
+
+        .active-app-details-card .card-content {
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .scrollable-content {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            background: rgba(102, 126, 234, 0.1);
+            padding: 10px;
+            border-radius: 15px;
+            border-left: 4px solid #667eea;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            white-space: pre-line;
+            word-wrap: break-word;
+            word-break: break-word;
+            text-align: left;
+            font-family: 'Courier New', monospace;
+        }
+
+        .scrollable-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .scrollable-content::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+
+        .scrollable-content::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+        }
+
+        .scrollable-content::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .header h1 {
@@ -296,6 +350,11 @@
 
             .voice-card {
                 grid-column: span 1;
+            }
+
+            .active-app-details-card {
+                grid-column: span 1;
+                grid-row: span 1;
             }
         }
     </style>
@@ -368,6 +427,19 @@
                     <div class="metric-row">
                         <span class="metric-label">Network</span>
                         <span class="metric-value" id="network">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active App Details (Right side, 3 rows tall) -->
+            <div class="card active-app-details-card">
+                <div class="card-header">
+                    <div class="card-icon">📋</div>
+                    <div class="card-title">Active App Details</div>
+                </div>
+                <div class="card-content">
+                    <div class="scrollable-content" id="activeAppContent">
+                        No active app content available...
                     </div>
                 </div>
             </div>
@@ -588,11 +660,52 @@
             document.getElementById('recentApps').innerHTML =
                 recentAppsHtml || '<div class="app-item">No recent apps</div>';
 
+            // Active App Content
+            const activeAppContent = data.activeAppContent;
+            console.log('Active app content:', activeAppContent);
+            if (activeAppContent && activeAppContent !== null && 
+                typeof activeAppContent === 'string' && activeAppContent.trim() !== '') {
+                document.getElementById('activeAppContent').textContent = activeAppContent;
+            } else {
+                document.getElementById('activeAppContent').textContent = 
+                    'No active app content available...';
+            }
+
             // Update timestamp
             const now = new Date().toLocaleTimeString();
             document.getElementById('lastUpdate').textContent =
                 'Last updated: ' + now;
+            
+            // Adjust scrollable content height dynamically
+            adjustScrollableHeight();
         }
+
+        // Function to dynamically adjust the scrollable content height
+        function adjustScrollableHeight() {
+            const card = document.querySelector('.active-app-details-card');
+            const cardContent = card?.querySelector('.card-content');
+            const scrollableContent = document.getElementById('activeAppContent');
+            
+            if (card && cardContent && scrollableContent) {
+                const cardRect = card.getBoundingClientRect();
+                const cardContentRect = cardContent.getBoundingClientRect();
+                
+                // Calculate available height
+                const availableHeight = cardContentRect.height;
+                
+                // Set the scrollable content height
+                if (availableHeight > 0) {
+                    scrollableContent.style.maxHeight = availableHeight + 'px';
+                    scrollableContent.style.height = availableHeight + 'px';
+                }
+            }
+        }
+
+        // Adjust height on window resize
+        window.addEventListener('resize', adjustScrollableHeight);
+        
+        // Initial adjustment after page load
+        window.addEventListener('load', adjustScrollableHeight);
 
         // Auto-refresh every 500ms for lower latency
         fetchContext();

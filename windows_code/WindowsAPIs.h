@@ -8,6 +8,9 @@ namespace WindowsAPIs {
     // Active Application
     std::string GetForegroundAppName();
     
+    // Active Application Content - NEW: Get detailed UI content using UIA
+    std::string GetCurrentActiveAppContent();
+    
     // Time utilities - for consistent timestamp formatting
     std::string FormatTimestampUTC(const std::chrono::system_clock::time_point& timepoint);
     std::string FormatTimestampLocal(const std::chrono::system_clock::time_point& timepoint);

@@ -149,8 +149,6 @@ private:
     const int WHISPER_CHUNK_SEC = 3;    // Process 3-second chunks (for testing)
 
     // === Helper Functions ===
-    void LogDebug(const std::string& message);
-    void LogError(const std::string& message);
     std::vector<float> ConvertPCMToFloat(const BYTE* pcmData, UINT32 numFrames);
     std::vector<float> ResampleAudio(const std::vector<float>& input, int inputSampleRate, int outputSampleRate);
 };

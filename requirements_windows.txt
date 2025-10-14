@@ -27,4 +27,5 @@ psutil>=5.9.0
 transformers>=4.36.0
 
 # NumPy (required by most ML libraries)
-numpy>=1.24.0
+# NOTE: Must use numpy<2.0 for OpenCV compatibility
+numpy>=1.24.0,<2.0

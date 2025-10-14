@@ -1,5 +1,5 @@
-venv/
-myenv/
+nova_env
+windows_code/third-party/
 
 # Environment variables and secrets
 .env

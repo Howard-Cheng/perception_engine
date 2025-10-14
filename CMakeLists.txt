@@ -13,10 +13,10 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # Dependencies
 # ============================================================================
 
-# whisper.cpp
+# whisper.cpp (CUDA-enabled for GPU acceleration)
 set(WHISPER_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/include")
-set(WHISPER_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build/Release")
-set(GGML_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/out/build/windows-x64-release/ggml/src/Release")
+set(WHISPER_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/src/Release")
+set(GGML_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/ggml/src/Release")
 
 # Check if whisper.lib exists
 if(NOT EXISTS "${WHISPER_LIB_DIR}/whisper.lib")
@@ -129,6 +129,8 @@ target_link_libraries(PerceptionEngine PRIVATE
     ${GGML_LIB_DIR}/ggml.lib
     ${GGML_LIB_DIR}/ggml-base.lib
     ${GGML_LIB_DIR}/ggml-cpu.lib
+    # NOTE: NOT linking ggml-cuda.lib - it's dynamically loaded via ggml-cuda.dll when use_gpu=true
+    # This allows fallback to CPU if CUDA runtime is not available
 
     # ONNX Runtime
     ${ONNXRUNTIME_LIB_DIR}/onnxruntime.lib
@@ -151,6 +153,7 @@ target_link_libraries(test_audio PRIVATE
     ${GGML_LIB_DIR}/ggml.lib
     ${GGML_LIB_DIR}/ggml-base.lib
     ${GGML_LIB_DIR}/ggml-cpu.lib
+    # NOTE: NOT linking ggml-cuda.lib - dynamically loaded when needed
 
     # ONNX Runtime
     ${ONNXRUNTIME_LIB_DIR}/onnxruntime.lib
@@ -208,31 +211,15 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/whisper
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/models/whisper/ggml-tiny.en.bin
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/whisper/ggml-tiny.en.bin
+        ${CMAKE_CURRENT_SOURCE_DIR}/../models/whisper/ggml-tiny.en-q8_0.bin
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/whisper/ggml-tiny.en-q8_0.bin
 
     # Copy Silero VAD model to bin/
     COMMAND ${CMAKE_COMMAND} -E make_directory
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/vad
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/models/vad/silero_vad.onnx
+        ${CMAKE_CURRENT_SOURCE_DIR}/../models/vad/silero_vad.onnx
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/vad/silero_vad.onnx
-
-    # Copy FastVLM models to bin/
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/fastvlm/onnx
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/models/fastvlm/onnx/vision_encoder_simplified.onnx
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/fastvlm/onnx/vision_encoder_simplified.onnx
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/models/fastvlm/onnx/embed_tokens_q4f16.onnx
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/fastvlm/onnx/embed_tokens_q4f16.onnx
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/models/fastvlm/onnx/decoder_model_merged_q4f16.onnx
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/fastvlm/onnx/decoder_model_merged_q4f16.onnx
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/models/fastvlm/vocab.json
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/fastvlm/vocab.json
 
     # Copy ONNX Runtime DLL to bin/
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -244,37 +231,79 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
         ${OpenCV_BIN_DIR}/opencv_world4100.dll
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/opencv_world4100.dll
 
+    # Copy whisper.cpp DLLs to bin/ (CUDA build)
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/whisper.dll
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/whisper.dll
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml.dll
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml.dll
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-base.dll
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml-base.dll
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-cpu.dll
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml-cpu.dll
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-cuda.dll
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml-cuda.dll
+
+    # Copy CUDA runtime DLLs to bin/ (required for GPU acceleration)
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cudart64_13.dll"
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/cudart64_13.dll
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cublas64_13.dll"
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/cublas64_13.dll
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cublasLt64_13.dll"
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/cublasLt64_13.dll
+
     # For MSVC multi-config: also copy to bin/Release/
     COMMAND ${CMAKE_COMMAND} -E make_directory
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/whisper
     COMMAND ${CMAKE_COMMAND} -E make_directory
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/vad
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/fastvlm/onnx
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/models/whisper/ggml-tiny.en.bin
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/whisper/ggml-tiny.en.bin
+        ${CMAKE_CURRENT_SOURCE_DIR}/../models/whisper/ggml-tiny.en-q8_0.bin
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/whisper/ggml-tiny.en-q8_0.bin
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/models/vad/silero_vad.onnx
+        ${CMAKE_CURRENT_SOURCE_DIR}/../models/vad/silero_vad.onnx
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/vad/silero_vad.onnx
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/models/fastvlm/onnx/vision_encoder_simplified.onnx
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/fastvlm/onnx/vision_encoder_simplified.onnx
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/models/fastvlm/onnx/embed_tokens_q4f16.onnx
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/fastvlm/onnx/embed_tokens_q4f16.onnx
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/models/fastvlm/onnx/decoder_model_merged_q4f16.onnx
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/fastvlm/onnx/decoder_model_merged_q4f16.onnx
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/models/fastvlm/vocab.json
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/fastvlm/vocab.json
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/onnxruntime.dll
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${OpenCV_BIN_DIR}/opencv_world4100.dll
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/opencv_world4100.dll
+
+    # Copy whisper.cpp DLLs to bin/Release/ (CUDA build)
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/whisper.dll
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/whisper.dll
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml.dll
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/ggml.dll
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-base.dll
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/ggml-base.dll
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-cpu.dll
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/ggml-cpu.dll
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-cuda.dll
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/ggml-cuda.dll
+
+    # Copy CUDA runtime DLLs to bin/Release/ (required for GPU acceleration)
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cudart64_13.dll"
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/cudart64_13.dll
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cublas64_13.dll"
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/cublas64_13.dll
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cublasLt64_13.dll"
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/cublasLt64_13.dll
 
     COMMENT "Copying models and DLLs to output directory"
 )

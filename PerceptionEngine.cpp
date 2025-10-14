@@ -39,7 +39,7 @@ public:
 
             // Initialize audio capture engine
             audioEngine = std::make_unique<AudioCaptureEngine>();
-            if (!audioEngine->Initialize("models/whisper/ggml-tiny.en.bin")) {
+            if (!audioEngine->Initialize("models/whisper/ggml-tiny.en-q8_0.bin")) {
                 LogMessage("[WARNING] Failed to initialize audio engine");
                 audioEngine.reset();
             } else {
@@ -291,8 +291,24 @@ private:
 };
 
 int main(int argc, char* argv[]) {
+    // Open log file to capture all output
+    std::ofstream logFile("perception_engine.log", std::ios::app);
+    if (logFile.is_open()) {
+        logFile << "\n=== NEW SESSION START ===" << std::endl;
+        logFile << "argc: " << argc << std::endl;
+        for (int i = 0; i < argc; i++) {
+            logFile << "argv[" << i << "]: " << argv[i] << std::endl;
+        }
+        logFile.flush();
+    }
+
     std::cout << "Perception Engine v1.0" << std::endl;
     std::cout << "======================" << std::endl;
+
+    if (logFile.is_open()) {
+        logFile << "Printed header" << std::endl;
+        logFile.flush();
+    }
     
     // Parse command line arguments
     if (argc > 1) {
@@ -360,7 +376,7 @@ int main(int argc, char* argv[]) {
                 std::atomic<bool> audioRunning{false};
                 std::unique_ptr<std::thread> audioPollingThread;
 
-                if (audioEngine.Initialize("models/whisper/ggml-tiny.en.bin")) {
+                if (audioEngine.Initialize("models/whisper/ggml-tiny.en-q8_0.bin")) {
                     std::cout << "[DEBUG] Audio engine initialized" << std::endl;
 
                     // Set callback

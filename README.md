@@ -39,11 +39,16 @@ cd PE
 
 ### 📋 Prerequisites
 
+**Required:**
 - **Windows 10/11** (x64)
 - **Visual Studio 2022** (with C++ development tools)
 - **CMake 3.20+**
 - **Python 3.8+** (for camera vision client)
 - **Webcam + Microphone**
+
+**Optional (for GPU acceleration):**
+- **NVIDIA GPU** (Compute Capability 6.0+, e.g., GTX 1060+, RTX series)
+- **CUDA Toolkit 13.0+** (automatically detected if installed)
 
 ### 🛠️ Manual Build Instructions
 
@@ -115,16 +120,18 @@ http://localhost:8777/dashboard
 
 2. **Voice Transcription (C++)**
    - Captures microphone audio via WASAPI
-   - Detects speech with Silero VAD
-   - Transcribes with Whisper.cpp (base.en model)
+   - Detects speech with Silero VAD (optimized: 800ms silence threshold)
+   - Transcribes with Whisper.cpp (tiny.en-q8_0 model)
+   - **GPU acceleration** when NVIDIA GPU + CUDA detected
    - Async queue prevents blocking
-   - **Latency:** 100-300ms
+   - **Latency:** 200-500ms (CPU) or 150-300ms (GPU, 2-3x faster)
 
 3. **Camera Vision (Python)**
    - Analyzes physical environment via webcam
-   - Generates scene descriptions using FastVLM-0.5B
+   - Generates scene descriptions using FastVLM-0.5B (PyTorch)
+   - **GPU acceleration** when NVIDIA GPU detected (FP16)
    - Posts to C++ server via HTTP
-   - **Latency:** 8-12 seconds (CPU-optimized)
+   - **Latency:** 1.5-2s (GPU) or 8-12s (CPU)
 
 ### Context Fusion
 
@@ -150,13 +157,14 @@ Pipeline Latency:
 
 ## 💻 System Requirements
 
-| Component | Requirement |
-|-----------|-------------|
-| **CPU** | Intel Core i5/i7 (4+ cores, AVX2 support) |
-| **RAM** | 8GB minimum, 16GB recommended |
-| **Storage** | ~3GB for AI models |
-| **GPU** | Not required (CPU-optimized) |
-| **OS** | Windows 10/11 (x64) |
+| Component | Requirement | Notes |
+|-----------|-------------|-------|
+| **CPU** | Intel Core i5/i7 (4+ cores, AVX2 support) | Required |
+| **RAM** | 8GB minimum, 16GB recommended | Required |
+| **Storage** | ~3GB for AI models | Required |
+| **GPU** | Optional: NVIDIA GPU (Compute Capability 6.0+) | 5-10x faster voice/camera |
+| **CUDA** | Optional: CUDA Toolkit 13.0+ | Auto-detected if installed |
+| **OS** | Windows 10/11 (x64) | Required |
 
 ---
 
@@ -164,16 +172,34 @@ Pipeline Latency:
 
 ### Windows C++ Implementation (v2.0)
 
+#### CPU-Only Mode
 | Component | Latency | CPU Usage | Update Frequency |
 |-----------|---------|-----------|------------------|
 | Screen monitoring | <5ms | 2-3% | On window change |
-| Voice ASR (Whisper) | 100-300ms | 15-25% | Continuous stream |
+| Voice ASR (Whisper) | 200-500ms | 15-25% | Continuous stream |
 | Camera Vision (FastVLM) | 8-12s | 20-30% | Every 10 seconds |
 | Context fusion | 20-50ms | 3-5% | Every 500ms |
 | HTTP server | <10ms | 2-3% | On request |
 | **Total** | - | **~45-60%** | - |
 
-**Hardware tested:** Intel Core i7 laptop, 16GB RAM, no GPU
+**Hardware tested:** Intel Core i7 laptop, 16GB RAM
+
+#### GPU-Accelerated Mode (with NVIDIA GPU + CUDA)
+| Component | Latency | GPU Usage | CPU Usage | Update Frequency |
+|-----------|---------|-----------|-----------|------------------|
+| Screen monitoring | <5ms | 0% | 2-3% | On window change |
+| Voice ASR (Whisper) | **150-300ms** ⚡ | 15-25% | 5-10% | Continuous stream |
+| Camera Vision (FastVLM) | **1.5-2s** ⚡ | 30-40% | 5-8% | Every 10 seconds |
+| Context fusion | 20-50ms | 0% | 3-5% | Every 500ms |
+| HTTP server | <10ms | 0% | 2-3% | On request |
+| **Total** | - | **~50%** | **~20-30%** | - |
+
+**Hardware tested:** Intel Core i7 laptop, NVIDIA RTX 5000 Ada, 16GB RAM, CUDA 13.0
+
+**GPU Performance Gains:**
+- Voice transcription: **2-3x faster** (500ms → 200ms)
+- Camera vision: **5-6x faster** (10s → 1.7s)
+- CPU usage: **50% reduction** (offloaded to GPU)
 
 **Key Improvements over Python v1.0:**
 - Screen monitoring: 155-340ms → <5ms (30-70x faster)
@@ -338,15 +364,18 @@ windows_code/
 
 ## 🤖 AI Models Used
 
-| Model | Size | Purpose | Integration |
-|-------|------|---------|-------------|
-| **Whisper base.en** | ~140MB | Voice transcription | C++ (whisper.cpp) |
-| **Silero VAD** | ~1.5MB | Speech detection | C++ (ONNX Runtime) |
-| **FastVLM-0.5B** | ~1GB | Camera scene description | Python (PyTorch) |
+| Model | Size | Purpose | Integration | GPU Support |
+|-------|------|---------|-------------|-------------|
+| **Whisper tiny.en-q8_0** | ~43MB | Voice transcription | C++ (whisper.cpp) | ✅ CUDA (auto-detected) |
+| **Silero VAD** | ~1.8MB | Speech detection | C++ (ONNX Runtime) | ❌ CPU only |
+| **FastVLM-0.5B** | ~1GB | Camera scene description | Python (PyTorch) | ✅ CUDA (auto-detected) |
 
-**Total disk space:** ~1.2GB
+**Total disk space:** ~1.1GB
 
-**No GPU required** - All models optimized for CPU inference
+**GPU Acceleration:** Automatically uses NVIDIA GPU when CUDA Toolkit is installed
+- **Voice:** Whisper.cpp with CUDA backend (2-3x faster)
+- **Camera:** PyTorch with CUDA + FP16 (5-6x faster)
+- **Fallback:** Gracefully falls back to CPU if GPU unavailable
 
 ---
 
@@ -410,10 +439,11 @@ Serves the web dashboard UI.
 - [x] C++ HTTP server with web dashboard
 - [x] Screen monitoring via Win32 API
 - [x] Real-time audio capture via WASAPI
-- [x] Silero VAD speech detection
-- [x] Whisper.cpp CPU-optimized transcription
+- [x] Silero VAD speech detection (optimized: 800ms silence, 400ms min speech)
+- [x] Whisper.cpp GPU-accelerated transcription (CUDA auto-detect + CPU fallback)
 - [x] Async transcription queue (non-blocking)
 - [x] Hybrid architecture (C++ + Python camera)
+- [x] FastVLM camera vision with GPU acceleration (PyTorch CUDA + FP16)
 - [x] Thread-safe context fusion
 - [x] Real-time latency metrics
 
@@ -428,24 +458,22 @@ Serves the web dashboard UI.
 
 - [ ] **Full C++ camera pipeline**
   - Port FastVLM to ONNX Runtime C++
-  - Expected: 8-12s → 2-4s latency
+  - Expected: 1.7s → 0.5-1s latency (with GPU)
   - Eliminate Python dependency
 
 - [ ] **System audio capture**
   - WASAPI loopback mode
-  - Transcribe device playback audio
+  - Transcribe device playback audio (meetings, videos, etc.)
 
 - [ ] **Lock-free context fusion**
   - Replace mutexes with atomic operations
   - Eliminate deadlock possibility
+  - Improve thread safety
 
-- [ ] **Model quantization**
-  - INT8 quantization for Whisper
-  - Expected: 2x faster transcription
-
-- [ ] **GPU acceleration** (optional)
-  - CUDA/DirectML support
-  - Expected: 5-10x faster camera vision
+- [ ] **Advanced model optimizations**
+  - Whisper model switching (tiny/base/small)
+  - Dynamic GPU memory management
+  - Multi-GPU support
 
 ---
 

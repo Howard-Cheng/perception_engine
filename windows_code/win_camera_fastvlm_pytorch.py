@@ -16,22 +16,33 @@ IMAGE_TOKEN_INDEX = -200
 class FastVLMEngine:
     def __init__(self):
         print("🔧 Loading FastVLM-0.5B model (optimized mode)...")
-        model_id = "apple/FastVLM-0.5B"
 
+        # Check GPU availability
+        if torch.cuda.is_available():
+            gpu_name = torch.cuda.get_device_name(0)
+            gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
+            print(f"🎮 GPU detected: {gpu_name} ({gpu_memory:.1f} GB)")
+            dtype = torch.float16  # Use FP16 for faster GPU inference
+            device_map = "cuda:0"  # Explicitly use GPU
+        else:
+            print("💻 No GPU detected, using CPU")
+            dtype = torch.float32
+            device_map = "cpu"
+
+        model_id = "apple/FastVLM-0.5B"
         self.tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-        dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 
         self.model = AutoModelForCausalLM.from_pretrained(
             model_id,
             dtype=dtype,
-            device_map="auto",
+            device_map=device_map,
             trust_remote_code=True,
         )
 
         self.device = self.model.device
         self.dtype = dtype
 
-        print(f"✅ FastVLM loaded (Device: {self.device})")
+        print(f"✅ FastVLM loaded (Device: {self.device}, dtype: {dtype})")
 
     def describe_scene(self, frame):
         start_time = time.time()
@@ -130,9 +141,12 @@ def main():
         cap.release()
         return
 
-    print(f"\n🚀 Starting optimized camera monitoring...")
+    print(f"\n🚀 Starting camera monitoring...")
     print(f"   Optimizations: 224x224 input, 50 tokens, greedy decode")
-    print(f"   Expected latency: 8-12 seconds (2x faster)")
+    if torch.cuda.is_available():
+        print(f"   Expected latency: 2-4 seconds (GPU accelerated)")
+    else:
+        print(f"   Expected latency: 8-12 seconds (CPU mode)")
     print(f"   Update: Every 10 seconds")
     print(f"   Press Ctrl+C to stop\n")
 

@@ -4,6 +4,9 @@
 #include <iostream>
 #include <sstream>
 
+// Set to false to reduce log verbosity
+#define HTTP_DEBUG_LOGS false
+
 HttpServer::HttpServer(int port) : port(port), running(false), listenSocket(INVALID_SOCKET) {
     WSADATA wsaData;
     int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
@@ -113,11 +116,11 @@ void HttpServer::Run() {
     std::cout << "[INFO] Server ready to accept connections on http://localhost:" << port << std::endl;
     
     while (running) {
-        std::cout << "[DEBUG] Waiting for incoming connections..." << std::endl;
+        if (HTTP_DEBUG_LOGS) std::cout << "[DEBUG] Waiting for incoming connections..." << std::endl;
         SOCKET clientSocket = accept(listenSocket, nullptr, nullptr);
-        
+
         if (clientSocket != INVALID_SOCKET) {
-            std::cout << "[DEBUG] New client connection accepted" << std::endl;
+            if (HTTP_DEBUG_LOGS) std::cout << "[DEBUG] New client connection accepted" << std::endl;
             
             // Handle each client in a separate thread for better responsiveness
             std::thread clientThread([this, clientSocket]() {
@@ -142,16 +145,51 @@ void HttpServer::Run() {
 }
 
 void HttpServer::HandleClient(SOCKET clientSocket) {
-    std::cout << "[DEBUG] Handling client request..." << std::endl;
-    
-    char buffer[4096] = {0};
-    int bytesReceived = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
-    
-    if (bytesReceived > 0) {
-        std::cout << "[DEBUG] Received " << bytesReceived << " bytes from client" << std::endl;
-        
-        std::string rawRequest(buffer, bytesReceived);
-        std::cout << "[DEBUG] Raw request: " << rawRequest.substr(0, 100) << "..." << std::endl;
+    if (HTTP_DEBUG_LOGS) std::cout << "[DEBUG] Handling client request..." << std::endl;
+
+    // Read the complete HTTP request (may arrive in multiple packets)
+    std::string rawRequest;
+    char buffer[4096];
+    int bytesReceived;
+
+    // Keep reading until we have the complete request
+    while ((bytesReceived = recv(clientSocket, buffer, sizeof(buffer) - 1, 0)) > 0) {
+        buffer[bytesReceived] = '\0';
+        rawRequest.append(buffer, bytesReceived);
+
+        // Check if we have a complete request
+        // For GET: ends with \r\n\r\n
+        // For POST: ends with \r\n\r\n + body (check Content-Length)
+        size_t headerEnd = rawRequest.find("\r\n\r\n");
+        if (headerEnd != std::string::npos) {
+            // Found end of headers
+            // Check if it's a POST with Content-Length
+            size_t clPos = rawRequest.find("Content-Length:");
+            if (clPos != std::string::npos && clPos < headerEnd) {
+                // Extract Content-Length value
+                size_t clStart = clPos + 15; // Skip "Content-Length:"
+                while (clStart < rawRequest.length() && rawRequest[clStart] == ' ') clStart++;
+                size_t clEnd = rawRequest.find('\r', clStart);
+                if (clEnd != std::string::npos) {
+                    int contentLength = std::stoi(rawRequest.substr(clStart, clEnd - clStart));
+                    size_t bodyStart = headerEnd + 4; // Skip \r\n\r\n
+                    size_t bodySize = rawRequest.length() - bodyStart;
+
+                    // Check if we have the complete body
+                    if (bodySize >= (size_t)contentLength) {
+                        break; // Complete request received
+                    }
+                }
+            } else {
+                // GET request or POST without Content-Length
+                break;
+            }
+        }
+    }
+
+    if (rawRequest.length() > 0) {
+        if (HTTP_DEBUG_LOGS) std::cout << "[DEBUG] Received " << rawRequest.length() << " bytes total" << std::endl;
+        if (HTTP_DEBUG_LOGS) std::cout << "[DEBUG] Raw request: " << rawRequest.substr(0, 100) << "..." << std::endl;
         
         HttpRequest request = ParseHttpRequest(rawRequest);
         HttpResponse response;
@@ -169,54 +207,64 @@ void HttpServer::HandleClient(SOCKET clientSocket) {
         }
         
         std::string httpResponse = BuildHttpResponse(response);
-        std::cout << "[DEBUG] Sending response (status " << response.status << ", " 
+        if (HTTP_DEBUG_LOGS) std::cout << "[DEBUG] Sending response (status " << response.status << ", "
                   << httpResponse.length() << " bytes)" << std::endl;
-        
+
         int bytesSent = send(clientSocket, httpResponse.c_str(), static_cast<int>(httpResponse.length()), 0);
         if (bytesSent == SOCKET_ERROR) {
             std::cout << "[ERROR] Failed to send response. WSA Error: " << WSAGetLastError() << std::endl;
         } else {
-            std::cout << "[DEBUG] Response sent successfully (" << bytesSent << " bytes)" << std::endl;
+            if (HTTP_DEBUG_LOGS) std::cout << "[DEBUG] Response sent successfully (" << bytesSent << " bytes)" << std::endl;
         }
     } else {
-        std::cout << "[WARNING] No data received from client or connection closed" << std::endl;
+        if (HTTP_DEBUG_LOGS) std::cout << "[WARNING] No data received from client or connection closed" << std::endl;
     }
-    
+
     closesocket(clientSocket);
-    std::cout << "[DEBUG] Client connection closed" << std::endl;
+    if (HTTP_DEBUG_LOGS) std::cout << "[DEBUG] Client connection closed" << std::endl;
 }
 
 HttpRequest HttpServer::ParseHttpRequest(const std::string& rawRequest) {
     HttpRequest request;
-    
+
     std::istringstream stream(rawRequest);
     std::string line;
-    
+
+    // Parse request line (GET /path HTTP/1.1)
     if (std::getline(stream, line)) {
         std::istringstream lineStream(line);
         lineStream >> request.method >> request.path;
-        
+
         // Remove \r if present
         if (!request.path.empty() && request.path.back() == '\r') {
             request.path.pop_back();
         }
-        
-        std::cout << "[DEBUG] Parsed request: " << request.method << " " << request.path << std::endl;
+
+        if (HTTP_DEBUG_LOGS) std::cout << "[DEBUG] Parsed request: " << request.method << " " << request.path << std::endl;
     }
-    
-    // Parse headers and body if needed
-    std::string headers;
-    while (std::getline(stream, line) && line != "\r") {
-        headers += line + "\n";
-    }
-    
-    // Read body
-    std::string body;
+
+    // Parse headers until we hit blank line
+    int contentLength = 0;
     while (std::getline(stream, line)) {
-        body += line + "\n";
+        // Remove \r if present
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+
+        // Empty line marks end of headers
+        if (line.empty()) {
+            break;
+        }
+
+        // Check for Content-Length header
+        if (line.find("Content-Length:") == 0) {
+            contentLength = std::stoi(line.substr(15));
+        }
     }
-    request.body = body;
-    
+
+    // Read the body (everything after headers)
+    request.body = std::string(std::istreambuf_iterator<char>(stream), {});
+
     return request;
 }
 

@@ -31,11 +31,11 @@ $ProgressPreference = "SilentlyContinue"  # Faster downloads
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 # Colors for output
-function Write-Success { param($Message) Write-Host "✅ $Message" -ForegroundColor Green }
-function Write-Info { param($Message) Write-Host "ℹ️  $Message" -ForegroundColor Cyan }
-function Write-Warning { param($Message) Write-Host "⚠️  $Message" -ForegroundColor Yellow }
-function Write-Error-Custom { param($Message) Write-Host "❌ $Message" -ForegroundColor Red }
-function Write-Step { param($Message) Write-Host "`n━━━ $Message ━━━" -ForegroundColor Magenta }
+function Write-Success { param($Message) Write-Host "[OK] $Message" -ForegroundColor Green }
+function Write-Info { param($Message) Write-Host "[INFO] $Message" -ForegroundColor Cyan }
+function Write-Warning { param($Message) Write-Host "[WARN] $Message" -ForegroundColor Yellow }
+function Write-Error-Custom { param($Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
+function Write-Step { param($Message) Write-Host "`n=== $Message ===" -ForegroundColor Magenta }
 
 # ============================================================================
 # Step 0: Check Prerequisites
@@ -164,6 +164,10 @@ if (Test-Path $opencvDll) {
         # Extract OpenCV (it's a self-extracting 7z archive)
         Write-Info "Extracting OpenCV (this may take 2-3 minutes)..."
 
+        # Clean up any previous extraction attempts
+        Remove-Item "$opencvDir\temp_extract" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "$opencvDir\opencv" -Recurse -Force -ErrorAction SilentlyContinue
+
         # OpenCV .exe is a self-extracting archive, extract to temp then move
         $tempExtract = "$opencvDir\temp_extract"
         Start-Process -FilePath $opencvExe -ArgumentList "-o$tempExtract", "-y" -Wait -NoNewWindow
@@ -253,8 +257,10 @@ if (Test-Path "windows_code\third-party\whisper.cpp\include\whisper.h") {
 } else {
     Write-Info "Initializing whisper.cpp git submodule..."
     try {
-        # Initialize all git submodules
-        git submodule update --init --recursive
+        # Initialize only whisper.cpp submodule (ignore llama.cpp errors)
+        $ErrorActionPreference = "Continue"
+        git submodule update --init windows_code/third-party/whisper.cpp 2>&1 | Out-Null
+        $ErrorActionPreference = "Stop"
 
         # Verify whisper.cpp was initialized
         if (Test-Path "windows_code\third-party\whisper.cpp\include\whisper.h") {
@@ -264,7 +270,7 @@ if (Test-Path "windows_code\third-party\whisper.cpp\include\whisper.h") {
         }
     } catch {
         Write-Error-Custom "Failed to initialize whisper.cpp submodule: $_"
-        Write-Info "Please run manually: git submodule update --init --recursive"
+        Write-Info "Please run manually: git submodule update --init windows_code/third-party/whisper.cpp"
         exit 1
     }
 }
@@ -277,7 +283,7 @@ Write-Step "Building whisper.cpp"
 
 $whisperBuildDir = "windows_code\third-party\whisper.cpp\build"
 
-if (Test-Path "$whisperBuildDir\Release\whisper.lib") {
+if (Test-Path "$whisperBuildDir\src\Release\whisper.lib") {
     Write-Success "whisper.cpp already built"
 } else {
     Write-Info "Building whisper.cpp (this may take 5-10 minutes)..."
@@ -301,12 +307,11 @@ if (Test-Path "$whisperBuildDir\Release\whisper.lib") {
     Pop-Location
 }
 
-# Copy whisper.lib to expected location
-$whisperLibSource = "windows_code\third-party\whisper.cpp\build\Release\whisper.lib"
-$whisperLibDest = "windows_code\third-party\whisper.cpp\build\Release\whisper.lib"
+# Verify whisper.lib exists
+$whisperLibPath = "windows_code\third-party\whisper.cpp\build\src\Release\whisper.lib"
 
-if (Test-Path $whisperLibSource) {
-    Write-Success "whisper.lib found at: $whisperLibSource"
+if (Test-Path $whisperLibPath) {
+    Write-Success "whisper.lib found at: $whisperLibPath"
 } else {
     Write-Error-Custom "whisper.lib not found after build!"
     exit 1
@@ -437,7 +442,7 @@ if (Test-Path $onnxDll) {
 }
 
 # Verify whisper.lib
-if (Test-Path "windows_code\third-party\whisper.cpp\build\Release\whisper.lib") {
+if (Test-Path "windows_code\third-party\whisper.cpp\build\src\Release\whisper.lib") {
     Write-Success "whisper.cpp library found"
 } else {
     Write-Error-Custom "whisper.lib NOT found!"
@@ -448,11 +453,11 @@ if (Test-Path "windows_code\third-party\whisper.cpp\build\Release\whisper.lib") 
 # Final Summary
 # ============================================================================
 
-Write-Host "`n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Magenta
+Write-Host "`n============================================================" -ForegroundColor Magenta
 
 if ($allGood) {
     Write-Success "Setup Complete!"
-    Write-Host "`n📦 All dependencies installed and project built successfully!`n"
+    Write-Host "`nAll dependencies installed and project built successfully!`n"
 
     Write-Info "Next steps:"
     Write-Host "  1. Start the C++ server:"
@@ -472,4 +477,4 @@ if ($allGood) {
     exit 1
 }
 
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`n" -ForegroundColor Magenta
+Write-Host "============================================================`n" -ForegroundColor Magenta

@@ -104,17 +104,24 @@ bool AudioCaptureEngine::InitializeWhisper(const std::string& modelPath) {
 
     // Initialize whisper context parameters
     struct whisper_context_params cparams = whisper_context_default_params();
-    cparams.use_gpu = false; // CPU-only for now
+    cparams.use_gpu = true; // Try GPU first
 
-    // Load model
+    // Load model with GPU
     whisperContext = whisper_init_from_file_with_params(modelPath.c_str(), cparams);
 
     if (!whisperContext) {
-        LOG_ERROR_FMT("Failed to load Whisper model from: %s", modelPath.c_str());
-        return false;
-    }
+        LogDebug("GPU initialization failed, falling back to CPU");
+        cparams.use_gpu = false;
+        whisperContext = whisper_init_from_file_with_params(modelPath.c_str(), cparams);
 
-    LOG_INFO("Whisper model loaded successfully");
+        if (!whisperContext) {
+            LogError("Failed to load Whisper model from: " + modelPath);
+            return false;
+        }
+        LogDebug("Whisper model loaded successfully (CPU mode)");
+    } else {
+        LogDebug("Whisper model loaded successfully (GPU accelerated)");
+    }
 
     // Create async whisper queue
     try {
@@ -484,11 +491,11 @@ void AudioCaptureEngine::SystemAudioCaptureThread() {
 void AudioCaptureEngine::ProcessingThread() {
     LOG_INFO("Processing thread started with speech segmentation");
 
-    // Speech segmentation parameters
-    const int VAD_WINDOW_SAMPLES = (SAMPLE_RATE * VAD_CHUNK_MS) / 1000; // 30ms windows
-    const int SILENCE_THRESHOLD_MS = 300;  // 300ms of silence = end of utterance (reduced for lower latency)
-    const int MIN_SPEECH_MS = 300;         // Minimum 300ms of speech to transcribe
-    const int MAX_SPEECH_SEC = 30;         // Maximum 30 seconds per utterance
+    // Speech segmentation parameters (tuned for natural conversation)
+    const int VAD_WINDOW_SAMPLES = (SAMPLE_RATE * VAD_CHUNK_MS) / 1000; // 30ms windows for VAD
+    const int SILENCE_THRESHOLD_MS = 800;  // 800ms silence = end of utterance (prevents mid-sentence cutoff)
+    const int MIN_SPEECH_MS = 400;         // 400ms minimum speech (filters noise, captures short words)
+    const int MAX_SPEECH_SEC = 30;         // 30 seconds max per utterance (prevents buffer overflow)
 
     const int SILENCE_THRESHOLD_SAMPLES = (SAMPLE_RATE * SILENCE_THRESHOLD_MS) / 1000;
     const int MIN_SPEECH_SAMPLES = (SAMPLE_RATE * MIN_SPEECH_MS) / 1000;

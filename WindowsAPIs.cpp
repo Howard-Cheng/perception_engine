@@ -1,5 +1,6 @@
 #include "WindowsAPIs.h"
 #include "WindowEventMonitor.h"
+#include "BrowserContentExtractor.h"  // ← 添加头文件
 #define WIN32_LEAN_AND_MEAN
 #define _WINSOCKAPI_    // Prevent inclusion of winsock.h
 #include <windows.h>
@@ -180,7 +181,7 @@ std::string GetForegroundAppName() {
                     // ���㴰����������
                     int score = 0;
                     
-                    // �ų�ϵͳ����
+                    // �ū�ϵͳ����
                     if (titleStr == "Program Manager" || 
                         titleStr == "Desktop" ||
                         titleStr.find("Windows Default Lock Screen") != std::string::npos) {
@@ -946,6 +947,36 @@ std::string GetCurrentTimestamp() {
     }
     catch (...) {
         return "1970-01-01T00:00:00.000+00:00";
+    }
+}
+
+// NEW: Get current active app content using UIA technology
+std::string GetCurrentActiveAppContent() {
+    try {
+        // Get the foreground window handle
+        HWND hwnd = GetForegroundWindow();
+        if (!hwnd) {
+            return "";
+        }
+        
+        // Create BrowserContentExtractor instance
+        BrowserContentExtractor extractor;
+        
+        // Get the content using UIA
+        BrowserContentInfo info;
+        bool success = extractor.GetBrowserContentByHWND(hwnd, info);
+        
+        if (!success || info.textContent.empty()) {
+            return "";
+        }
+        
+        // Convert wstring to UTF-8 string
+        std::string contentUtf8 = WideStringToUtf8(info.textContent);
+        
+        return contentUtf8;
+    }
+    catch (...) {
+        return "";
     }
 }
 

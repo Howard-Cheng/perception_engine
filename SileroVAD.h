@@ -58,8 +58,4 @@ private:
     // Internal state (Silero VAD is stateful)
     std::vector<float> state;  // Combined LSTM state (2, 1, 128)
     int64_t sr;                // Sample rate
-
-    // Helper functions
-    void LogDebug(const std::string& message);
-    void LogError(const std::string& message);
 };

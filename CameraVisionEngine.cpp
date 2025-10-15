@@ -1,4 +1,5 @@
 #include "CameraVisionEngine.h"
+#include "Logger.h"  // NEW: Add Logger
 #include "FastVLMTokenizer.h"
 #include <iostream>
 #include <chrono>
@@ -17,49 +18,49 @@ CameraVisionEngine::~CameraVisionEngine() {
 
 bool CameraVisionEngine::Initialize(const std::string& modelPath, int cameraIndex) {
     try {
-        std::cout << "[Camera] Initializing CameraVisionEngine..." << std::endl;
+        LOG_INFO("Initializing CameraVisionEngine...");
 
         // Initialize ONNX Runtime environment
         ortEnv = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "CameraVisionEngine");
 
         sessionOptions = std::make_unique<Ort::SessionOptions>();
         sessionOptions->SetIntraOpNumThreads(4);  // 4 threads for CPU inference
-        sessionOptions->SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_DISABLE_ALL);  // Disable optimization to avoid dynamic shape issues
+        sessionOptions->SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_DISABLE_ALL);
 
         memoryInfo = std::make_unique<Ort::MemoryInfo>(
             Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)
         );
 
         // Load ONNX models
-        std::cout << "[Camera] Loading vision encoder..." << std::endl;
+        LOG_INFO("Loading vision encoder...");
         std::string visionPath = modelPath + "/onnx/vision_encoder_simplified.onnx";
         visionEncoder = LoadOnnxModel(visionPath);
         if (!visionEncoder) {
-            std::cerr << "[Camera] Failed to load vision encoder" << std::endl;
+            LOG_ERROR("Failed to load vision encoder");
             return false;
         }
 
-        std::cout << "[Camera] Loading embed tokens model..." << std::endl;
+        LOG_INFO("Loading embed tokens model...");
         std::string embedPath = modelPath + "/onnx/embed_tokens_q4f16.onnx";
         embedTokens = LoadOnnxModel(embedPath);
         if (!embedTokens) {
-            std::cerr << "[Camera] Failed to load embed tokens model" << std::endl;
+            LOG_ERROR("Failed to load embed tokens model");
             return false;
         }
 
-        std::cout << "[Camera] Loading decoder model..." << std::endl;
+        LOG_INFO("Loading decoder model...");
         std::string decoderPath = modelPath + "/onnx/decoder_model_merged_q4f16.onnx";
         decoder = LoadOnnxModel(decoderPath);
         if (!decoder) {
-            std::cerr << "[Camera] Failed to load decoder model" << std::endl;
+            LOG_ERROR("Failed to load decoder model");
             return false;
         }
 
         // Initialize camera
-        std::cout << "[Camera] Opening camera " << cameraIndex << "..." << std::endl;
+        LOG_INFO_FMT("Opening camera %d...", cameraIndex);
         camera.open(cameraIndex);
         if (!camera.isOpened()) {
-            std::cerr << "[Camera] Failed to open camera" << std::endl;
+            LOG_ERROR("Failed to open camera");
             return false;
         }
 
@@ -68,35 +69,35 @@ bool CameraVisionEngine::Initialize(const std::string& modelPath, int cameraInde
         camera.set(cv::CAP_PROP_FRAME_HEIGHT, 240);
 
         isInitialized = true;
-        std::cout << "[Camera] Initialization complete!" << std::endl;
+        LOG_INFO("Initialization complete!");
         return true;
 
     } catch (const std::exception& e) {
-        std::cerr << "[Camera] Initialization error: " << e.what() << std::endl;
+        LOG_ERROR_FMT("Initialization error: %s", e.what());
         return false;
     }
 }
 
 std::unique_ptr<Ort::Session> CameraVisionEngine::LoadOnnxModel(const std::string& modelPath) {
     try {
-        std::cout << "[Camera] Loading model from: " << modelPath << std::endl;
+        LOG_INFO_FMT("Loading model from: %s", modelPath.c_str());
 
         // Convert UTF-8 string to wide string for Windows
         int wideSize = MultiByteToWideChar(CP_UTF8, 0, modelPath.c_str(), -1, nullptr, 0);
         if (wideSize == 0) {
-            std::cerr << "[Camera] Failed to convert path: " << modelPath << std::endl;
+            LOG_ERROR_FMT("Failed to convert path: %s", modelPath.c_str());
             return nullptr;
         }
 
         std::wstring wModelPath(wideSize, 0);
         MultiByteToWideChar(CP_UTF8, 0, modelPath.c_str(), -1, &wModelPath[0], wideSize);
 
-        std::cout << "[Camera] Attempting to load ONNX session..." << std::endl;
+        LOG_DEBUG("Attempting to load ONNX session...");
         auto session = std::make_unique<Ort::Session>(*ortEnv, wModelPath.c_str(), *sessionOptions);
-        std::cout << "[Camera] Model loaded successfully!" << std::endl;
+        LOG_INFO("Model loaded successfully!");
         return session;
     } catch (const std::exception& e) {
-        std::cerr << "[Camera] Error loading model " << modelPath << ": " << e.what() << std::endl;
+        LOG_ERROR_FMT("Error loading model %s: %s", modelPath.c_str(), e.what());
         return nullptr;
     }
 }
@@ -134,7 +135,7 @@ void CameraVisionEngine::PreprocessImage(const cv::Mat& frame, std::vector<float
 
 std::vector<float> CameraVisionEngine::RunVisionEncoder(const std::vector<float>& imageData) {
     try {
-        std::cout << "[Camera] Vision encoder input data size: " << imageData.size() << std::endl;
+        LOG_DEBUG_FMT("Vision encoder input data size: %zu", imageData.size());
 
         // Input shape: [1, 3, 224, 224]
         std::vector<int64_t> inputShape = {1, 3, 224, 224};
@@ -142,12 +143,12 @@ std::vector<float> CameraVisionEngine::RunVisionEncoder(const std::vector<float>
         // Verify data size matches shape
         size_t expectedSize = 1 * 3 * 224 * 224;
         if (imageData.size() != expectedSize) {
-            std::cerr << "[Camera] ERROR: Image data size mismatch! Got " << imageData.size()
-                      << ", expected " << expectedSize << std::endl;
+            LOG_ERROR_FMT("Image data size mismatch! Got %zu, expected %zu", 
+                         imageData.size(), expectedSize);
             return {};
         }
 
-        std::cout << "[Camera] Creating input tensor with shape [1, 3, 224, 224]" << std::endl;
+        LOG_DEBUG("Creating input tensor with shape [1, 3, 224, 224]");
 
         // Create input tensor
         Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
@@ -158,7 +159,7 @@ std::vector<float> CameraVisionEngine::RunVisionEncoder(const std::vector<float>
             inputShape.size()
         );
 
-        std::cout << "[Camera] Input tensor created, running inference..." << std::endl;
+        LOG_DEBUG("Input tensor created, running inference...");
 
         // Run inference
         const char* inputNames[] = {"pixel_values"};
@@ -182,14 +183,14 @@ std::vector<float> CameraVisionEngine::RunVisionEncoder(const std::vector<float>
         return imageFeatures;
 
     } catch (const std::exception& e) {
-        std::cerr << "[Camera] Vision encoder error: " << e.what() << std::endl;
+        LOG_ERROR_FMT("Vision encoder error: %s", e.what());
         return {};
     }
 }
 
 std::string CameraVisionEngine::DescribeScene() {
     if (!isInitialized) {
-        std::cerr << "[Camera] Engine not initialized" << std::endl;
+        LOG_ERROR("Engine not initialized");
         return "";
     }
 
@@ -199,32 +200,33 @@ std::string CameraVisionEngine::DescribeScene() {
         // Step 1: Capture frame
         cv::Mat frame;
         if (!camera.read(frame) || frame.empty()) {
-            std::cerr << "[Camera] Failed to capture frame" << std::endl;
+            LOG_ERROR("Failed to capture frame");
             return "";
         }
 
         // Validate frame dimensions
         if (frame.rows == 0 || frame.cols == 0) {
-            std::cerr << "[Camera] Invalid frame dimensions: " << frame.rows << "x" << frame.cols << std::endl;
+            LOG_ERROR_FMT("Invalid frame dimensions: %dx%d", frame.rows, frame.cols);
             return "";
         }
 
-        std::cout << "[Camera] Captured frame: " << frame.cols << "x" << frame.rows << std::endl;
+        LOG_DEBUG_FMT("Captured frame: %dx%d", frame.cols, frame.rows);
 
         // Step 2: Preprocess image
         std::vector<float> imageData;
         PreprocessImage(frame, imageData);
 
-        std::cout << "[Camera] Preprocessed image data size: " << imageData.size() << " (expected: " << (3 * 224 * 224) << ")" << std::endl;
+        LOG_DEBUG_FMT("Preprocessed image data size: %zu (expected: %d)", 
+                     imageData.size(), 3 * 224 * 224);
         if (imageData.empty()) {
-            std::cerr << "[Camera] ERROR: Image preprocessing returned empty data!" << std::endl;
+            LOG_ERROR("Image preprocessing returned empty data!");
             return "";
         }
 
         // Step 3: Run vision encoder
         std::vector<float> imageFeatures = RunVisionEncoder(imageData);
         if (imageFeatures.empty()) {
-            std::cerr << "[Camera] Vision encoder failed" << std::endl;
+            LOG_ERROR("Vision encoder failed");
             return "";
         }
 
@@ -232,14 +234,14 @@ std::string CameraVisionEngine::DescribeScene() {
         std::vector<int64_t> promptTokens = FastVLMTokenizer::GetPromptTokens();
         std::vector<float> inputEmbeds = TokenizeAndEmbed(promptTokens, imageFeatures);
         if (inputEmbeds.empty()) {
-            std::cerr << "[Camera] Token embedding failed" << std::endl;
+            LOG_ERROR("Token embedding failed");
             return "";
         }
 
         // Step 5: Generate description tokens
         std::vector<int64_t> generatedTokens = Generate(inputEmbeds, 50);
         if (generatedTokens.empty()) {
-            std::cerr << "[Camera] Generation failed" << std::endl;
+            LOG_ERROR("Generation failed");
             return "";
         }
 
@@ -249,13 +251,13 @@ std::string CameraVisionEngine::DescribeScene() {
         auto endTime = std::chrono::high_resolution_clock::now();
         lastLatencyMs = std::chrono::duration<float, std::milli>(endTime - startTime).count();
 
-        std::cout << "[Camera] Total latency: " << lastLatencyMs << "ms" << std::endl;
-        std::cout << "[Camera] Description: " << description << std::endl;
+        LOG_INFO_FMT("Total latency: %.0f ms", lastLatencyMs);
+        LOG_INFO_FMT("Description: %s", description.c_str());
 
         return description;
 
     } catch (const std::exception& e) {
-        std::cerr << "[Camera] Error in DescribeScene: " << e.what() << std::endl;
+        LOG_ERROR_FMT("Error in DescribeScene: %s", e.what());
         return "";
     }
 }
@@ -295,10 +297,6 @@ std::vector<float> CameraVisionEngine::TokenizeAndEmbed(
         std::vector<float> tokenEmbeds(embedData, embedData + embedSize);
 
         // Combine token embeds with image features
-        // Token embeds: [1, num_tokens, 896]
-        // Image features: [1, 16, 896]
-        // Need to insert image features at <image> token position (index 0)
-
         std::vector<float> combined;
         combined.reserve(tokenEmbeds.size() + imageFeatures.size());
 
@@ -307,7 +305,6 @@ std::vector<float> CameraVisionEngine::TokenizeAndEmbed(
 
         // Add remaining token embeddings (skip first token which is <image>)
         size_t embedDim = 896;
-        size_t tokensPerEmbed = embedDim;
         combined.insert(combined.end(),
                        tokenEmbeds.begin() + embedDim,  // Skip first token embedding
                        tokenEmbeds.end());
@@ -315,7 +312,7 @@ std::vector<float> CameraVisionEngine::TokenizeAndEmbed(
         return combined;
 
     } catch (const std::exception& e) {
-        std::cerr << "[Camera] Token embedding error: " << e.what() << std::endl;
+        LOG_ERROR_FMT("Token embedding error: %s", e.what());
         return {};
     }
 }
@@ -327,11 +324,11 @@ std::vector<int64_t> CameraVisionEngine::Generate(
     std::vector<int64_t> generatedTokens;
 
     try {
-        std::cout << "[Camera] Starting auto-regressive generation (max " << maxTokens << " tokens)..." << std::endl;
+        LOG_INFO_FMT("Starting auto-regressive generation (max %d tokens)...", maxTokens);
 
         // Calculate initial sequence length
         int seqLen = (inputEmbeds.size() / HIDDEN_SIZE);
-        std::cout << "[Camera] Initial sequence length: " << seqLen << std::endl;
+        LOG_INFO_FMT("Initial sequence length: %d", seqLen);
 
         // STEP 1: First forward pass with full prompt
         // =============================================
@@ -412,7 +409,7 @@ std::vector<int64_t> CameraVisionEngine::Generate(
             outputNames.push_back(kvOutputNames[layer * 2 + 1].c_str());
         }
 
-        std::cout << "[Camera] Running first forward pass..." << std::endl;
+        LOG_INFO("Running first forward pass...");
 
         // Run first forward pass
         auto outputTensors = decoder->Run(
@@ -443,11 +440,11 @@ std::vector<int64_t> CameraVisionEngine::Generate(
         }
 
         generatedTokens.push_back(nextToken);
-        std::cout << "[Camera] Generated token 1/" << maxTokens << ": " << nextToken << std::endl;
+        LOG_INFO_FMT("Generated token 1/%d: %d", maxTokens, nextToken);
 
         // Check for EOS
         if (nextToken == FastVLMTokenizer::EOS_TOKEN_ID) {
-            std::cout << "[Camera] EOS token reached" << std::endl;
+            LOG_INFO("EOS token reached");
             return generatedTokens;
         }
 
@@ -568,12 +565,11 @@ std::vector<int64_t> CameraVisionEngine::Generate(
             }
 
             generatedTokens.push_back(nextToken);
-            std::cout << "[Camera] Generated token " << (tokenIdx + 1) << "/" << maxTokens
-                     << ": " << nextToken << std::endl;
+            LOG_INFO_FMT("Generated token %d/%d: %d", tokenIdx + 1, maxTokens, nextToken);
 
             // Check for EOS
             if (nextToken == FastVLMTokenizer::EOS_TOKEN_ID) {
-                std::cout << "[Camera] EOS token reached after " << (tokenIdx + 1) << " tokens" << std::endl;
+                LOG_INFO_FMT("EOS token reached after %d tokens", tokenIdx + 1);
                 break;
             }
 
@@ -589,11 +585,11 @@ std::vector<int64_t> CameraVisionEngine::Generate(
             currentPos++;
         }
 
-        std::cout << "[Camera] Generation complete! Generated " << generatedTokens.size() << " tokens" << std::endl;
+        LOG_INFO_FMT("Generation complete! Generated %zu tokens", generatedTokens.size());
         return generatedTokens;
 
     } catch (const std::exception& e) {
-        std::cerr << "[Camera] Generation error: " << e.what() << std::endl;
+        LOG_ERROR_FMT("Generation error: %s", e.what());
         return {};
     }
 }
@@ -605,15 +601,14 @@ std::string CameraVisionEngine::DecodeTokens(const std::vector<int64_t>& tokenId
     // Load vocabulary
     std::string vocabPath = "models/fastvlm/vocab.json";
     if (!tokenizer.LoadVocab(vocabPath)) {
-        std::cerr << "[Camera] Failed to load vocabulary from " << vocabPath << std::endl;
+        LOG_ERROR_FMT("Failed to load vocabulary from %s", vocabPath.c_str());
         return "[Error: Could not load vocabulary]";
     }
 
     // Decode token IDs to text
     std::string decoded = tokenizer.Decode(tokenIds);
 
-    // Clean up the output (remove extra whitespace, trim, etc.)
-    // Remove leading/trailing whitespace
+    // Clean up the output
     size_t start = decoded.find_first_not_of(" \t\n\r");
     size_t end = decoded.find_last_not_of(" \t\n\r");
 

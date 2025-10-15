@@ -1,4 +1,5 @@
 #include "SileroVAD.h"
+#include "Logger.h"  // NEW: Add Logger
 #include <iostream>
 #include <algorithm>
 
@@ -11,24 +12,24 @@ SileroVAD::SileroVAD()
     // Initialize state (2 layers, batch=1, hidden_size=128)
     state.resize(2 * 1 * 128, 0.0f);
 
-    LogDebug("SileroVAD created");
+    LOG_INFO("SileroVAD created");
 }
 
 SileroVAD::~SileroVAD() {
     session.reset();
-    LogDebug("SileroVAD destroyed");
+    LOG_INFO("SileroVAD destroyed");
 }
 
 bool SileroVAD::Initialize(const std::wstring& modelPath) {
     try {
-        LogDebug("Initializing Silero VAD...");
+        LOG_INFO("Initializing Silero VAD...");
 
         // Convert wstring to string for logging
         std::string modelPathStr(modelPath.length(), 0);
         std::transform(modelPath.begin(), modelPath.end(), modelPathStr.begin(), [](wchar_t c) {
             return static_cast<char>(c);
         });
-        LogDebug("Model path: " + modelPathStr);
+        LOG_INFO_FMT("Model path: %s", modelPathStr.c_str());
 
         // Configure session options
         sessionOptions.SetIntraOpNumThreads(1);
@@ -37,50 +38,50 @@ bool SileroVAD::Initialize(const std::wstring& modelPath) {
         // Create session
         session = std::make_unique<Ort::Session>(env, modelPath.c_str(), sessionOptions);
 
-        LogDebug("Silero VAD model loaded successfully");
+        LOG_INFO("Silero VAD model loaded successfully");
 
         // Print model info
         size_t numInputNodes = session->GetInputCount();
         size_t numOutputNodes = session->GetOutputCount();
 
-        LogDebug("Model inputs: " + std::to_string(numInputNodes));
-        LogDebug("Model outputs: " + std::to_string(numOutputNodes));
+        LOG_INFO_FMT("Model inputs: %zu", numInputNodes);
+        LOG_INFO_FMT("Model outputs: %zu", numOutputNodes);
 
         // Print input names for debugging
         Ort::AllocatorWithDefaultOptions allocator;
         for (size_t i = 0; i < numInputNodes; i++) {
             auto input_name = session->GetInputNameAllocated(i, allocator);
             std::string name_str(input_name.get());
-            LogDebug("  Input " + std::to_string(i) + ": " + name_str);
+            LOG_DEBUG_FMT("  Input %zu: %s", i, name_str.c_str());
         }
 
         // Print output names for debugging
         for (size_t i = 0; i < numOutputNodes; i++) {
             auto output_name = session->GetOutputNameAllocated(i, allocator);
             std::string name_str(output_name.get());
-            LogDebug("  Output " + std::to_string(i) + ": " + name_str);
+            LOG_DEBUG_FMT("  Output %zu: %s", i, name_str.c_str());
         }
 
         return true;
     }
     catch (const Ort::Exception& e) {
-        LogError("ONNX Runtime error: " + std::string(e.what()));
+        LOG_ERROR_FMT("ONNX Runtime error: %s", e.what());
         return false;
     }
     catch (const std::exception& e) {
-        LogError("Failed to initialize Silero VAD: " + std::string(e.what()));
+        LOG_ERROR_FMT("Failed to initialize Silero VAD: %s", e.what());
         return false;
     }
 }
 
 float SileroVAD::Process(const float* audioData, size_t length) {
     if (!session) {
-        LogError("Silero VAD not initialized!");
+        LOG_ERROR("Silero VAD not initialized!");
         return 0.0f;
     }
 
     if (length != CHUNK_SIZE) {
-        LogError("Audio chunk must be exactly " + std::to_string(CHUNK_SIZE) + " samples");
+        LOG_ERROR_FMT("Audio chunk must be exactly %zu samples", CHUNK_SIZE);
         return 0.0f;
     }
 
@@ -154,11 +155,11 @@ float SileroVAD::Process(const float* audioData, size_t length) {
         return speech_probability;
     }
     catch (const Ort::Exception& e) {
-        LogError("ONNX Runtime inference error: " + std::string(e.what()));
+        LOG_ERROR_FMT("ONNX Runtime inference error: %s", e.what());
         return 0.0f;
     }
     catch (const std::exception& e) {
-        LogError("Inference failed: " + std::string(e.what()));
+        LOG_ERROR_FMT("Inference failed: %s", e.what());
         return 0.0f;
     }
 }
@@ -166,13 +167,5 @@ float SileroVAD::Process(const float* audioData, size_t length) {
 void SileroVAD::Reset() {
     // Reset internal state
     std::fill(state.begin(), state.end(), 0.0f);
-    LogDebug("VAD state reset");
-}
-
-void SileroVAD::LogDebug(const std::string& message) {
-    std::cout << "[SileroVAD] " << message << std::endl;
-}
-
-void SileroVAD::LogError(const std::string& message) {
-    std::cerr << "[SileroVAD ERROR] " << message << std::endl;
+    LOG_DEBUG("VAD state reset");
 }

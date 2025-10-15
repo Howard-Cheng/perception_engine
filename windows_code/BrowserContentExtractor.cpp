@@ -124,7 +124,7 @@ CComPtr<IUIAutomationElement> FindDocumentElement(IUIAutomation* pAutomation, IU
     hr = pRootElement->FindFirst(TreeScope_Descendants, pCondition, &pDocElement);
     
     if (SUCCEEDED(hr) && pDocElement) {
-        LOG_INFO("Found Document element (web content area)");
+        LOG_DEBUG("Found Document element (web content area)");
         return pDocElement;
     }
     
@@ -151,11 +151,11 @@ CComPtr<IUIAutomationElement> FindDocumentElement(IUIAutomation* pAutomation, IU
                     
                     // Skip Panes that are obviously not web content
                     if (name.find(L"Toolbar") == std::wstring::npos &&
-                        name.find(L"¹¤¾ßÀ¸") == std::wstring::npos &&
+                        name.find(L"ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½") == std::wstring::npos &&
                         name.find(L"Bookmark") == std::wstring::npos &&
-                        name.find(L"ÊéÇ©") == std::wstring::npos &&
+                        name.find(L"ï¿½ï¿½Ç©") == std::wstring::npos &&
                         name.find(L"Tab") == std::wstring::npos &&
-                        name.find(L"±êÇ©") == std::wstring::npos &&
+                        name.find(L"ï¿½ï¿½Ç©") == std::wstring::npos &&
                         automationId.find(L"Toolbar") == std::wstring::npos) {
                         
                         //LOG_INFO_FMT("Found potential content Pane: %s", WStringToString(name).c_str());
@@ -191,22 +191,22 @@ bool BrowserContentExtractor::GetBrowserContentByHWND(HWND hwnd, BrowserContentI
     GetWindowTextW(hwnd, windowTitle, 512);
     outInfo.title = windowTitle;
     
-    LOG_INFO("Detected browser type:");
+    LOG_DEBUG("Detected browser type:");
     switch (browserType) {
         case BrowserType::Chrome:
-            LOG_INFO("Chrome");
+            LOG_DEBUG("Chrome");
             break;
         case BrowserType::Edge:
-            LOG_INFO("Edge");
+            LOG_DEBUG("Edge");
             break;
         case BrowserType::Firefox:
-            LOG_INFO("Firefox");
+            LOG_DEBUG("Firefox");
             break;
         case BrowserType::Teams:
-            LOG_INFO("Teams");
+            LOG_DEBUG("Teams");
             break;
         default:
-            LOG_INFO("Unknown (will try generic parsing)");
+            LOG_DEBUG("Unknown (will try generic parsing)");
             break;
     }
     
@@ -227,22 +227,22 @@ bool BrowserContentExtractor::GetBrowserContentByHWND(HWND hwnd, BrowserContentI
     }
     
     outInfo.elementCount = 0;
-    
-    LOG_INFO("Searching for web content area...");
-    
+
+    LOG_DEBUG("Searching for web content area...");
+
     // KEY CHANGE: Only traverse web content area, not entire browser window
     CComPtr<IUIAutomationElement> pContentElement = FindDocumentElement(pAutomation, pRootElement);
-    
+
     if (pContentElement) {
-        LOG_INFO("Starting element traversal from content area...");
+        LOG_DEBUG("Starting element traversal from content area...");
         TraverseElementTree(pContentElement, outInfo, 0);
     } else {
         LOG_WARN("Could not find content area, parsing entire window...");
         LOG_WARN("(This may include toolbar, tabs, and other UI elements)");
         TraverseElementTree(pRootElement, outInfo, 0);
     }
-    
-    LOG_INFO_FMT("Parsing complete! Found %d elements", outInfo.elementCount);
+
+    LOG_DEBUG_FMT("Parsing complete! Found %d elements", outInfo.elementCount);
     
     return true;
 }
@@ -283,18 +283,18 @@ void BrowserContentExtractor::ExtractElementInfo(IUIAutomationElement* pElement,
     
     std::wstring text = GetElementText(pElement);
     
-    // ? ¸Ä½ø£ºÈ¥ÖØ²¢ÇåÀíÎÄ±¾
+    // ? ï¿½Ä½ï¿½ï¿½ï¿½È¥ï¿½Ø²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä±ï¿½
     if (!text.empty() && text.length() > 1) {
-        // ÒÆ³ýÇ°ºó¿Õ°×
+        // ï¿½Æ³ï¿½Ç°ï¿½ï¿½Õ°ï¿½
         size_t start = text.find_first_not_of(L" \t\n\r");
         size_t end = text.find_last_not_of(L" \t\n\r");
         
         if (start != std::wstring::npos && end != std::wstring::npos) {
             text = text.substr(start, end - start + 1);
             
-            // ? Ê¹ÓÃ¼¯ºÏ¼ì²éÊÇ·ñÒÑ¾­´æÔÚ
+            // ? Ê¹ï¿½Ã¼ï¿½ï¿½Ï¼ï¿½ï¿½ï¿½Ç·ï¿½ï¿½Ñ¾ï¿½ï¿½ï¿½ï¿½ï¿½
             if (info.seenTexts.find(text) == info.seenTexts.end()) {
-                // ÎÄ±¾Î´¼û¹ý£¬Ìí¼Óµ½½á¹ûºÍ¼¯ºÏÖÐ
+                // ï¿½Ä±ï¿½Î´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Óµï¿½ï¿½ï¿½ï¿½ï¿½Í¼ï¿½ï¿½ï¿½ï¿½ï¿½
                 info.seenTexts.insert(text);
                 
                 if (!info.textContent.empty()) {
@@ -302,11 +302,11 @@ void BrowserContentExtractor::ExtractElementInfo(IUIAutomationElement* pElement,
                 }
                 info.textContent += text;
             }
-            // else: ÎÄ±¾ÒÑ´æÔÚ£¬Ìø¹ý
+            // else: ï¿½Ä±ï¿½ï¿½Ñ´ï¿½ï¿½Ú£ï¿½ï¿½ï¿½ï¿½ï¿½
         }
     }
     
-    // ´¦ÀíÁ´½Ó£¨ÒÑÓÐÈ¥ÖØ£©
+    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó£ï¿½ï¿½ï¿½ï¿½ï¿½È¥ï¿½Ø£ï¿½
     if (controlType == UIA_HyperlinkControlTypeId || 
         controlType == UIA_ButtonControlTypeId) {
         std::wstring value = GetElementProperty(pElement, UIA_ValueValuePropertyId);
@@ -324,7 +324,7 @@ void BrowserContentExtractor::ExtractElementInfo(IUIAutomationElement* pElement,
         }
     }
     
-    // ´¦ÀíÍ¼Æ¬£¨ÒÑÓÐÈ¥ÖØ£©
+    // ï¿½ï¿½ï¿½ï¿½Í¼Æ¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È¥ï¿½Ø£ï¿½
     if (controlType == UIA_ImageControlTypeId) {
         std::wstring name = GetElementProperty(pElement, UIA_NamePropertyId);
         if (!name.empty()) {

@@ -24,14 +24,17 @@ cd PE
 ```
 
 **What it does:**
-1. ✅ Downloads Whisper model (~43MB)
+1. ✅ Downloads Whisper small model (~465MB)
 2. ✅ Downloads Silero VAD model (~1.8MB)
-3. ✅ Verifies third-party libraries
-4. ✅ Builds whisper.cpp
-5. ✅ Installs Python dependencies
-6. ✅ Builds PerceptionEngine.exe
+3. ✅ Downloads OpenCV (~120MB) and ONNX Runtime (~15MB)
+4. ✅ Initializes whisper.cpp submodule
+5. ✅ Builds whisper.cpp (with CUDA GPU support if available)
+6. ✅ Installs Python dependencies (with PyTorch CUDA if available)
+7. ✅ Builds PerceptionEngine.exe
+8. ✅ Verifies all components
 
-**Time:** 10-15 minutes
+**Time:** 20-30 minutes (depending on internet speed)
+**GPU Support:** Automatically enabled if NVIDIA GPU + CUDA Toolkit detected
 
 **See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed setup instructions and troubleshooting.**
 
@@ -120,11 +123,11 @@ http://localhost:8777/dashboard
 
 2. **Voice Transcription (C++)**
    - Captures microphone audio via WASAPI
-   - Detects speech with Silero VAD (optimized: 800ms silence threshold)
-   - Transcribes with Whisper.cpp (tiny.en-q8_0 model)
-   - **GPU acceleration** when NVIDIA GPU + CUDA detected
+   - Detects speech with Silero VAD (optimized: 800ms silence threshold, 400ms min speech)
+   - Transcribes with Whisper.cpp (small model, 244M params, 99 languages)
+   - **GPU acceleration** when NVIDIA GPU + CUDA detected (automatic fallback to CPU)
    - Async queue prevents blocking
-   - **Latency:** 200-500ms (CPU) or 150-300ms (GPU, 2-3x faster)
+   - **Latency:** 200-500ms (GPU) or 4-6s (CPU) - 10-20x speedup with GPU
 
 3. **Camera Vision (Python)**
    - Analyzes physical environment via webcam
@@ -366,16 +369,20 @@ windows_code/
 
 | Model | Size | Purpose | Integration | GPU Support |
 |-------|------|---------|-------------|-------------|
-| **Whisper tiny.en-q8_0** | ~43MB | Voice transcription | C++ (whisper.cpp) | ✅ CUDA (auto-detected) |
+| **Whisper small** | ~465MB | Voice transcription (99 languages) | C++ (whisper.cpp) | ✅ CUDA (auto-detected) |
 | **Silero VAD** | ~1.8MB | Speech detection | C++ (ONNX Runtime) | ❌ CPU only |
 | **FastVLM-0.5B** | ~1GB | Camera scene description | Python (PyTorch) | ✅ CUDA (auto-detected) |
 
-**Total disk space:** ~1.1GB
+**Total disk space:** ~1.5GB
 
 **GPU Acceleration:** Automatically uses NVIDIA GPU when CUDA Toolkit is installed
-- **Voice:** Whisper.cpp with CUDA backend (2-3x faster)
-- **Camera:** PyTorch with CUDA + FP16 (5-6x faster)
+- **Voice:** Whisper.cpp with CUDA backend (2-3x faster than CPU)
+- **Camera:** PyTorch with CUDA + FP16 (5-6x faster than CPU)
 - **Fallback:** Gracefully falls back to CPU if GPU unavailable
+
+**Model Benefits:**
+- **Whisper small**: 244M parameters (vs 39M for tiny) = better accuracy, supports 99 languages
+- **GPU acceleration**: 200-500ms voice transcription (vs 4-6s CPU), 1.5-2s camera (vs 8-12s CPU)
 
 ---
 

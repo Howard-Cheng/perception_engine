@@ -493,7 +493,7 @@ void AudioCaptureEngine::ProcessingThread() {
 
     // Speech segmentation parameters (tuned for natural conversation)
     const int VAD_WINDOW_SAMPLES = (SAMPLE_RATE * VAD_CHUNK_MS) / 1000; // 30ms windows for VAD
-    const int SILENCE_THRESHOLD_MS = 800;  // 800ms silence = end of utterance (prevents mid-sentence cutoff)
+    const int SILENCE_THRESHOLD_MS = 1000; // 1000ms silence = end of utterance (prevents mid-sentence cutoff)
     const int MIN_SPEECH_MS = 400;         // 400ms minimum speech (filters noise, captures short words)
     const int MAX_SPEECH_SEC = 30;         // 30 seconds max per utterance (prevents buffer overflow)
 

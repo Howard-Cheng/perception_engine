@@ -215,8 +215,8 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/whisper
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/../models/whisper/ggml-tiny.en-q8_0.bin
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/whisper/ggml-tiny.en-q8_0.bin
+        ${CMAKE_CURRENT_SOURCE_DIR}/../models/whisper/ggml-small.bin
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/whisper/ggml-small.bin
 
     # Copy Silero VAD model to bin/
     COMMAND ${CMAKE_COMMAND} -E make_directory
@@ -263,14 +263,19 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
         "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cublasLt64_13.dll"
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/cublasLt64_13.dll
 
+    # Copy dashboard.html to bin/
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/dashboard.html
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/dashboard.html
+
     # For MSVC multi-config: also copy to bin/Release/
     COMMAND ${CMAKE_COMMAND} -E make_directory
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/whisper
     COMMAND ${CMAKE_COMMAND} -E make_directory
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/vad
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/../models/whisper/ggml-tiny.en-q8_0.bin
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/whisper/ggml-tiny.en-q8_0.bin
+        ${CMAKE_CURRENT_SOURCE_DIR}/../models/whisper/ggml-small.bin
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/whisper/ggml-small.bin
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/../models/vad/silero_vad.onnx
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/vad/silero_vad.onnx
@@ -308,6 +313,11 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cublasLt64_13.dll"
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/cublasLt64_13.dll
+
+    # Copy dashboard.html to bin/Release/
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/dashboard.html
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/dashboard.html
 
     COMMENT "Copying models and DLLs to output directory"
 )

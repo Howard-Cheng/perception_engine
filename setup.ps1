@@ -91,15 +91,15 @@ if (-not $SkipPython) {
 Write-Step "Downloading Whisper Model"
 
 $whisperModelDir = "models\whisper"
-$whisperModelPath = "$whisperModelDir\ggml-tiny.en-q8_0.bin"
+$whisperModelPath = "$whisperModelDir\ggml-small.bin"
 
 if (Test-Path $whisperModelPath) {
     Write-Success "Whisper model already exists: $whisperModelPath"
 } else {
-    Write-Info "Downloading Whisper tiny.en Q8_0 model (~43MB)..."
+    Write-Info "Downloading Whisper small multilingual model (~465MB, this may take 2-5 minutes)..."
     New-Item -ItemType Directory -Force -Path $whisperModelDir | Out-Null
 
-    $whisperUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-q8_0.bin"
+    $whisperUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin"
 
     try {
         Invoke-WebRequest -Uri $whisperUrl -OutFile $whisperModelPath -UseBasicParsing
@@ -276,12 +276,27 @@ if (Test-Path "windows_code\third-party\whisper.cpp\include\whisper.h") {
 }
 
 # ============================================================================
-# Step 6: Build whisper.cpp
+# Step 6: Build whisper.cpp (with GPU support if CUDA available)
 # ============================================================================
 
 Write-Step "Building whisper.cpp"
 
-$whisperBuildDir = "windows_code\third-party\whisper.cpp\build"
+# Check for CUDA Toolkit
+$cudaPath = $env:CUDA_PATH
+if (-not $cudaPath) {
+    $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0"
+}
+
+$hasCuda = Test-Path "$cudaPath\bin\nvcc.exe"
+
+if ($hasCuda) {
+    Write-Info "CUDA Toolkit detected at: $cudaPath"
+    Write-Info "Building whisper.cpp with GPU acceleration (CUDA)..."
+    $whisperBuildDir = "windows_code\third-party\whisper.cpp\build_cuda"
+} else {
+    Write-Info "CUDA Toolkit not found, building CPU-only version"
+    $whisperBuildDir = "windows_code\third-party\whisper.cpp\build"
+}
 
 if (Test-Path "$whisperBuildDir\src\Release\whisper.lib") {
     Write-Success "whisper.cpp already built"
@@ -291,13 +306,29 @@ if (Test-Path "$whisperBuildDir\src\Release\whisper.lib") {
     Push-Location "windows_code\third-party\whisper.cpp"
 
     try {
-        # Configure CMake
-        cmake -B build -G "Visual Studio 17 2022" -A x64 -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=OFF
+        if ($hasCuda) {
+            # Configure CMake with CUDA support
+            cmake -B build_cuda -G "Visual Studio 17 2022" -A x64 `
+                -DWHISPER_BUILD_TESTS=OFF `
+                -DWHISPER_BUILD_EXAMPLES=OFF `
+                -DGGML_CUDA=ON `
+                -DCMAKE_CUDA_COMPILER="$cudaPath\bin\nvcc.exe"
 
-        # Build Release
-        cmake --build build --config Release --target whisper
+            # Build Release with CUDA
+            cmake --build build_cuda --config Release --target whisper
 
-        Write-Success "whisper.cpp built successfully"
+            Write-Success "whisper.cpp built successfully with CUDA acceleration"
+        } else {
+            # Configure CMake without CUDA
+            cmake -B build -G "Visual Studio 17 2022" -A x64 `
+                -DWHISPER_BUILD_TESTS=OFF `
+                -DWHISPER_BUILD_EXAMPLES=OFF
+
+            # Build Release (CPU only)
+            cmake --build build --config Release --target whisper
+
+            Write-Success "whisper.cpp built successfully (CPU-only)"
+        }
     } catch {
         Write-Error-Custom "Failed to build whisper.cpp: $_"
         Pop-Location
@@ -308,7 +339,7 @@ if (Test-Path "$whisperBuildDir\src\Release\whisper.lib") {
 }
 
 # Verify whisper.lib exists
-$whisperLibPath = "windows_code\third-party\whisper.cpp\build\src\Release\whisper.lib"
+$whisperLibPath = "$whisperBuildDir\src\Release\whisper.lib"
 
 if (Test-Path $whisperLibPath) {
     Write-Success "whisper.lib found at: $whisperLibPath"
@@ -441,10 +472,17 @@ if (Test-Path $onnxDll) {
     $allGood = $false
 }
 
-# Verify whisper.lib
-if (Test-Path "windows_code\third-party\whisper.cpp\build\src\Release\whisper.lib") {
-    Write-Success "whisper.cpp library found"
-} else {
+# Verify whisper.lib (check both CUDA and CPU builds)
+$whisperLibFound = $false
+if (Test-Path "windows_code\third-party\whisper.cpp\build_cuda\src\Release\whisper.lib") {
+    Write-Success "whisper.cpp library found (CUDA build)"
+    $whisperLibFound = $true
+} elseif (Test-Path "windows_code\third-party\whisper.cpp\build\src\Release\whisper.lib") {
+    Write-Success "whisper.cpp library found (CPU build)"
+    $whisperLibFound = $true
+}
+
+if (-not $whisperLibFound) {
     Write-Error-Custom "whisper.lib NOT found!"
     $allGood = $false
 }

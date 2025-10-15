@@ -15,18 +15,19 @@ echo.
 echo This will download all required dependencies and build the project.
 echo.
 echo What it does:
-echo   1. Downloads Whisper model (~43MB)
+echo   1. Downloads Whisper small model (~465MB)
 echo   2. Downloads Silero VAD model (~1.8MB)
 echo   3. Downloads OpenCV (~120MB)
 echo   4. Downloads ONNX Runtime (~15MB)
 echo   5. Initializes whisper.cpp git submodule
-echo   6. Builds whisper.cpp
-echo   7. Installs Python dependencies
+echo   6. Builds whisper.cpp (with CUDA GPU support if available)
+echo   7. Installs Python dependencies (with PyTorch CUDA if available)
 echo   8. Builds PerceptionEngine.exe
 echo   9. Copies required files
 echo   10. Verifies all components
 echo.
-echo Estimated time: 15-25 minutes
+echo Estimated time: 20-30 minutes (depending on internet speed)
+echo GPU Support: Automatically enabled if NVIDIA GPU + CUDA Toolkit detected
 echo.
 echo Press Ctrl+C to cancel or
 pause

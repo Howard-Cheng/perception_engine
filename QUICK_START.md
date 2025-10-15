@@ -10,20 +10,23 @@
 git clone <repo-url> perception_engine && cd perception_engine && powershell -ExecutionPolicy Bypass -File setup.ps1
 ```
 
-**Wait 15-25 minutes** ☕ (downloads + compilation)
+**Wait 20-30 minutes** ☕ (downloads ~600MB + compilation)
+**GPU Support:** Automatically enabled if NVIDIA GPU + CUDA Toolkit detected
 
 ---
 
 ## 2️⃣ Prerequisites (Install These First)
 
-| Software | Check | Install Link |
-|----------|-------|--------------|
-| **CMake 3.20+** | `cmake --version` | https://cmake.org/download/ |
-| **Visual Studio 2022** | `vswhere` | https://visualstudio.microsoft.com/downloads/ |
-| **Python 3.8+** | `python --version` | https://python.org |
-| **Git** | `git --version` | https://git-scm.com/downloads |
+| Software | Required | Check | Install Link |
+|----------|----------|-------|--------------|
+| **CMake 3.20+** | ✅ Required | `cmake --version` | https://cmake.org/download/ |
+| **Visual Studio 2022** | ✅ Required | `vswhere` | https://visualstudio.microsoft.com/downloads/ |
+| **Python 3.8+** | ✅ Required | `python --version` | https://python.org |
+| **Git** | ✅ Required | `git --version` | https://git-scm.com/downloads |
+| **CUDA Toolkit 13.0+** | 🔷 Optional (GPU) | `nvcc --version` | https://developer.nvidia.com/cuda-downloads |
 
 **Visual Studio:** Make sure to select "Desktop development with C++" workload during installation.
+**CUDA Toolkit:** Optional - Only needed for GPU acceleration (2-10x speedup). Auto-detected during setup.
 
 ---
 
@@ -31,13 +34,17 @@ git clone <repo-url> perception_engine && cd perception_engine && powershell -Ex
 
 | Component | Size | Purpose |
 |-----------|------|---------|
-| Whisper model | ~43 MB | Voice transcription |
+| Whisper small model | ~465 MB | Voice transcription (99 languages, 244M params) |
 | Silero VAD model | ~1.8 MB | Speech detection |
 | OpenCV 4.10.0 | ~120 MB | Camera capture |
 | ONNX Runtime 1.16.3 | ~15 MB | Neural network inference |
-| Python packages | ~1 GB | FastVLM model (first run) |
+| Python packages | ~1 GB | FastVLM model (first run, with CUDA support if GPU detected) |
 
-**Total:** ~1.2 GB
+**Total:** ~1.6 GB
+
+**GPU Benefits:**
+- Voice: 4-6s (CPU) → 200-500ms (GPU) = 10-20x faster
+- Camera: 8-12s (CPU) → 1.5-2s (GPU) = 5-6x faster
 
 ---
 
@@ -155,15 +162,16 @@ cd windows_code\build\bin\Release
 
 ## 8️⃣ Performance Expectations
 
-| What | Expected | Abnormal |
-|------|----------|----------|
-| **Setup time** | 15-25 min | >30 min (slow internet?) |
-| **Server start** | <5 sec | >10 sec (model loading issue?) |
-| **CPU usage (idle)** | 3-5% | >20% (check processes) |
-| **CPU usage (active)** | 20-30% | >60% (too many apps running?) |
-| **RAM usage** | 800 MB - 1.2 GB | >2 GB (memory leak?) |
-| **Voice latency** | 6-15 sec | >30 sec (CPU overload?) |
-| **Camera latency** | 15-35 sec | >60 sec (CPU overload?) |
+| What | Expected (GPU) | Expected (CPU) | Abnormal |
+|------|----------------|----------------|----------|
+| **Setup time** | 20-30 min | 25-35 min | >45 min (slow internet?) |
+| **Server start** | <5 sec | <10 sec | >15 sec (model loading issue?) |
+| **CPU usage (idle)** | 3-5% | 3-5% | >20% (check processes) |
+| **CPU usage (active)** | 10-20% | 40-60% | >80% (too many apps?) |
+| **GPU usage (active)** | 30-50% | N/A | >90% (other GPU apps?) |
+| **RAM usage** | 800 MB - 1.2 GB | 800 MB - 1.2 GB | >2 GB (memory leak?) |
+| **Voice latency** | 200-500ms | 4-6 sec | >10 sec (CPU overload?) |
+| **Camera latency** | 1.5-2 sec | 8-12 sec | >20 sec (CPU overload?) |
 
 ---
 
@@ -186,16 +194,22 @@ taskkill /IM python.exe /F
 ```
 perception_engine/
 ├── models/
-│   ├── whisper/ggml-tiny.en-q8_0.bin       ← Voice model
-│   └── vad/silero_vad.onnx                 ← Speech detection
+│   ├── whisper/ggml-small.bin              ← Voice model (465MB, 99 languages)
+│   └── vad/silero_vad.onnx                 ← Speech detection (1.8MB)
 ├── windows_code/
 │   ├── third-party/
 │   │   ├── opencv/                         ← Camera library
 │   │   ├── onnxruntime/                    ← Neural network runtime
-│   │   └── whisper.cpp/                    ← Speech recognition
+│   │   └── whisper.cpp/
+│   │       ├── build/                      ← CPU build (if no CUDA)
+│   │       └── build_cuda/                 ← GPU build (if CUDA detected)
 │   └── build/bin/Release/
 │       ├── PerceptionEngine.exe            ← Main executable
-│       └── dashboard.html                  ← Web UI
+│       ├── dashboard.html                  ← Web UI
+│       ├── whisper.dll                     ← Whisper library
+│       ├── ggml-cuda.dll                   ← GPU acceleration (if CUDA)
+│       └── models/whisper/ggml-small.bin   ← Model copy
+├── setup.bat                               ← Quick setup launcher
 ├── setup.ps1                               ← Automated setup script
 ├── README.md                               ← User guide
 ├── CLAUDE.md                               ← Technical docs

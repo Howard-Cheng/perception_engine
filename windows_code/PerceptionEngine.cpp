@@ -40,7 +40,7 @@ public:
 
             // Initialize audio capture engine
             audioEngine = std::make_unique<AudioCaptureEngine>();
-            if (!audioEngine->Initialize("models/whisper/ggml-tiny.en.bin")) {
+            if (!audioEngine->Initialize("models/whisper/ggml-small.bin")) {
                 LOG_WARN("Failed to initialize audio engine");
                 audioEngine.reset();
             } else {
@@ -285,8 +285,8 @@ int main(int argc, char* argv[]) {
 
     LOG_INFO("=====================================");
     LOG_INFO("Perception Engine v1.0");
-    LOG_INFO("=====================================")
-    
+    LOG_INFO("=====================================");
+
     // Parse command line arguments
     if (argc > 1) {
         std::string arg = argv[1];
@@ -361,8 +361,8 @@ int main(int argc, char* argv[]) {
                 std::atomic<bool> audioRunning{false};
                 std::unique_ptr<std::thread> audioPollingThread;
 
-                if (audioEngine.Initialize("models/whisper/ggml-tiny.en-q8_0.bin")) {
-                    LOG_INFO("Audio engine initialized")
+                if (audioEngine.Initialize("models/whisper/ggml-small.bin")) {
+                    LOG_INFO("Audio engine initialized");
 
                     // Set callback
                     audioEngine.SetTranscriptionCallback([&collector](const std::string& transcription) {

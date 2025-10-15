@@ -17,7 +17,7 @@ int main() {
     AudioCaptureEngine audioEngine;
 
     // Initialize with whisper model
-    std::string modelPath = "models/whisper/ggml-tiny.en.bin";
+    std::string modelPath = "models/whisper/ggml-small.bin";
     LOG_INFO_FMT("Initializing whisper model: %s", modelPath.c_str());
 
     if (!audioEngine.Initialize(modelPath)) {

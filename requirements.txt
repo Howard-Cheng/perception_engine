@@ -1,0 +1,32 @@
+# Windows Perception Engine - Python Client Requirements
+# For camera vision pipeline (win_camera_fastvlm_pytorch.py)
+
+# PyTorch (GPU-accelerated when CUDA available)
+torch==2.5.1+cu121
+torchvision==0.20.1+cu121
+
+# Transformers for FastVLM
+transformers==4.46.3
+
+# Computer vision
+opencv-python==4.10.0.84
+pillow==11.0.0
+
+# HTTP client
+requests==2.32.3
+
+# NumPy (MUST use <2.0 for OpenCV compatibility)
+numpy>=1.24.0,<2.0
+
+# ============================================================================
+# Installation Instructions
+# ============================================================================
+
+# Install PyTorch with CUDA 12.1 support:
+# pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 --index-url https://download.pytorch.org/whl/cu121
+
+# Or install CPU-only version (slower):
+# pip install torch==2.5.1 torchvision==0.20.1
+
+# Then install other dependencies:
+# pip install transformers==4.46.3 opencv-python==4.10.0.84 pillow==11.0.0 requests==2.32.3 "numpy>=1.24.0,<2.0"

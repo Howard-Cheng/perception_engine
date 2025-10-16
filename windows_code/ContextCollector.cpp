@@ -184,7 +184,7 @@ void ContextCollector::UpdateCache() {
         recentAppsStream << "{";
         recentAppsStream << "\"appName\":\"" << escapedAppName << "\",";
         recentAppsStream << "\"totalSeconds\":" << app.totalSeconds << ",";
-        recentAppsStream << "\"sessions\";";
+        recentAppsStream << "\"sessions\":";
 
         // Serialize sessions array
         {

@@ -1,6 +1,6 @@
 #include "WindowsAPIs.h"
 #include "WindowEventMonitor.h"
-#include "BrowserContentExtractor.h"  // ← 添加头文件
+#include "BrowserContentExtractor.h"
 #define WIN32_LEAN_AND_MEAN
 #define _WINSOCKAPI_    // Prevent inclusion of winsock.h
 #include <windows.h>
@@ -17,10 +17,12 @@
 #include <iphlpapi.h>  // For GetIfTable
 #include <vector>
 #include <map>
+#include <unordered_map>
 #include <set>
 #include <algorithm>
 #include <mutex>
 #include <memory>
+#include <string>  // For std::string
 
 // WinRT Headers for Geolocation
 #include <winrt/base.h>
@@ -40,12 +42,17 @@ namespace WindowsAPIs {
 
 // Active App Monitoring - Global variables
 static std::unique_ptr<WindowEventMonitor> g_eventMonitor;
-static std::vector<ActiveAppRecord> g_activeAppHistory;
+static std::unordered_map<std::string, ActiveAppRecord> g_activeAppHistory;  // Key: appName + "|" + windowTitle
 static std::mutex g_historyMutex;
 static std::string g_lastActiveApp;
 static std::string g_lastActiveAppWindowTitle;
 static std::chrono::system_clock::time_point g_lastAppStartTime;
 static const std::chrono::hours HISTORY_RETENTION_PERIOD{1}; // 1 hour retention
+
+// Helper function: Generate unique key from appName and windowTitle
+inline std::string MakeAppKey(const std::string& appName, const std::string& windowTitle) {
+    return appName + "|" + windowTitle;  // Use "|" as separator
+}
 
 // Event callback function for window monitoring
 void OnWindowEvent(const WindowInfo& info);
@@ -58,18 +65,18 @@ std::string GetAppNameFromWindowInfo(const WindowInfo& info);
 
 std::string GetForegroundAppName() {
     try {
-        // ����1: ���Ի�ȡǰ̨���ڱ��� (��ǿ�� - ֧��Unicode)
+        // Method 1: Get foreground window title (strongest - supports Unicode)
         HWND hwnd = GetForegroundWindow();
         if (hwnd) {
-            // ʹ��Unicode�汾��API����ȷ���������ַ�
-            wchar_t buffer[512] = {0};  // Unicode������
+            // Use Unicode API version to correctly handle international characters
+            wchar_t buffer[512] = {0};  // Unicode buffer
             int result = GetWindowTextW(hwnd, buffer, sizeof(buffer)/sizeof(wchar_t) - 1);
             
             if (result > 0 && wcslen(buffer) > 0) {
-                // ��Unicodeת��ΪUTF-8
+                // Convert Unicode to UTF-8
                 std::string title = WideStringToUtf8(buffer);
                 
-                // ���˵�һЩ������ı���
+                // Filter out some system window titles
                 if (title != "Program Manager" && 
                     title != "Desktop" && 
                     title != "" &&
@@ -79,13 +86,13 @@ std::string GetForegroundAppName() {
             }
         }
         
-        // ����2: ������Ϣ��ȡ (��ǿ��)
+        // Method 2: Get process information (strong)
         DWORD processId = 0;
         if (hwnd) {
             GetWindowThreadProcessId(hwnd, &processId);
         }
         
-        // ����2.1: ����GetFocus��Ϊ��
+        // Method 2.1: Fallback to GetFocus if no processId
         if (processId == 0) {
             HWND focusWindow = GetFocus();
             if (focusWindow) {
@@ -93,7 +100,7 @@ std::string GetForegroundAppName() {
             }
         }
         
-        // ����2.2: ����GetActiveWindow
+        // Method 2.2: Fallback to GetActiveWindow
         if (processId == 0) {
             HWND activeWindow = GetActiveWindow();
             if (activeWindow) {
@@ -102,13 +109,13 @@ std::string GetForegroundAppName() {
         }
         
         if (processId > 0) {
-            // ��ǿ�Ľ�����Ϣ��ȡ
+            // Enhanced process information retrieval
             HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processId);
             if (hProcess) {
                 wchar_t processName[MAX_PATH] = {0};
                 DWORD size = sizeof(processName)/sizeof(wchar_t);
                 
-                // ����ʹ��QueryFullProcessImageNameW (Unicode�汾)
+                // Prefer QueryFullProcessImageNameW (Unicode version)
                 if (QueryFullProcessImageNameW(hProcess, 0, processName, &size)) {
                     CloseHandle(hProcess);
                     
@@ -117,7 +124,7 @@ std::string GetForegroundAppName() {
                     if (lastSlash != std::wstring::npos) {
                         std::wstring exeName = fullPath.substr(lastSlash + 1);
                         
-                        // ȥ��.exe��չ������ʽ��
+                        // Remove .exe extension and format
                         size_t dotPos = exeName.find_last_of(L'.');
                         if (dotPos != std::wstring::npos) {
                             exeName = exeName.substr(0, dotPos);
@@ -125,7 +132,7 @@ std::string GetForegroundAppName() {
                         
                         std::string exeNameUtf8 = WideStringToUtf8(exeName);
                         
-                        // �ų�ϵͳ����
+                        // Exclude system processes
                         if (exeNameUtf8 != "dwm" && 
                             exeNameUtf8 != "winlogon" && 
                             exeNameUtf8 != "csrss" &&
@@ -135,7 +142,7 @@ std::string GetForegroundAppName() {
                         }
                     }
                 } else {
-                    // ���˵�GetModuleBaseNameW
+                    // Fallback to GetModuleBaseNameW
                     wchar_t baseName[MAX_PATH] = {0};
                     if (GetModuleBaseNameW(hProcess, NULL, baseName, sizeof(baseName)/sizeof(wchar_t))) {
                         CloseHandle(hProcess);
@@ -156,12 +163,12 @@ std::string GetForegroundAppName() {
             }
         }
         
-        // ����3: ��ǿ�Ĵ���ö�� (�����ܵĹ��� + Unicode֧��)
+        // Method 3: Enhanced window enumeration (smarter scoring + Unicode support)
         struct WindowInfo {
             HWND bestWindow = NULL;
             std::string title;
             DWORD processId = 0;
-            int score = 0;  // ������������
+            int score = 0;  // Window priority score
         };
         
         WindowInfo info;
@@ -169,9 +176,9 @@ std::string GetForegroundAppName() {
         EnumWindows([](HWND hwnd, LPARAM lParam) -> BOOL {
             WindowInfo* pInfo = reinterpret_cast<WindowInfo*>(lParam);
             
-            // ���ϸ�Ĵ��ڼ��
+            // Stricter window checks
             if (IsWindowVisible(hwnd) && 
-                !IsIconic(hwnd) &&  // ������С��
+                !IsIconic(hwnd) &&  // Not minimized
                 !(GetWindowLongA(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW)) {
                 
                 wchar_t title[512] = {0};
@@ -180,21 +187,21 @@ std::string GetForegroundAppName() {
                 if (titleLen > 0) {
                     std::string titleStr = WideStringToUtf8(title);
                     
-                    // ���㴰����������
+                    // Calculate window priority score
                     int score = 0;
                     
-                    // �ū�ϵͳ����
+                    // Exclude system windows
                     if (titleStr == "Program Manager" || 
                         titleStr == "Desktop" ||
                         titleStr.find("Windows Default Lock Screen") != std::string::npos) {
-                        return TRUE; // ����
+                        return TRUE; // Continue enumeration
                     }
                     
-                    // �ӷ���
-                    if (titleStr.find(" - ") != std::string::npos) score += 10;  // ��Ӧ����
-                    if (titleLen > 10) score += 5;  // ����ϳ�
+                    // Add score
+                    if (titleStr.find(" - ") != std::string::npos) score += 10;  // Has app name separator
+                    if (titleLen > 10) score += 5;  // Title is long enough
                     
-                    // ��ȡ���ڴ�С���󴰿ڼӷ�
+                    // Get window size, bonus points for larger windows
                     RECT rect;
                     if (GetWindowRect(hwnd, &rect)) {
                         int width = rect.right - rect.left;
@@ -202,7 +209,7 @@ std::string GetForegroundAppName() {
                         if (width > 200 && height > 200) score += 5;
                     }
                     
-                    // �������������ָ��ߣ�ѡ����
+                    // If this window has higher score, select it
                     if (score > pInfo->score) {
                         pInfo->bestWindow = hwnd;
                         pInfo->title = titleStr;
@@ -211,15 +218,15 @@ std::string GetForegroundAppName() {
                     }
                 }
             }
-            return TRUE; // ����ö��
+            return TRUE; // Continue enumeration
         }, reinterpret_cast<LPARAM>(&info));
         
         if (!info.title.empty() && info.score > 0) {
             return info.title;
         }
         
-        // ����4: ���Ľ���ö�ٺ� (����)
-        // ������ڷ�����ʧ�ܣ����������Ծ�Ľ���
+        // Method 4: Last resort process enumeration (fallback)
+        // If all methods fail, try to find common user applications
         try {
             DWORD processes[1024];
             DWORD bytesReturned;
@@ -235,7 +242,7 @@ std::string GetForegroundAppName() {
                             if (GetModuleBaseNameW(hProcess, NULL, processName, sizeof(processName)/sizeof(wchar_t))) {
                                 std::wstring name(processName);
                                 
-                                // Ѱ�ҳ������û�Ӧ�ó���
+                                // Find common user applications
                                 if (name.find(L"notepad") != std::wstring::npos ||
                                     name.find(L"calc") != std::wstring::npos ||
                                     name.find(L"chrome") != std::wstring::npos ||
@@ -245,7 +252,7 @@ std::string GetForegroundAppName() {
                                     
                                     CloseHandle(hProcess);
                                     
-                                    // ȥ��.exe��չ��
+                                    // Remove .exe extension
                                     size_t dotPos = name.find_last_of(L'.');
                                     if (dotPos != std::wstring::npos) {
                                         name = name.substr(0, dotPos);
@@ -259,20 +266,20 @@ std::string GetForegroundAppName() {
                 }
             }
         } catch (...) {
-            // ���Խ���ö�ٴ���
+            // Ignore process enumeration errors
         }
         
-        // ����5: ����Ĭ��ֵ (�Ľ�)
-        // ����Ƿ����������״̬
+        // Method 5: Final fallback (improved)
+        // Check if we're in desktop state
         HWND desktopWindow = GetDesktopWindow();
         HWND shellWindow = GetShellWindow();
         
         if (hwnd == desktopWindow || hwnd == shellWindow || hwnd == NULL) {
-            // ���������״̬�����ṩ�����õ���Ϣ
+            // In desktop state, provide better information
             return "Desktop";
         }
         
-        // ������з�����ʧ�ܣ�������ǿ��δ֪״̬
+        // If all methods fail, return enhanced unknown state
         return "Unknown";
     }
     catch (...) {
@@ -280,7 +287,7 @@ std::string GetForegroundAppName() {
     }
 }
 
-// ������������Unicode�ַ���ת��ΪUTF-8
+// Helper function: Convert Unicode string to UTF-8
 std::string WideStringToUtf8(const std::wstring& wstr) {
     if (wstr.empty()) return std::string();
     
@@ -295,7 +302,7 @@ std::string WideStringToUtf8(const std::wstring& wstr) {
     }
 }
 
-// ���ذ汾����wchar_t*ת��
+// Overload version: Convert wchar_t* to UTF-8
 std::string WideStringToUtf8(const wchar_t* wstr) {
     if (!wstr || wcslen(wstr) == 0) return std::string();
     return WideStringToUtf8(std::wstring(wstr));
@@ -333,7 +340,7 @@ bool IsCharging() {
 // CPU usage calculation
 double GetCPUUsage() {
     try {
-        // ʹ��ϵͳ����CPUʹ���ʼ���
+        // Use system timer for CPU usage calculation
         static FILETIME s_ftPrevSysIdle = {0};
         static FILETIME s_ftPrevSysKernel = {0};
         static FILETIME s_ftPrevSysUser = {0};
@@ -341,12 +348,12 @@ double GetCPUUsage() {
         
         FILETIME ftSysIdle, ftSysKernel, ftSysUser;
         
-        // ��ȡϵͳʱ��
+        // Get system times
         if (!GetSystemTimes(&ftSysIdle, &ftSysKernel, &ftSysUser)) {
             return -1.0;
         }
         
-        // ��һ�ε��ã����浱ǰֵ������0
+        // First call: save current values and return 0
         if (s_firstCall) {
             s_ftPrevSysIdle = ftSysIdle;
             s_ftPrevSysKernel = ftSysKernel;
@@ -355,7 +362,7 @@ double GetCPUUsage() {
             return 0.0;
         }
         
-        // ת��Ϊ64λֵ
+        // Convert to 64-bit values
         ULARGE_INTEGER sysIdle, sysKernel, sysUser;
         ULARGE_INTEGER prevSysIdle, prevSysKernel, prevSysUser;
         
@@ -373,27 +380,27 @@ double GetCPUUsage() {
         prevSysUser.LowPart = s_ftPrevSysUser.dwLowDateTime;
         prevSysUser.HighPart = s_ftPrevSysUser.dwHighDateTime;
         
-        // ����ʱ���
+        // Calculate time difference
         ULONGLONG idleDiff = sysIdle.QuadPart - prevSysIdle.QuadPart;
         ULONGLONG kernelDiff = sysKernel.QuadPart - prevSysKernel.QuadPart;
         ULONGLONG userDiff = sysUser.QuadPart - prevSysUser.QuadPart;
         
-        // ע�⣺kernelDiff������idle time��������Ҫ��ȥ
+        // Note: kernelDiff includes idle time, need to subtract it
         ULONGLONG systemDiff = kernelDiff + userDiff;
         ULONGLONG totalDiff = systemDiff;
         
         double cpuUsage = 0.0;
         if (totalDiff > 0) {
-            // CPUʹ���� = (��ʱ�� - ����ʱ��) / ��ʱ�� * 100
+            // CPU usage = (total time - idle time) / total time * 100
             cpuUsage = (double)(totalDiff - idleDiff) * 100.0 / (double)totalDiff;
         }
         
-        // ���浱ǰֵ���´�ʹ��
+        // Save current values for next call
         s_ftPrevSysIdle = ftSysIdle;
         s_ftPrevSysKernel = ftSysKernel;
         s_ftPrevSysUser = ftSysUser;
         
-        // ȷ������ֵ�ں�����Χ��
+        // Ensure value is within valid range
         if (cpuUsage < 0.0) cpuUsage = 0.0;
         if (cpuUsage > 100.0) cpuUsage = 100.0;
         
@@ -409,7 +416,7 @@ double GetMemoryUsage() {
         MEMORYSTATUSEX memInfo;
         memInfo.dwLength = sizeof(MEMORYSTATUSEX);
         if (GlobalMemoryStatusEx(&memInfo)) {
-            // �����ڴ�ʹ�ðٷֱ�
+            // Return memory usage percentage
             return static_cast<double>(memInfo.dwMemoryLoad);
         }
         return -1.0;
@@ -424,7 +431,7 @@ double GetMemoryUsed() {
         MEMORYSTATUSEX memInfo;
         memInfo.dwLength = sizeof(MEMORYSTATUSEX);
         if (GlobalMemoryStatusEx(&memInfo)) {
-            // ���������ڴ沢ت��ΪGB
+            // Calculate used memory and convert to GB
             double usedMemoryBytes = static_cast<double>(memInfo.ullTotalPhys - memInfo.ullAvailPhys);
             double usedMemoryGB = usedMemoryBytes / (1024.0 * 1024.0 * 1024.0);
             return usedMemoryGB;
@@ -441,7 +448,7 @@ double GetTotalMemory() {
         MEMORYSTATUSEX memInfo;
         memInfo.dwLength = sizeof(MEMORYSTATUSEX);
         if (GlobalMemoryStatusEx(&memInfo)) {
-            // ���ֽ�ת��ΪGB
+            // Convert bytes to GB
             double totalMemoryBytes = static_cast<double>(memInfo.ullTotalPhys);
             double totalMemoryGB = totalMemoryBytes / (1024.0 * 1024.0 * 1024.0);
             return totalMemoryGB;
@@ -524,7 +531,7 @@ std::string GetNetworkType() {
 // Network speed calculation using Performance Counters
 double GetNetworkSpeed() {
     try {
-        // ʹ�ô�ͳ��GetIfTable API (���õļ�����)
+        // Use traditional GetIfTable API (more reliable)
         static ULONGLONG s_prevBytesReceived = 0;
         static ULONGLONG s_prevBytesSent = 0;
         static std::chrono::steady_clock::time_point s_prevTime;
@@ -534,11 +541,11 @@ double GetNetworkSpeed() {
         ULONGLONG currentBytesSent = 0;
         auto currentTime = std::chrono::steady_clock::now();
         
-        // ʹ��GetIfTable��ȡ����ӿ���Ϣ (�����Ը���)
+        // Use GetIfTable to get network interface information (better compatibility)
         PMIB_IFTABLE pIfTable = nullptr;
         DWORD dwSize = 0;
         
-        // ��ȡ���軺������С
+        // Get required buffer size
         DWORD dwRetVal = GetIfTable(pIfTable, &dwSize, 0);
         if (dwRetVal == ERROR_INSUFFICIENT_BUFFER) {
             pIfTable = (MIB_IFTABLE*)malloc(dwSize);
@@ -549,18 +556,18 @@ double GetNetworkSpeed() {
             return -1.0;
         }
         
-        // ��ȡ�ӿڱ�
+        // Get interface table
         dwRetVal = GetIfTable(pIfTable, &dwSize, 0);
         if (dwRetVal != NO_ERROR) {
             free(pIfTable);
             return -1.0;
         }
         
-        // ������������ӿڣ��ۼƻ�ӿڵ�����
+        // Iterate through all interfaces, accumulate interface traffic
         for (DWORD i = 0; i < pIfTable->dwNumEntries; i++) {
             MIB_IFROW* pIfRow = &pIfTable->table[i];
             
-            // ֻͳ�ƻ����������ӿ� (�������ؽӿڵ�)
+            // Only count active network interfaces (exclude loopback, etc.)
             if (pIfRow->dwOperStatus == MIB_IF_OPER_STATUS_OPERATIONAL &&
                 pIfRow->dwType != MIB_IF_TYPE_LOOPBACK &&
                 (pIfRow->dwType == MIB_IF_TYPE_ETHERNET || 
@@ -575,7 +582,7 @@ double GetNetworkSpeed() {
         
         free(pIfTable);
         
-        // ��һ�ε��ã����浱ǰֵ������0
+        // First call: save current values and return 0
         if (s_firstCall) {
             s_prevBytesReceived = currentBytesReceived;
             s_prevBytesSent = currentBytesSent;
@@ -584,15 +591,15 @@ double GetNetworkSpeed() {
             return 0.0;
         }
         
-        // ����ʱ����
+        // Calculate time difference
         auto timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - s_prevTime);
         double timeSeconds = timeDiff.count() / 1000.0;
         
         if (timeSeconds <= 0.0) {
-            return -1.0; // �������
+            return -1.0; // Invalid time
         }
         
-        // �������������Ƶ����
+        // Calculate traffic difference (handle counter overflow)
         ULONGLONG bytesDiffReceived = 0;
         ULONGLONG bytesDiffSent = 0;
         
@@ -605,17 +612,17 @@ double GetNetworkSpeed() {
         
         ULONGLONG totalBytesDiff = bytesDiffReceived + bytesDiffSent;
         
-        // �����ٶ�: �ֽ�/�� -> Mbps
+        // Calculate speed: bytes/sec -> Mbps
         // 1 Mbps = 1,000,000 bits/sec = 125,000 bytes/sec
         double bytesPerSecond = static_cast<double>(totalBytesDiff) / timeSeconds;
-        double mbps = (bytesPerSecond * 8.0) / (1000.0 * 1000.0); // ת��ΪMbps
+        double mbps = (bytesPerSecond * 8.0) / (1000.0 * 1000.0); // Convert to Mbps
         
-        // ���浱ǰֵ���´�ʹ��
+        // Save current values for next call
         s_prevBytesReceived = currentBytesReceived;
         s_prevBytesSent = currentBytesSent;
         s_prevTime = currentTime;
         
-        // ȷ������ֵ���� (�������ֵΪ10Gbps)
+        // Ensure value is within valid range (max 10Gbps)
         if (mbps < 0.0) mbps = 0.0;
         if (mbps > 10000.0) mbps = 10000.0;
         
@@ -705,21 +712,33 @@ void OnWindowEvent(const WindowInfo& info) {
             
             // Only record if the app was active for more than 1 second
             if (duration.count() > 0) {
-                ActiveAppRecord record;
-                record.appName = g_lastActiveApp;
-                record.timestamp = g_lastAppStartTime;
-                record.durationSeconds = static_cast<int>(duration.count());
+                int durationSecs = static_cast<int>(duration.count());
                 
-                // Use the stored window title from when this session started
-                record.windowTitle = g_lastActiveAppWindowTitle;
+                // Generate unique key from appName + windowTitle
+                std::string key = MakeAppKey(g_lastActiveApp, g_lastActiveAppWindowTitle);
                 
-                g_activeAppHistory.push_back(record);
+                // Check if this exact combination already exists (O(1) lookup)
+                auto it = g_activeAppHistory.find(key);
+                if (it != g_activeAppHistory.end()) {
+                    // Exact match (appName + windowTitle): accumulate duration
+                    it->second.durationSeconds += durationSecs;
+                    it->second.timestamp = g_lastAppStartTime;  // Update to latest session start time
+                } else {
+                    // New combination: create new record
+                    ActiveAppRecord record;
+                    record.appName = g_lastActiveApp;
+                    record.windowTitle = g_lastActiveAppWindowTitle;
+                    record.timestamp = g_lastAppStartTime;
+                    record.durationSeconds = durationSecs;
+                    
+                    g_activeAppHistory[key] = record;
+                }
             }
         }
         
         // Update current active app and window title
         g_lastActiveApp = appName;
-        g_lastActiveAppWindowTitle = windowTitle; // Store current window title
+        g_lastActiveAppWindowTitle = windowTitle;
         g_lastAppStartTime = now;
         
         // Clean up old records periodically
@@ -766,14 +785,14 @@ void CleanupOldRecords() {
         auto now = std::chrono::system_clock::now();
         auto cutoff = now - HISTORY_RETENTION_PERIOD;
         
-        // Remove records older than 1 hour
-        g_activeAppHistory.erase(
-            std::remove_if(g_activeAppHistory.begin(), g_activeAppHistory.end(),
-                [cutoff](const ActiveAppRecord& record) {
-                    return record.timestamp < cutoff;
-                }),
-            g_activeAppHistory.end()
-        );
+        // Remove records older than 1 hour (iterate through unordered_map)
+        for (auto it = g_activeAppHistory.begin(); it != g_activeAppHistory.end(); ) {
+            if (it->second.timestamp < cutoff) {
+                it = g_activeAppHistory.erase(it);  // Erase returns iterator to next element
+            } else {
+                ++it;
+            }
+        }
     }
     catch (...) {
         // Ignore cleanup errors
@@ -787,21 +806,45 @@ std::vector<ActiveAppRecord> GetRecentPeriodActiveAppList() {
         // Clean up old records first (older than 1 hour)
         CleanupOldRecords();
 
-        // Build result with historical records
-        std::vector<ActiveAppRecord> result = g_activeAppHistory;
+        // Convert unordered_map to vector for return
+        std::vector<ActiveAppRecord> result;
+        result.reserve(g_activeAppHistory.size() + 1);  // Reserve space for efficiency
+        
+        for (const auto& pair : g_activeAppHistory) {
+            result.push_back(pair.second);
+        }
 
         // Add current active app if it has been running for some time
         auto now = std::chrono::system_clock::now();
         if (!g_lastActiveApp.empty() && g_lastActiveApp != "Unknown" && g_lastActiveApp != "Desktop") {
             auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - g_lastAppStartTime);
             if (duration.count() > 0) {
-                ActiveAppRecord currentRecord;
-                currentRecord.appName = g_lastActiveApp;
-                currentRecord.timestamp = g_lastAppStartTime;
-                currentRecord.durationSeconds = static_cast<int>(duration.count());
-                currentRecord.windowTitle = g_lastActiveAppWindowTitle;
-
-                result.push_back(currentRecord);
+                int durationSecs = static_cast<int>(duration.count());
+                
+                // Generate key for current app
+                std::string key = MakeAppKey(g_lastActiveApp, g_lastActiveAppWindowTitle);
+                
+                // Check if current app+windowTitle combination already exists in history
+                auto it = g_activeAppHistory.find(key);
+                if (it != g_activeAppHistory.end()) {
+                    // Update existing record in result vector
+                    for (auto& record : result) {
+                        if (record.appName == g_lastActiveApp && 
+                            record.windowTitle == g_lastActiveAppWindowTitle) {
+                            record.durationSeconds += durationSecs;
+                            record.timestamp = g_lastAppStartTime;
+                            break;
+                        }
+                    }
+                } else {
+                    // Add new record for current app+windowTitle
+                    ActiveAppRecord currentRecord;
+                    currentRecord.appName = g_lastActiveApp;
+                    currentRecord.windowTitle = g_lastActiveAppWindowTitle;
+                    currentRecord.timestamp = g_lastAppStartTime;
+                    currentRecord.durationSeconds = durationSecs;
+                    result.push_back(currentRecord);
+                }
             }
         }
 

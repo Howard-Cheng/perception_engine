@@ -4,6 +4,8 @@
 #include <iomanip>
 #include <sstream>
 #include <vector>
+#include <map>
+#include <algorithm>
 
 static std::atomic<bool> updateThreadRunning{false};
 static std::thread updateThread;
@@ -122,71 +124,125 @@ void ContextCollector::UpdateCache() {
     }
     
     // Add recent active apps to JSON as a properly formatted array
+    // Group by appName and create sessions array for each app
+    std::map<std::string, std::vector<WindowsAPIs::ActiveAppRecord>> groupedApps;
+    for (const auto& record : recentApps) {
+        groupedApps[record.appName].push_back(record);
+    }
+    
+    // Calculate total seconds for each app and create a sortable vector
+    struct AppWithTotal {
+        std::string appName;
+        std::vector<WindowsAPIs::ActiveAppRecord> sessions;
+        int totalSeconds;
+    };
+    
+    std::vector<AppWithTotal> sortedApps;
+    for (const auto& [appName, sessions] : groupedApps) {
+        int totalSeconds = 0;
+        for (const auto& record : sessions) {
+            totalSeconds += record.durationSeconds;
+        }
+        sortedApps.push_back({appName, sessions, totalSeconds});
+    }
+    
+    // Sort by totalSeconds in descending order (largest first)
+    std::sort(sortedApps.begin(), sortedApps.end(), 
+              [](const AppWithTotal& a, const AppWithTotal& b) {
+                  return a.totalSeconds > b.totalSeconds;
+              });
+    
+    // Limit to top 10 apps by total usage time
+    const size_t MAX_RECENT_APPS = 10;
+    if (sortedApps.size() > MAX_RECENT_APPS) {
+        sortedApps.resize(MAX_RECENT_APPS);
+    }
+    
     std::ostringstream recentAppsStream;
     recentAppsStream << "[";
     bool firstApp = true;
-    for (const auto& record : recentApps) {
+    
+    for (const auto& app : sortedApps) {
         if (!firstApp) {
             recentAppsStream << ",";
         }
         
-        // Format timestamp as ISO string (using local time)
-        auto time_t_val = std::chrono::system_clock::to_time_t(record.timestamp);
-        struct tm timeinfo;
-        std::string timestampStr = "1970-01-01T00:00:00.000+00:00";
-        if (localtime_s(&timeinfo, &time_t_val) == 0) {
-            std::ostringstream timeStream;
-            timeStream << std::put_time(&timeinfo, "%Y-%m-%dT%H:%M:%S");
-            timeStream << ".000";
-            
-            // Add timezone offset
-            char tz_offset[16];
-            strftime(tz_offset, sizeof(tz_offset), "%z", &timeinfo);
-            std::string tz_str(tz_offset);
-            if (tz_str.length() >= 5) {
-                // Convert +0800 to +08:00 format
-                tz_str = tz_str.substr(0, 3) + ":" + tz_str.substr(3);
-            } else {
-                tz_str = "+00:00"; // fallback
-            }
-            timeStream << tz_str;
-            timestampStr = timeStream.str();
-        }
-        
-        // Build individual app record as JSON object (escape quotes and backslashes in strings)
-        std::string escapedAppName = record.appName;
-        std::string escapedWindowTitle = record.windowTitle;
-        
-        // First escape backslashes (must be done before escaping quotes)
+        // Escape appName
+        std::string escapedAppName = app.appName;
         size_t pos = 0;
         while ((pos = escapedAppName.find("\\", pos)) != std::string::npos) {
             escapedAppName.replace(pos, 1, "\\\\");
-            pos += 2; // Skip the escaped backslash
+            pos += 2;
         }
-        pos = 0;
-        while ((pos = escapedWindowTitle.find("\\", pos)) != std::string::npos) {
-            escapedWindowTitle.replace(pos, 1, "\\\\");
-            pos += 2; // Skip the escaped backslash
-        }
-        
-        // Then escape quotes
         pos = 0;
         while ((pos = escapedAppName.find("\"", pos)) != std::string::npos) {
             escapedAppName.replace(pos, 1, "\\\"");
-            pos += 2; // Skip the escaped quote
-        }
-        pos = 0;
-        while ((pos = escapedWindowTitle.find("\"", pos)) != std::string::npos) {
-            escapedWindowTitle.replace(pos, 1, "\\\"");
-            pos += 2; // Skip the escaped quote
+            pos += 2;
         }
         
+        // Start app object
         recentAppsStream << "{";
         recentAppsStream << "\"appName\":\"" << escapedAppName << "\",";
-        recentAppsStream << "\"windowTitle\":\"" << escapedWindowTitle << "\",";
-        recentAppsStream << "\"durationSeconds\":" << record.durationSeconds << ",";
-        recentAppsStream << "\"timestamp\":\"" << timestampStr << "\"";
-        recentAppsStream << "}";
+        recentAppsStream << "\"totalSeconds\":" << app.totalSeconds << ",";
+        recentAppsStream << "\"sessions\";";
+
+        // Serialize sessions array
+        {
+            recentAppsStream << "[";
+            bool firstSession = true;
+            for (const auto& record : app.sessions) {
+                if (!firstSession) {
+                    recentAppsStream << ",";
+                }
+                
+                // Format timestamp as ISO string
+                auto time_t_val = std::chrono::system_clock::to_time_t(record.timestamp);
+                struct tm timeinfo;
+                std::string timestampStr = "1970-01-01T00:00:00.000+00:00";
+                if (localtime_s(&timeinfo, &time_t_val) == 0) {
+                    std::ostringstream timeStream;
+                    timeStream << std::put_time(&timeinfo, "%Y-%m-%dT%H:%M:%S");
+                    timeStream << ".000";
+                    
+                    // Add timezone offset
+                    char tz_offset[16];
+                    strftime(tz_offset, sizeof(tz_offset), "%z", &timeinfo);
+                    std::string tz_str(tz_offset);
+                    if (tz_str.length() >= 5) {
+                        tz_str = tz_str.substr(0, 3) + ":" + tz_str.substr(3);
+                    } else {
+                        tz_str = "+00:00";
+                    }
+                    timeStream << tz_str;
+                    timestampStr = timeStream.str();
+                }
+                
+                // Escape windowTitle
+                std::string escapedWindowTitle = record.windowTitle;
+                pos = 0;
+                while ((pos = escapedWindowTitle.find("\\", pos)) != std::string::npos) {
+                    escapedWindowTitle.replace(pos, 1, "\\\\");
+                    pos += 2;
+                }
+                pos = 0;
+                while ((pos = escapedWindowTitle.find("\"", pos)) != std::string::npos) {
+                    escapedWindowTitle.replace(pos, 1, "\\\"");
+                    pos += 2;
+                }
+                
+                // Build session object
+                recentAppsStream << "{";
+                recentAppsStream << "\"windowTitle\":\"" << escapedWindowTitle << "\",";
+                recentAppsStream << "\"durationSeconds\":" << record.durationSeconds << ",";
+                recentAppsStream << "\"timestamp\":\"" << timestampStr << "\"";
+                recentAppsStream << "}";
+                
+                firstSession = false;
+            }
+            recentAppsStream << "]"; // Close sessions array
+        }
+        
+        recentAppsStream << "}"; // Close app object
         
         firstApp = false;
     }

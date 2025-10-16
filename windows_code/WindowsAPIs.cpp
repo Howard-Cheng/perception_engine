@@ -17,6 +17,8 @@
 #include <iphlpapi.h>  // For GetIfTable
 #include <vector>
 #include <map>
+#include <set>
+#include <algorithm>
 #include <mutex>
 #include <memory>
 
@@ -422,7 +424,7 @@ double GetMemoryUsed() {
         MEMORYSTATUSEX memInfo;
         memInfo.dwLength = sizeof(MEMORYSTATUSEX);
         if (GlobalMemoryStatusEx(&memInfo)) {
-            // ���������ڴ沢ת��ΪGB
+            // ���������ڴ沢ت��ΪGB
             double usedMemoryBytes = static_cast<double>(memInfo.ullTotalPhys - memInfo.ullAvailPhys);
             double usedMemoryGB = usedMemoryBytes / (1024.0 * 1024.0 * 1024.0);
             return usedMemoryGB;
@@ -782,10 +784,10 @@ std::vector<ActiveAppRecord> GetRecentPeriodActiveAppList() {
     try {
         std::lock_guard<std::mutex> lock(g_historyMutex);
 
-        // Clean up old records first
+        // Clean up old records first (older than 1 hour)
         CleanupOldRecords();
 
-        // Build result with current app
+        // Build result with historical records
         std::vector<ActiveAppRecord> result = g_activeAppHistory;
 
         // Add current active app if it has been running for some time
@@ -803,12 +805,8 @@ std::vector<ActiveAppRecord> GetRecentPeriodActiveAppList() {
             }
         }
 
-        // Limit to most recent 10 apps to prevent unbounded growth
-        const size_t MAX_RECENT_APPS = 10;
-        if (result.size() > MAX_RECENT_APPS) {
-            // Keep only the last 10 apps (most recent)
-            result.erase(result.begin(), result.begin() + (result.size() - MAX_RECENT_APPS));
-        }
+        // NOTE: No limiting here - just return all records within the 1-hour window
+        // Limiting to top 10 apps by totalSeconds is now done in ContextCollector::UpdateCache()
 
         return result;
     }

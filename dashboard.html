@@ -654,7 +654,7 @@
             const recentAppsHtml = uniqueApps.map(app => `
                 <div class="app-item">
                     <span class="app-name">${app.appName || 'Unknown'}</span>
-                    <span class="app-time">${app.durationSeconds || 0}s</span>
+                    <span class="app-time">${app.totalSeconds || 0}s</span>
                 </div>
             `).join('');
             document.getElementById('recentApps').innerHTML =

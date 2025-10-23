@@ -1,0 +1,46 @@
+[2025-10-17 13:00:06.641] [INF] [] === MCP Server Starting ===
+[2025-10-17 13:00:06.748] [INF] [] Server Name: perception-engine-context
+[2025-10-17 13:00:06.751] [INF] [] Perception Engine URI: "http://localhost:8777/"
+[2025-10-17 13:00:06.753] [INF] [] Log Directory: C:\Users\hc001\OneDrive - Lenovo\Desktop\perception_engine\mcp_server\csharp\publish\logs
+[2025-10-17 13:00:07.234] [INF] [] Registering MCP Server with tools...
+[2025-10-17 13:00:07.237] [INF] [] MCP Server registration completed successfully
+[2025-10-17 13:00:07.237] [INF] [] Tools registered: get_perception_context
+[2025-10-17 13:00:07.238] [INF] [] Transport: stdio (stdin/stdout)
+[2025-10-17 13:00:07.266] [INF] [] === MCP Server Started Successfully ===
+[2025-10-17 13:00:07.266] [INF] [] Waiting for MCP client connections via stdio...
+[2025-10-17 13:00:07.443] [INF] [] MCP Server configured: perception-engine-context v0.1.0
+[2025-10-17 13:00:10.194] [WRN] [ModelContextProtocol.Server.McpServer] Server (perception-engine-context 0.1.0), Client (claude-ai 0.1.0) received request for method 'resources/list', but no handler is available.
+[2025-10-17 13:00:10.194] [WRN] [ModelContextProtocol.Server.McpServer] Server (perception-engine-context 0.1.0), Client (claude-ai 0.1.0) received request for method 'prompts/list', but no handler is available.
+[2025-10-17 13:00:10.195] [WRN] [ModelContextProtocol.Server.McpServer] Server (perception-engine-context 0.1.0), Client (claude-ai 0.1.0) method 'prompts/list' request handler failed.
+ModelContextProtocol.McpException: Method 'prompts/list' is not available.
+   at ModelContextProtocol.McpSessionHandler.HandleRequest(JsonRpcRequest request, CancellationToken cancellationToken)
+   at ModelContextProtocol.McpSessionHandler.HandleMessageAsync(JsonRpcMessage message, CancellationToken cancellationToken)
+   at ModelContextProtocol.McpSessionHandler.<>c__DisplayClass26_1.<<ProcessMessagesCoreAsync>g__ProcessMessageAsync|1>d.MoveNext()
+[2025-10-17 13:00:10.195] [WRN] [ModelContextProtocol.Server.McpServer] Server (perception-engine-context 0.1.0), Client (claude-ai 0.1.0) method 'resources/list' request handler failed.
+ModelContextProtocol.McpException: Method 'resources/list' is not available.
+   at ModelContextProtocol.McpSessionHandler.HandleRequest(JsonRpcRequest request, CancellationToken cancellationToken)
+   at ModelContextProtocol.McpSessionHandler.HandleMessageAsync(JsonRpcMessage message, CancellationToken cancellationToken)
+   at ModelContextProtocol.McpSessionHandler.<>c__DisplayClass26_1.<<ProcessMessagesCoreAsync>g__ProcessMessageAsync|1>d.MoveNext()
+[2025-10-17 13:05:27.139] [INF] [] === MCP Server Starting ===
+[2025-10-17 13:05:27.212] [INF] [] Server Name: perception-engine-context
+[2025-10-17 13:05:27.215] [INF] [] Perception Engine URI: "http://localhost:8777/"
+[2025-10-17 13:05:27.217] [INF] [] Log Directory: C:\Users\hc001\OneDrive - Lenovo\Desktop\perception_engine\mcp_server\csharp\publish\logs
+[2025-10-17 13:05:27.596] [INF] [] Registering MCP Server with tools...
+[2025-10-17 13:05:27.598] [INF] [] MCP Server registration completed successfully
+[2025-10-17 13:05:27.598] [INF] [] Tools registered: get_perception_context
+[2025-10-17 13:05:27.598] [INF] [] Transport: stdio (stdin/stdout)
+[2025-10-17 13:05:27.620] [INF] [] === MCP Server Started Successfully ===
+[2025-10-17 13:05:27.620] [INF] [] Waiting for MCP client connections via stdio...
+[2025-10-17 13:05:27.795] [INF] [] MCP Server configured: perception-engine-context v0.1.0
+[2025-10-17 13:05:28.014] [WRN] [ModelContextProtocol.Server.McpServer] Server (perception-engine-context 0.1.0), Client (claude-ai 0.1.0) received request for method 'resources/list', but no handler is available.
+[2025-10-17 13:05:28.014] [WRN] [ModelContextProtocol.Server.McpServer] Server (perception-engine-context 0.1.0), Client (claude-ai 0.1.0) received request for method 'prompts/list', but no handler is available.
+[2025-10-17 13:05:28.016] [WRN] [ModelContextProtocol.Server.McpServer] Server (perception-engine-context 0.1.0), Client (claude-ai 0.1.0) method 'resources/list' request handler failed.
+ModelContextProtocol.McpException: Method 'resources/list' is not available.
+   at ModelContextProtocol.McpSessionHandler.HandleRequest(JsonRpcRequest request, CancellationToken cancellationToken)
+   at ModelContextProtocol.McpSessionHandler.HandleMessageAsync(JsonRpcMessage message, CancellationToken cancellationToken)
+   at ModelContextProtocol.McpSessionHandler.<>c__DisplayClass26_1.<<ProcessMessagesCoreAsync>g__ProcessMessageAsync|1>d.MoveNext()
+[2025-10-17 13:05:28.016] [WRN] [ModelContextProtocol.Server.McpServer] Server (perception-engine-context 0.1.0), Client (claude-ai 0.1.0) method 'prompts/list' request handler failed.
+ModelContextProtocol.McpException: Method 'prompts/list' is not available.
+   at ModelContextProtocol.McpSessionHandler.HandleRequest(JsonRpcRequest request, CancellationToken cancellationToken)
+   at ModelContextProtocol.McpSessionHandler.HandleMessageAsync(JsonRpcMessage message, CancellationToken cancellationToken)
+   at ModelContextProtocol.McpSessionHandler.<>c__DisplayClass26_1.<<ProcessMessagesCoreAsync>g__ProcessMessageAsync|1>d.MoveNext()

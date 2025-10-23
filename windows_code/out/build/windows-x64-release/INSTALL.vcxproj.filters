@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\hc001\OneDrive - Lenovo\Desktop\perception_engine\windows_code\out\build\windows-x64-release\CMakeFiles\3b3c007e471bcffc4580aef8a4faf878\INSTALL_force.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{05349B3A-1285-32AD-99F2-A7FD0D968F64}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

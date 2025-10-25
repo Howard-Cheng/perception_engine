@@ -1,0 +1,13 @@
+C:\Users\hc001\OneDrive - Lenovo\Desktop\perception_engine\sdk\csharp\PerceptionEngine.SDK\bin\Debug\net8.0\PerceptionEngine.SDK.deps.json
+C:\Users\hc001\OneDrive - Lenovo\Desktop\perception_engine\sdk\csharp\PerceptionEngine.SDK\bin\Debug\net8.0\PerceptionEngine.SDK.dll
+C:\Users\hc001\OneDrive - Lenovo\Desktop\perception_engine\sdk\csharp\PerceptionEngine.SDK\bin\Debug\net8.0\PerceptionEngine.SDK.pdb
+C:\Users\hc001\OneDrive - Lenovo\Desktop\perception_engine\sdk\csharp\PerceptionEngine.SDK\obj\Debug\net8.0\PerceptionEngine.SDK.csproj.AssemblyReference.cache
+C:\Users\hc001\OneDrive - Lenovo\Desktop\perception_engine\sdk\csharp\PerceptionEngine.SDK\obj\Debug\net8.0\PerceptionEngine.SDK.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\hc001\OneDrive - Lenovo\Desktop\perception_engine\sdk\csharp\PerceptionEngine.SDK\obj\Debug\net8.0\PerceptionEngine.SDK.AssemblyInfoInputs.cache
+C:\Users\hc001\OneDrive - Lenovo\Desktop\perception_engine\sdk\csharp\PerceptionEngine.SDK\obj\Debug\net8.0\PerceptionEngine.SDK.AssemblyInfo.cs
+C:\Users\hc001\OneDrive - Lenovo\Desktop\perception_engine\sdk\csharp\PerceptionEngine.SDK\obj\Debug\net8.0\PerceptionEngine.SDK.csproj.CoreCompileInputs.cache
+C:\Users\hc001\OneDrive - Lenovo\Desktop\perception_engine\sdk\csharp\PerceptionEngine.SDK\obj\Debug\net8.0\PerceptionEngine.SDK.sourcelink.json
+C:\Users\hc001\OneDrive - Lenovo\Desktop\perception_engine\sdk\csharp\PerceptionEngine.SDK\obj\Debug\net8.0\PerceptionEngine.SDK.dll
+C:\Users\hc001\OneDrive - Lenovo\Desktop\perception_engine\sdk\csharp\PerceptionEngine.SDK\obj\Debug\net8.0\refint\PerceptionEngine.SDK.dll
+C:\Users\hc001\OneDrive - Lenovo\Desktop\perception_engine\sdk\csharp\PerceptionEngine.SDK\obj\Debug\net8.0\PerceptionEngine.SDK.pdb
+C:\Users\hc001\OneDrive - Lenovo\Desktop\perception_engine\sdk\csharp\PerceptionEngine.SDK\obj\Debug\net8.0\ref\PerceptionEngine.SDK.dll

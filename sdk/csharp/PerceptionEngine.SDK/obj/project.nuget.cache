@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "dgSpecHash": "JmkdF1LYifo=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\perception_engine\\sdk\\csharp\\PerceptionEngine.SDK\\PerceptionEngine.SDK.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\hc001\\.nuget\\packages\\system.io.pipelines\\9.0.1\\system.io.pipelines.9.0.1.nupkg.sha512",
+    "C:\\Users\\hc001\\.nuget\\packages\\system.text.encodings.web\\9.0.1\\system.text.encodings.web.9.0.1.nupkg.sha512",
+    "C:\\Users\\hc001\\.nuget\\packages\\system.text.json\\9.0.1\\system.text.json.9.0.1.nupkg.sha512",
+    "C:\\Users\\hc001\\.nuget\\packages\\microsoft.netcore.app.ref\\8.0.21\\microsoft.netcore.app.ref.8.0.21.nupkg.sha512",
+    "C:\\Users\\hc001\\.nuget\\packages\\microsoft.windowsdesktop.app.ref\\8.0.21\\microsoft.windowsdesktop.app.ref.8.0.21.nupkg.sha512",
+    "C:\\Users\\hc001\\.nuget\\packages\\microsoft.aspnetcore.app.ref\\8.0.21\\microsoft.aspnetcore.app.ref.8.0.21.nupkg.sha512"
+  ],
+  "logs": []
+}

@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd">
+  <metadata>
+    <id>PerceptionEngine.SDK</id>
+    <version>1.0.0</version>
+    <authors>Perception Engine Team</authors>
+    <license type="expression">MIT</license>
+    <licenseUrl>https://licenses.nuget.org/MIT</licenseUrl>
+    <projectUrl>https://github.com/your-repo/perception-engine</projectUrl>
+    <description>C# SDK for interacting with Perception Engine - a real-time multi-modal AI context monitoring system</description>
+    <copyright>Copyright (c) 2025 Perception Engine Team</copyright>
+    <tags>perception context ai monitoring screen audio camera</tags>
+    <repository type="git" url="https://github.com/your-repo/perception-engine" commit="445e06e10b924c0cebc831da1d6b2984e8877d30" />
+    <dependencies>
+      <group targetFramework="net6.0">
+        <dependency id="System.Text.Json" version="9.0.1" exclude="Build,Analyzers" />
+      </group>
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="C:\Users\hc001\OneDrive - Lenovo\Desktop\perception_engine\sdk\csharp\PerceptionEngine.SDK\bin\Release\net6.0\PerceptionEngine.SDK.dll" target="lib\net6.0\PerceptionEngine.SDK.dll" />
+  </files>
+</package>

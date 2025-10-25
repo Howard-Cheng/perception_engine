@@ -40,6 +40,8 @@ cmake --build build --config Release
 ```
 
 ### Running
+
+#### Full Mode (Screen + Audio + Camera)
 ```powershell
 # Option 1: Quick start (recommended - starts both C++ and Python)
 cd windows_code
@@ -60,6 +62,26 @@ python win_camera_fastvlm_pytorch.py
 
 # Dashboard accessible at http://localhost:8777/dashboard
 ```
+
+#### Screen-Only Mode (Lightweight - No Audio/Camera)
+```powershell
+# Option 1: Using launcher script (recommended)
+cd windows_code
+.\start_perception_engine.bat --screen-only
+
+# Option 2: Direct executable
+cd windows_code\build\bin\Release
+.\PerceptionEngine.exe --console --screen-only
+
+# Dashboard accessible at http://localhost:8777/dashboard
+# Voice and camera cards will be hidden in dashboard
+```
+
+**When to use Screen-Only Mode:**
+- Lightweight deployment (lower CPU/memory usage)
+- Privacy-focused scenarios (no audio/camera capture)
+- Quick testing of screen monitoring features
+- Environments without GPU or heavy models
 
 ### Windows Service Commands
 ```powershell

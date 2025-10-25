@@ -284,6 +284,11 @@
             font-size: 0.9rem;
         }
 
+        /* Hidden element (for screen-only mode) */
+        .hidden {
+            display: none !important;
+        }
+
         /* Active App Details Card */
         .active-app-details-card {
             grid-column: span 1;
@@ -366,7 +371,7 @@
             <h1>🔮 Perception Engine</h1>
             <p class="subtitle">
                 <span class="status-indicator"></span>
-                Real-time Context Monitoring
+                <span id="engineMode">Real-time Context Monitoring</span>
             </p>
         </div>
 
@@ -445,7 +450,7 @@
             </div>
 
             <!-- Voice Transcription -->
-            <div class="card voice-card">
+            <div class="card voice-card" id="voiceCard">
                 <div class="card-header">
                     <div class="card-icon">🎤</div>
                     <div class="card-title">Voice Transcription</div>
@@ -458,17 +463,17 @@
             </div>
 
             <!-- Pipeline Latency -->
-            <div class="card">
+            <div class="card" id="latencyCard">
                 <div class="card-header">
                     <div class="card-icon">⏱️</div>
                     <div class="card-title">Pipeline Latency</div>
                 </div>
                 <div class="card-content">
-                    <div class="metric-row">
+                    <div class="metric-row" id="latencyCameraRow">
                         <span class="metric-label">Camera Vision</span>
                         <span class="metric-value" id="latencyCameraDisplay">--</span>
                     </div>
-                    <div class="metric-row">
+                    <div class="metric-row" id="latencyVoiceRow">
                         <span class="metric-label">Voice ASR</span>
                         <span class="metric-value" id="latencyVoice">--</span>
                     </div>
@@ -480,7 +485,7 @@
             </div>
 
             <!-- Camera Vision -->
-            <div class="card voice-card">
+            <div class="card voice-card" id="cameraCard">
                 <div class="card-header">
                     <div class="card-icon">📷</div>
                     <div class="card-title">Camera Vision</div>
@@ -586,23 +591,53 @@
             // Voice Transcription
             const voice = data.voiceTranscription;
             console.log('Voice data:', voice, 'Type:', typeof voice);
-            if (voice && voice !== null && typeof voice === 'string' && voice.trim() !== '') {
-                document.getElementById('voiceTranscription').textContent =
-                    '"' + voice + '"';
+            const voiceCard = document.getElementById('voiceCard');
+            const latencyVoiceRow = document.getElementById('latencyVoiceRow');
+
+            // If voice is explicitly null, hide the voice card (screen-only mode)
+            if (voice === null) {
+                voiceCard.classList.add('hidden');
+                latencyVoiceRow.classList.add('hidden');
             } else {
-                document.getElementById('voiceTranscription').textContent =
-                    'No speech detected yet...';
+                voiceCard.classList.remove('hidden');
+                latencyVoiceRow.classList.remove('hidden');
+                if (voice && typeof voice === 'string' && voice.trim() !== '') {
+                    document.getElementById('voiceTranscription').textContent =
+                        '"' + voice + '"';
+                } else {
+                    document.getElementById('voiceTranscription').textContent =
+                        'No speech detected yet...';
+                }
             }
 
             // Camera Vision
             const cameraDesc = data.cameraDescription;
             console.log('Camera data:', cameraDesc);
-            if (cameraDesc && cameraDesc !== null && typeof cameraDesc === 'string' && cameraDesc.trim() !== '') {
-                document.getElementById('cameraDescription').textContent =
-                    '"' + cameraDesc + '"';
+            const cameraCard = document.getElementById('cameraCard');
+            const latencyCameraRow = document.getElementById('latencyCameraRow');
+
+            // If camera is explicitly null, hide the camera card (screen-only mode)
+            if (cameraDesc === null) {
+                cameraCard.classList.add('hidden');
+                latencyCameraRow.classList.add('hidden');
             } else {
-                document.getElementById('cameraDescription').textContent =
-                    'Waiting for camera input...';
+                cameraCard.classList.remove('hidden');
+                latencyCameraRow.classList.remove('hidden');
+                if (cameraDesc && typeof cameraDesc === 'string' && cameraDesc.trim() !== '') {
+                    document.getElementById('cameraDescription').textContent =
+                        '"' + cameraDesc + '"';
+                } else {
+                    document.getElementById('cameraDescription').textContent =
+                        'Waiting for camera input...';
+                }
+            }
+
+            // Update engine mode indicator
+            const isScreenOnly = (voice === null && cameraDesc === null);
+            if (isScreenOnly) {
+                document.getElementById('engineMode').textContent = 'Screen-Only Mode (Lightweight)';
+            } else {
+                document.getElementById('engineMode').textContent = 'Full Mode (Screen + Audio + Camera)';
             }
 
             // Pipeline Latency Metrics

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageId>PerceptionEngine.SDK</PackageId>
+    <Version>1.0.2</Version>
+    <Authors>Perception Engine Team</Authors>
+    <Company>Perception Engine</Company>
+    <Description>C# SDK for interacting with Perception Engine - a real-time multi-modal AI context monitoring system</Description>
+    <PackageProjectUrl>https://github.com/your-repo/perception-engine</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/your-repo/perception-engine</RepositoryUrl>
+    <PackageTags>perception;context;ai;monitoring;screen;audio;camera</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Copyright>Copyright (c) 2025 Perception Engine Team</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="9.0.1" />
+  </ItemGroup>
+
+</Project>

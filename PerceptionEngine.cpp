@@ -23,80 +23,92 @@ private:
     std::unique_ptr<std::thread> audioPollingThread;
     std::unique_ptr<std::thread> cameraThread;
     std::atomic<bool> serviceRunning{false};
-    
+    bool screenOnlyMode;
+
 public:
-    PerceptionEngineService() 
-        : WindowsService("PerceptionEngine", "Perception Engine Service") {
+    PerceptionEngineService(bool screenOnly = false)
+        : WindowsService("PerceptionEngine", "Perception Engine Service"),
+          screenOnlyMode(screenOnly) {
     }
     
     void OnStart() override {
         try {
             LOG_INFO("Starting PerceptionEngineService...");
+            if (screenOnlyMode) {
+                LOG_INFO("Mode: Screen-Only (audio/camera disabled)");
+            } else {
+                LOG_INFO("Mode: Full (screen + audio + camera)");
+            }
 
             // Initialize context collector
             contextCollector = std::make_unique<ContextCollector>();
             contextCollector->StartPeriodicUpdate();
             LOG_INFO("Context collector started");
 
-            // Initialize audio capture engine
-            audioEngine = std::make_unique<AudioCaptureEngine>();
-            if (!audioEngine->Initialize("models/whisper/ggml-small.bin")) {
-                LOG_WARN("Failed to initialize audio engine");
-                audioEngine.reset();
-            } else {
-                LOG_INFO("Audio engine initialized");
+            // Initialize audio capture engine (only if NOT in screen-only mode)
+            if (!screenOnlyMode) {
+                audioEngine = std::make_unique<AudioCaptureEngine>();
+                if (!audioEngine->Initialize("models/whisper/ggml-small.bin")) {
+                    LOG_WARN("Failed to initialize audio engine");
+                    audioEngine.reset();
+                } else {
+                    LOG_INFO("Audio engine initialized");
 
-                // Set callback to update context when new transcription arrives
-                audioEngine->SetTranscriptionCallback([this](const std::string& transcription) {
-                    if (contextCollector) {
-                        // Get latency from audio engine metrics
-                        auto metrics = audioEngine->GetMetrics();
-                        contextCollector->UpdateVoiceContext(transcription, metrics.whisperLatencyMs);
-                        LOG_INFO_FMT("Voice transcription: %s", transcription.c_str());
-                    }
-                });
-
-                // Start audio capture
-                if (audioEngine->Start()) {
-                    LOG_INFO("Audio capture started");
-
-                    // Start polling thread to pull transcriptions
-                    audioPollingThread = std::make_unique<std::thread>([this]() {
-                        while (serviceRunning.load() && audioEngine) {
-                            audioEngine->GetLatestUserSpeech(); // Triggers callback if new result
-                            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    // Set callback to update context when new transcription arrives
+                    audioEngine->SetTranscriptionCallback([this](const std::string& transcription) {
+                        if (contextCollector) {
+                            // Get latency from audio engine metrics
+                            auto metrics = audioEngine->GetMetrics();
+                            contextCollector->UpdateVoiceContext(transcription, metrics.whisperLatencyMs);
+                            LOG_INFO_FMT("Voice transcription: %s", transcription.c_str());
                         }
                     });
-                } else {
-                    LOG_WARN("Failed to start audio capture");
+
+                    // Start audio capture
+                    if (audioEngine->Start()) {
+                        LOG_INFO("Audio capture started");
+
+                        // Start polling thread to pull transcriptions
+                        audioPollingThread = std::make_unique<std::thread>([this]() {
+                            while (serviceRunning.load() && audioEngine) {
+                                audioEngine->GetLatestUserSpeech(); // Triggers callback if new result
+                                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                            }
+                        });
+                    } else {
+                        LOG_WARN("Failed to start audio capture");
+                    }
                 }
-            }
 
-            // Initialize camera vision engine
-            cameraEngine = std::make_unique<CameraVisionEngine>();
-            if (!cameraEngine->Initialize("models/fastvlm", 0)) {
-                LOG_WARN("Failed to initialize camera engine");
-                cameraEngine.reset();
-            } else {
-                LOG_INFO("Camera vision engine initialized");
+                // Initialize camera vision engine
+                cameraEngine = std::make_unique<CameraVisionEngine>();
+                if (!cameraEngine->Initialize("models/fastvlm", 0)) {
+                    LOG_WARN("Failed to initialize camera engine");
+                    cameraEngine.reset();
+                } else {
+                    LOG_INFO("Camera vision engine initialized");
 
-                // Start camera processing thread (every 10 seconds)
-                cameraThread = std::make_unique<std::thread>([this]() {
-                    while (serviceRunning.load() && cameraEngine) {
-                        if (cameraEngine->IsReady()) {
-                            std::string description = cameraEngine->DescribeScene();
-                            if (!description.empty()) {
-                                float latency = cameraEngine->GetLastLatencyMs();
-                                if (contextCollector) {
-                                    contextCollector->UpdateCameraContext(description, latency);
-                                    LOG_INFO_FMT("Camera scene: %s (latency: %d ms)", description.c_str(), static_cast<int>(latency));
+                    // Start camera processing thread (every 10 seconds)
+                    cameraThread = std::make_unique<std::thread>([this]() {
+                        while (serviceRunning.load() && cameraEngine) {
+                            if (cameraEngine->IsReady()) {
+                                std::string description = cameraEngine->DescribeScene();
+                                if (!description.empty()) {
+                                    float latency = cameraEngine->GetLastLatencyMs();
+                                    if (contextCollector) {
+                                        contextCollector->UpdateCameraContext(description, latency);
+                                        LOG_INFO_FMT("Camera scene: %s (latency: %d ms)", description.c_str(), static_cast<int>(latency));
+                                    }
                                 }
                             }
+                            std::this_thread::sleep_for(std::chrono::seconds(10));
                         }
-                        std::this_thread::sleep_for(std::chrono::seconds(10));
-                    }
-                });
-                LOG_INFO("Camera processing thread started");
+                    });
+                    LOG_INFO("Camera processing thread started");
+                }
+            } else {
+                LOG_INFO("Audio engine: DISABLED (screen-only mode)");
+                LOG_INFO("Camera engine: DISABLED (screen-only mode)");
             }
 
             // Initialize HTTP server
@@ -288,12 +300,24 @@ int main(int argc, char* argv[]) {
     LOG_INFO("=====================================");
 
     // Parse command line arguments
-    if (argc > 1) {
-        std::string arg = argv[1];
-        
-        PerceptionEngineService service;
-        
-        if (arg == "--install") {
+    bool screenOnlyMode = false;
+    std::string primaryCommand = "";
+
+    // Check for --screen-only flag in any position
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "--screen-only") {
+            screenOnlyMode = true;
+            LOG_INFO("Screen-only mode enabled (audio and camera disabled)");
+        } else if (primaryCommand.empty()) {
+            primaryCommand = arg;
+        }
+    }
+
+    if (!primaryCommand.empty()) {
+        PerceptionEngineService service(screenOnlyMode);
+
+        if (primaryCommand == "--install") {
             LOG_INFO("Installing Windows service...");
             if (service.Install()) {
                 LOG_INFO("Service installed successfully.");
@@ -305,7 +329,7 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
         }
-        else if (arg == "--uninstall") {
+        else if (primaryCommand == "--uninstall") {
             LOG_INFO("Uninstalling Windows service...");
             if (service.Uninstall()) {
                 LOG_INFO("Service uninstalled successfully.");
@@ -317,7 +341,7 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
         }
-        else if (arg == "--start") {
+        else if (primaryCommand == "--start") {
             LOG_INFO("Starting Windows service...");
             if (service.Start()) {
                 LOG_INFO("Service started successfully.");
@@ -329,7 +353,7 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
         }
-        else if (arg == "--stop") {
+        else if (primaryCommand == "--stop") {
             LOG_INFO("Stopping Windows service...");
             if (service.Stop()) {
                 LOG_INFO("Service stopped successfully.");
@@ -341,12 +365,17 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
         }
-        else if (arg == "--console") {
+        else if (primaryCommand == "--console") {
             // Run as console application for testing
             LOG_INFO("Running Perception Engine as console application...");
+            if (screenOnlyMode) {
+                LOG_INFO("Mode: Screen-Only (lightweight - audio/camera disabled)");
+            } else {
+                LOG_INFO("Mode: Full (screen + audio + camera)");
+            }
             LOG_INFO("Press Ctrl+C to stop.");
             LOG_INFO("-----------------------------------------------------");
-            
+
             try {
                 // Create separate instances for console mode
                 HttpServer server(8777);
@@ -356,39 +385,45 @@ int main(int argc, char* argv[]) {
                 LOG_INFO("Starting context collector...");
                 collector.StartPeriodicUpdate();
 
-                // Initialize audio engine
-                LOG_INFO("Initializing audio engine...");
+                // Initialize audio engine (only if NOT in screen-only mode)
                 std::atomic<bool> audioRunning{false};
                 std::unique_ptr<std::thread> audioPollingThread;
 
-                if (audioEngine.Initialize("models/whisper/ggml-small.bin")) {
-                    LOG_INFO("Audio engine initialized");
+                if (!screenOnlyMode) {
+                    LOG_INFO("Initializing audio engine...");
 
-                    // Set callback
-                    audioEngine.SetTranscriptionCallback([&collector](const std::string& transcription) {
-                        collector.UpdateVoiceContext(transcription);
-                        LOG_INFO_FMT("Voice: %s", transcription.c_str());
-                    });
+                    if (audioEngine.Initialize("models/whisper/ggml-small.bin")) {
+                        LOG_INFO("Audio engine initialized");
 
-                    if (audioEngine.Start()) {
-                        LOG_INFO("Audio capture started");
-                        audioRunning = true;
-
-                        // Start polling thread
-                        audioPollingThread = std::make_unique<std::thread>([&audioEngine, &audioRunning]() {
-                            while (audioRunning.load()) {
-                                audioEngine.GetLatestUserSpeech();
-                                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                            }
+                        // Set callback
+                        audioEngine.SetTranscriptionCallback([&collector](const std::string& transcription) {
+                            collector.UpdateVoiceContext(transcription);
+                            LOG_INFO_FMT("Voice: %s", transcription.c_str());
                         });
-                    } else {
-                        LOG_WARN("Failed to start audio capture");
-                    }
-                } else {
-                    LOG_WARN("Failed to initialize audio engine");
-                }
 
-                LOG_INFO("Camera vision: Using Python client (C++ ONNX disabled)");
+                        if (audioEngine.Start()) {
+                            LOG_INFO("Audio capture started");
+                            audioRunning = true;
+
+                            // Start polling thread
+                            audioPollingThread = std::make_unique<std::thread>([&audioEngine, &audioRunning]() {
+                                while (audioRunning.load()) {
+                                    audioEngine.GetLatestUserSpeech();
+                                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                                }
+                            });
+                        } else {
+                            LOG_WARN("Failed to start audio capture");
+                        }
+                    } else {
+                        LOG_WARN("Failed to initialize audio engine");
+                    }
+
+                    LOG_INFO("Camera vision: Using Python client (C++ ONNX disabled)");
+                } else {
+                    LOG_INFO("Audio engine: DISABLED (screen-only mode)");
+                    LOG_INFO("Camera vision: DISABLED (screen-only mode)");
+                }
 
                 LOG_INFO("Setting up request handler...");
                 server.SetRequestHandler([&collector](const HttpRequest& request, HttpResponse& response) {
@@ -513,8 +548,11 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         else {
-            LOG_ERROR_FMT("Unknown argument: %s", arg.c_str());
-            LOG_INFO("Usage: PerceptionEngine.exe [--install|--uninstall|--start|--stop|--console]");
+            LOG_ERROR_FMT("Unknown argument: %s", primaryCommand.c_str());
+            LOG_INFO("Usage: PerceptionEngine.exe [--install|--uninstall|--start|--stop|--console] [--screen-only]");
+            LOG_INFO("  --console              Run as console application");
+            LOG_INFO("  --screen-only          Enable screen-only mode (disable audio/camera)");
+            LOG_INFO("  Example: PerceptionEngine.exe --console --screen-only");
             Logger::GetInstance().Shutdown();
             return 1;
         }
@@ -522,8 +560,11 @@ int main(int argc, char* argv[]) {
     
     // If no arguments, run as Windows service
     LOG_INFO("Starting as Windows service...");
+    if (screenOnlyMode) {
+        LOG_INFO("Screen-only mode enabled for service");
+    }
     try {
-        PerceptionEngineService service;
+        PerceptionEngineService service(screenOnlyMode);
         WindowsService::RunAsService(&service);
     }
     catch (...) {

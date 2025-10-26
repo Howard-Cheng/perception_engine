@@ -12,6 +12,7 @@
 #include <mutex>
 #include <queue>
 #include <functional>
+#include <chrono>
 
 // Forward declarations for whisper.cpp
 struct whisper_context;
@@ -60,6 +61,41 @@ public:
 
     // Set callback for transcription results
     void SetTranscriptionCallback(TranscriptionCallback callback);
+
+    // === MEETING MODE (NEW) ===
+    /**
+     * Start meeting mode - continuous transcription of mixed audio (mic + device)
+     * @param meetingId - unique identifier for this meeting
+     */
+    void StartMeetingMode(const std::string& meetingId);
+
+    /**
+     * Stop meeting mode - stops continuous transcription
+     * Returns: path to saved transcript file
+     */
+    std::string StopMeetingMode();
+
+    /**
+     * Check if currently in meeting mode
+     */
+    bool IsInMeetingMode() const { return inMeetingMode.load(); }
+
+    /**
+     * Get current meeting transcript (accumulated since StartMeetingMode)
+     */
+    std::string GetMeetingTranscript();
+
+    // Transcript segment with timestamp
+    struct TranscriptSegment {
+        std::chrono::system_clock::time_point timestamp;
+        std::string text;
+        float confidence;  // Whisper confidence (0-1)
+    };
+
+    /**
+     * Get full meeting transcript with timestamps
+     */
+    std::vector<TranscriptSegment> GetMeetingTranscriptSegments();
 
     // Performance metrics
     struct PerformanceMetrics {
@@ -151,4 +187,15 @@ private:
     // === Helper Functions ===
     std::vector<float> ConvertPCMToFloat(const BYTE* pcmData, UINT32 numFrames);
     std::vector<float> ResampleAudio(const std::vector<float>& input, int inputSampleRate, int outputSampleRate);
+
+    // === MEETING MODE Members (NEW) ===
+    std::atomic<bool> inMeetingMode;
+    std::string currentMeetingId;
+    std::mutex meetingTranscriptMutex;
+    std::vector<TranscriptSegment> meetingTranscriptSegments;
+    std::chrono::system_clock::time_point meetingStartTime;
+
+    // Meeting mode audio mixing
+    std::vector<float> MixAudioSources(const std::vector<float>& mic, const std::vector<float>& device);
+    void SaveMeetingTranscript(const std::string& meetingId);
 };

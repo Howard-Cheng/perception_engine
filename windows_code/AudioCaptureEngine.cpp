@@ -30,6 +30,7 @@ AudioCaptureEngine::AudioCaptureEngine()
     , useSimpleVAD(true)
     , vadThreshold(0.0001f)  // Very low threshold for testing
     , isRunning(false)
+    , inMeetingMode(false)  // NEW: meeting mode off by default
 {
     // Initialize COM
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);

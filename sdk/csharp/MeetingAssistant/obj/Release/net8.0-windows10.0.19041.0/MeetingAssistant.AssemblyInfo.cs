@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MeetingAssistant")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+203ff64c4404528f920009c696f3494f1a9937ca")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5a2eea6829f7c252d4360dac9048752b82bea001")]
 [assembly: System.Reflection.AssemblyProductAttribute("MeetingAssistant")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MeetingAssistant")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

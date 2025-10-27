@@ -26,7 +26,7 @@ namespace MeetingAssistant
             {
                 new ToastContentBuilder()
                     .AddText("Meeting Detected!")
-                    .AddText($"Want Qira to pay attention to your {appName} meeting?")
+                    .AddText($"Want to pay attention to your {appName} meeting?")
                     .AddButton(new ToastButton()
                         .SetContent("Start")
                         .AddArgument("action", "start"))

@@ -16,6 +16,10 @@ namespace MeetingAssistant
         public MeetingState CurrentState { get; private set; } = MeetingState.Idle;
         public MeetingInfo? CurrentMeeting { get; private set; }
 
+        // Minimum duration filter to avoid false positives from screen recording software
+        private DateTime? _firstDetectedAt = null;
+        private const int MIN_DURATION_SECONDS = 2;
+
         /// <summary>
         /// Update state based on meeting detection status
         /// </summary>
@@ -31,10 +35,35 @@ namespace MeetingAssistant
                 case MeetingState.Idle:
                     if (meetingDetected && meetingInfo != null)
                     {
-                        // NEW MEETING DETECTED
-                        CurrentState = MeetingState.Detected;
-                        CurrentMeeting = meetingInfo;
-                        Console.WriteLine($"[State] Idle → Detected: {meetingInfo.AppName}");
+                        // First time detecting this meeting
+                        if (_firstDetectedAt == null)
+                        {
+                            _firstDetectedAt = DateTime.Now;
+                            // Console.WriteLine($"[State] Meeting detected (waiting {MIN_DURATION_SECONDS}s to confirm): {meetingInfo.AppName}");
+                        }
+                        else
+                        {
+                            // Check if meeting has been active for minimum duration
+                            var duration = DateTime.Now - _firstDetectedAt.Value;
+                            if (duration.TotalSeconds >= MIN_DURATION_SECONDS)
+                            {
+                                // NEW MEETING CONFIRMED
+                                CurrentState = MeetingState.Detected;
+                                CurrentMeeting = meetingInfo;
+                                // Console.WriteLine($"[State] Idle → Detected: {meetingInfo.AppName} (confirmed after {duration.TotalSeconds:F1}s)");
+                                _firstDetectedAt = null; // Reset for next detection
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Meeting no longer detected, reset timer
+                        if (_firstDetectedAt != null)
+                        {
+                            var duration = DateTime.Now - _firstDetectedAt.Value;
+                            Console.WriteLine($"[State] Meeting ended before {MIN_DURATION_SECONDS}s threshold (was {duration.TotalSeconds:F1}s) - likely false positive");
+                            _firstDetectedAt = null;
+                        }
                     }
                     break;
 

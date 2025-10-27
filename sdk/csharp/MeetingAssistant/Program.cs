@@ -53,7 +53,7 @@ namespace MeetingAssistant
                 Console.WriteLine("[✓] Notification service initialized");
 
                 Console.WriteLine();
-                Console.WriteLine("[MeetingAssistant] Running... (polling every 2 seconds)");
+                Console.WriteLine("[MeetingAssistant] Running...");
                 Console.WriteLine();
 
                 // Main service loop

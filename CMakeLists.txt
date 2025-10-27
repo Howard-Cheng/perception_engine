@@ -68,6 +68,7 @@ set(PERCEPTION_ENGINE_SOURCES
     CameraVisionEngine.cpp
     FastVLMTokenizer.cpp
     BrowserContentExtractor.cpp
+    MouseTracker.cpp
 )
 
 set(PERCEPTION_ENGINE_HEADERS
@@ -83,6 +84,7 @@ set(PERCEPTION_ENGINE_HEADERS
     CameraVisionEngine.h
     FastVLMTokenizer.h
     BrowserContentExtractor.h
+    MouseTracker.h
 )
 
 # ============================================================================
@@ -91,12 +93,6 @@ set(PERCEPTION_ENGINE_HEADERS
 
 # Main PerceptionEngine service
 add_executable(PerceptionEngine ${PERCEPTION_ENGINE_SOURCES} ${PERCEPTION_ENGINE_HEADERS})
-
-# Audio test program
-add_executable(test_audio test_audio.cpp Logger.cpp Logger.h AudioCaptureEngine.cpp AudioCaptureEngine.h AsyncWhisperQueue.cpp AsyncWhisperQueue.h SileroVAD.cpp SileroVAD.h)
-
-# Vision encoder test program
-add_executable(test_vision_encoder test_vision_encoder.cpp)
 
 # ============================================================================
 # Include Directories
@@ -109,18 +105,6 @@ target_include_directories(PerceptionEngine PRIVATE
     ${JSON_INCLUDE_DIR}
     ${ONNXRUNTIME_INCLUDE_DIR}
     ${OpenCV_INCLUDE_DIRS}
-)
-
-target_include_directories(test_audio PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${WHISPER_INCLUDE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/ggml/include
-    ${ONNXRUNTIME_INCLUDE_DIR}
-)
-
-target_include_directories(test_vision_encoder PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${ONNXRUNTIME_INCLUDE_DIR}
 )
 
 # ============================================================================
@@ -151,27 +135,6 @@ target_link_libraries(PerceptionEngine PRIVATE
     WindowsApp  # WinRT APIs
 )
 
-target_link_libraries(test_audio PRIVATE
-    # whisper.cpp and ggml
-    ${WHISPER_LIB_DIR}/whisper.lib
-    ${GGML_LIB_DIR}/ggml.lib
-    ${GGML_LIB_DIR}/ggml-base.lib
-    ${GGML_LIB_DIR}/ggml-cpu.lib
-    # NOTE: NOT linking ggml-cuda.lib - dynamically loaded when needed
-
-    # ONNX Runtime
-    ${ONNXRUNTIME_LIB_DIR}/onnxruntime.lib
-
-    # Windows APIs
-    ole32       # COM
-    winmm       # Multimedia
-)
-
-target_link_libraries(test_vision_encoder PRIVATE
-    # ONNX Runtime
-    ${ONNXRUNTIME_LIB_DIR}/onnxruntime.lib
-)
-
 # ============================================================================
 # Compiler Flags
 # ============================================================================
@@ -185,13 +148,6 @@ if(MSVC)
         /EHsc               # Exception handling
     )
 
-    target_compile_options(test_audio PRIVATE
-        /W3                 # Warning level 3
-        /permissive-        # Standards conformance
-        /Zc:__cplusplus     # Enable __cplusplus macro
-        /EHsc               # Exception handling
-    )
-
     # Add WinRT support
     target_compile_definitions(PerceptionEngine PRIVATE
         _CRT_SECURE_NO_WARNINGS
@@ -199,11 +155,6 @@ if(MSVC)
         _WIN32_WINNT=0x0A00
     )
 
-    target_compile_definitions(test_audio PRIVATE
-        _CRT_SECURE_NO_WARNINGS
-        WINVER=0x0A00       # Windows 10
-        _WIN32_WINNT=0x0A00
-    )
 endif()
 
 # ============================================================================

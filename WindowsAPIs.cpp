@@ -49,6 +49,19 @@ static std::string g_lastActiveAppWindowTitle;
 static std::chrono::system_clock::time_point g_lastAppStartTime;
 static const std::chrono::hours HISTORY_RETENTION_PERIOD{1}; // 1 hour retention
 
+// Global location cache
+static Location g_cachedLocation;
+static std::chrono::steady_clock::time_point g_lastLocationUpdate;
+static const std::chrono::minutes LOCATION_CACHE_DURATION{30}; // 30 minutes cache
+static bool g_locationInitialized = false;
+
+// Global BrowserContentExtractor instance (optimization: reuse instead of recreating)
+static std::unique_ptr<BrowserContentExtractor> g_contentExtractor;
+static std::mutex g_extractorMutex;
+static bool g_extractorInitialized = false;
+
+#pragma region "Active App Monitoring"
+
 // Helper function: Generate unique key from appName and windowTitle
 inline std::string MakeAppKey(const std::string& appName, const std::string& windowTitle) {
     return appName + "|" + windowTitle;  // Use "|" as separator
@@ -633,7 +646,9 @@ double GetNetworkSpeed() {
     }
 }
 
-// Active App Monitoring Implementation
+#pragma endregion "Active App Monitoring"
+
+// Active App Monitoring Implementation  
 bool InitializeActiveAppMonitoring() {
     try {
         std::lock_guard<std::mutex> lock(g_historyMutex);
@@ -678,7 +693,17 @@ void CleanupActiveAppMonitoring() {
         // Clear history and current app info
         g_activeAppHistory.clear();
         g_lastActiveApp.clear();
-        g_lastActiveAppWindowTitle.clear(); // Clear window title too
+        g_lastActiveAppWindowTitle.clear();
+    }
+    catch (...) {
+        // Ignore cleanup errors
+    }
+    
+    // Cleanup BrowserContentExtractor
+    try {
+        std::lock_guard<std::mutex> extractorLock(g_extractorMutex);
+        g_contentExtractor.reset();
+        g_extractorInitialized = false;
     }
     catch (...) {
         // Ignore cleanup errors
@@ -848,9 +873,6 @@ std::vector<ActiveAppRecord> GetRecentPeriodActiveAppList() {
             }
         }
 
-        // NOTE: No limiting here - just return all records within the 1-hour window
-        // Limiting to top 10 apps by totalSeconds is now done in ContextCollector::UpdateCache()
-
         return result;
     }
     catch (...) {
@@ -858,11 +880,8 @@ std::vector<ActiveAppRecord> GetRecentPeriodActiveAppList() {
     }
 }
 
-// Global location cache
-static Location g_cachedLocation;
-static std::chrono::steady_clock::time_point g_lastLocationUpdate;
-static const std::chrono::minutes LOCATION_CACHE_DURATION{30}; // 30 minutes cache
-static bool g_locationInitialized = false;
+// Location functions
+#pragma region "Location"
 
 Location GetLocation() {
     using namespace winrt;
@@ -876,6 +895,19 @@ Location GetLocation() {
     
     try {
         auto now = std::chrono::steady_clock::now();
+        
+        // Optimization: Skip location request in first 30 seconds after startup
+        static auto startupTime = std::chrono::steady_clock::now();
+        if ((now - startupTime) < std::chrono::seconds(30)) {
+            if (g_locationInitialized) {
+                return g_cachedLocation;
+            } else {
+                g_cachedLocation = loc;
+                g_lastLocationUpdate = now;
+                g_locationInitialized = true;
+                return loc;
+            }
+        }
         
         // Return cached location if still valid
         if (g_locationInitialized && g_cachedLocation.valid && 
@@ -954,6 +986,8 @@ Location GetLocation() {
     }
 }
 
+#pragma endregion "Location"
+
 std::string GetCurrentTimestamp() {
     try {
         auto now = std::chrono::system_clock::now();
@@ -994,18 +1028,23 @@ std::string GetCurrentTimestamp() {
 // NEW: Get current active app content using UIA technology
 std::string GetCurrentActiveAppContent() {
     try {
+        std::lock_guard<std::mutex> lock(g_extractorMutex);
+        
+        // Optimization: Lazy initialization - create only when first used
+        if (!g_extractorInitialized) {
+            g_contentExtractor = std::make_unique<BrowserContentExtractor>();
+            g_extractorInitialized = true;
+        }
+        
         // Get the foreground window handle
         HWND hwnd = GetForegroundWindow();
         if (!hwnd) {
             return "";
         }
         
-        // Create BrowserContentExtractor instance
-        BrowserContentExtractor extractor;
-        
-        // Get the content using UIA
+        // Get the content using UIA (reuse the same extractor instance)
         BrowserContentInfo info;
-        bool success = extractor.GetBrowserContentByHWND(hwnd, info);
+        bool success = g_contentExtractor->GetBrowserContentByHWND(hwnd, info);
         
         if (!success || info.textContent.empty()) {
             return "";

@@ -242,6 +242,20 @@ bool AudioCaptureEngine::InitializeSystemAudioCapture() {
         return false;
     }
 
+    // Log device information
+    IPropertyStore* pProps = nullptr;
+    hr = systemAudioDevice->OpenPropertyStore(STGM_READ, &pProps);
+    if (SUCCEEDED(hr)) {
+        PROPVARIANT varName;
+        PropVariantInit(&varName);
+        hr = pProps->GetValue(PKEY_Device_FriendlyName, &varName);
+        if (SUCCEEDED(hr)) {
+            LOG_INFO_FMT("System audio loopback device: %S", varName.pwszVal);
+            PropVariantClear(&varName);
+        }
+        pProps->Release();
+    }
+
     // Activate audio client
     hr = systemAudioDevice->Activate(
         __uuidof(IAudioClient),
@@ -434,6 +448,9 @@ void AudioCaptureEngine::MicrophoneCaptureThread() {
 void AudioCaptureEngine::SystemAudioCaptureThread() {
     LOG_INFO("System audio capture thread started");
 
+    int loopCount = 0;
+    int totalPackets = 0;
+
     while (isRunning.load()) {
         UINT32 packetLength = 0;
         HRESULT hr = systemAudioCaptureClient->GetNextPacketSize(&packetLength);
@@ -443,7 +460,13 @@ void AudioCaptureEngine::SystemAudioCaptureThread() {
             break;
         }
 
+        // Diagnostic logging every 100 loops
+        if (++loopCount % 100 == 0) {
+            LOG_DEBUG_FMT("System audio: %d loops, %d packets captured so far", loopCount, totalPackets);
+        }
+
         while (packetLength != 0) {
+            totalPackets++;
             BYTE* pData = nullptr;
             UINT32 numFramesAvailable = 0;
             DWORD flags = 0;
@@ -514,24 +537,37 @@ void AudioCaptureEngine::ProcessingThread() {
                  MIN_SPEECH_MS, SILENCE_THRESHOLD_MS, MAX_SPEECH_SEC);
 
     while (isRunning.load()) {
-        // Get current buffer snapshot
+        // Get audio buffers
         std::vector<float> micBuffer = GetMicrophoneBuffer();
+        std::vector<float> audioToProcess;
 
-        if (micBuffer.empty()) {
+        // MEETING MODE: Mix microphone + system audio (meeting participants)
+        if (inMeetingMode.load()) {
+            std::vector<float> deviceBuffer = GetSystemAudioBuffer();
+            audioToProcess = MixAudioSources(micBuffer, deviceBuffer);
+
+            LOG_DEBUG_FMT("Meeting mode: mixed %zu mic + %zu device samples = %zu total",
+                         micBuffer.size(), deviceBuffer.size(), audioToProcess.size());
+        } else {
+            // NORMAL MODE: Just use microphone
+            audioToProcess = micBuffer;
+        }
+
+        if (audioToProcess.empty()) {
             Sleep(50);
             continue;
         }
 
         // Process in VAD_WINDOW_SAMPLES chunks
-        if (micBuffer.size() < VAD_WINDOW_SAMPLES) {
+        if (audioToProcess.size() < VAD_WINDOW_SAMPLES) {
             Sleep(10);
             continue;
         }
 
         // Check VAD on latest window
         std::vector<float> vadWindow(
-            micBuffer.end() - VAD_WINDOW_SAMPLES,
-            micBuffer.end()
+            audioToProcess.end() - VAD_WINDOW_SAMPLES,
+            audioToProcess.end()
         );
         bool isSpeech = IsSpeechDetected(vadWindow);
 
@@ -541,8 +577,8 @@ void AudioCaptureEngine::ProcessingThread() {
                 LOG_DEBUG("Speech STARTED");
                 currentState = SPEAKING;
                 speechBuffer.clear();
-                speechBuffer.insert(speechBuffer.end(), micBuffer.begin(), micBuffer.end());
-                speechDurationSamples = micBuffer.size();
+                speechBuffer.insert(speechBuffer.end(), audioToProcess.begin(), audioToProcess.end());
+                speechDurationSamples = audioToProcess.size();
                 silenceDurationSamples = 0;
 
                 // Clear processed buffer
@@ -550,21 +586,31 @@ void AudioCaptureEngine::ProcessingThread() {
                     std::lock_guard<std::mutex> lock(micBufferMutex);
                     microphoneBuffer.clear();
                 }
+                // In meeting mode, also clear system audio buffer
+                if (inMeetingMode.load()) {
+                    std::lock_guard<std::mutex> lock(systemAudioBufferMutex);
+                    systemAudioBuffer.clear();
+                }
             }
         }
         else if (currentState == SPEAKING) {
             if (isSpeech) {
                 // Continue speaking
                 silenceDurationSamples = 0;
-                speechDurationSamples += micBuffer.size();
+                speechDurationSamples += audioToProcess.size();
 
                 // Append new audio to speech buffer
-                speechBuffer.insert(speechBuffer.end(), micBuffer.begin(), micBuffer.end());
+                speechBuffer.insert(speechBuffer.end(), audioToProcess.begin(), audioToProcess.end());
 
                 // Clear processed buffer
                 {
                     std::lock_guard<std::mutex> lock(micBufferMutex);
                     microphoneBuffer.clear();
+                }
+                // In meeting mode, also clear system audio buffer
+                if (inMeetingMode.load()) {
+                    std::lock_guard<std::mutex> lock(systemAudioBufferMutex);
+                    systemAudioBuffer.clear();
                 }
 
                 // Safety: Max utterance length
@@ -575,13 +621,18 @@ void AudioCaptureEngine::ProcessingThread() {
             }
             else {
                 // Silence detected during speech
-                silenceDurationSamples += micBuffer.size();
-                speechBuffer.insert(speechBuffer.end(), micBuffer.begin(), micBuffer.end());
+                silenceDurationSamples += audioToProcess.size();
+                speechBuffer.insert(speechBuffer.end(), audioToProcess.begin(), audioToProcess.end());
 
                 // Clear processed buffer
                 {
                     std::lock_guard<std::mutex> lock(micBufferMutex);
                     microphoneBuffer.clear();
+                }
+                // In meeting mode, also clear system audio buffer
+                if (inMeetingMode.load()) {
+                    std::lock_guard<std::mutex> lock(systemAudioBufferMutex);
+                    systemAudioBuffer.clear();
                 }
 
                 // Check if silence duration exceeded threshold
@@ -794,6 +845,20 @@ std::string AudioCaptureEngine::GetLatestUserSpeech() {
                 if (transcriptionCallback) {
                     transcriptionCallback(result);
                 }
+            }
+
+            // Store in meeting transcript if in meeting mode
+            if (inMeetingMode.load()) {
+                TranscriptSegment segment;
+                segment.timestamp = std::chrono::system_clock::now();
+                segment.text = result;
+                segment.confidence = 1.0f; // Whisper doesn't provide confidence, default to 1.0
+
+                std::lock_guard<std::mutex> lock(meetingTranscriptMutex);
+                meetingTranscriptSegments.push_back(segment);
+
+                LOG_DEBUG_FMT("Meeting transcript segment added: \"%s\" (total segments: %zu)",
+                             result.c_str(), meetingTranscriptSegments.size());
             }
 
             return result;

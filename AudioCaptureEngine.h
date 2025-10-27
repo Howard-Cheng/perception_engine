@@ -4,6 +4,8 @@
 #include <mmdeviceapi.h>
 #include <audioclient.h>
 #include <mmreg.h>
+#include <functiondiscoverykeys_devpkey.h>
+#include <propsys.h>
 #include <memory>
 #include <string>
 #include <vector>

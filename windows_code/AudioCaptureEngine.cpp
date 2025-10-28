@@ -1,3 +1,4 @@
+#define NOMINMAX  // Prevent Windows.h from defining min/max macros
 #include "AudioCaptureEngine.h"
 #include "Logger.h"  // NEW: Add Logger
 #include "AsyncWhisperQueue.h"
@@ -970,6 +971,22 @@ std::vector<float> AudioCaptureEngine::ResampleAudio(const std::vector<float>& i
     }
 
     return output;
+}
+
+std::vector<float> AudioCaptureEngine::MixAudioSources(const std::vector<float>& mic, const std::vector<float>& device) {
+    // Mix microphone and system audio by averaging samples
+    // This is used in meeting mode to capture both the user and other participants
+
+    size_t minSize = std::min(mic.size(), device.size());
+    std::vector<float> mixed;
+    mixed.reserve(minSize);
+
+    for (size_t i = 0; i < minSize; ++i) {
+        // Average the two sources to prevent clipping
+        mixed.push_back((mic[i] + device[i]) * 0.5f);
+    }
+
+    return mixed;
 }
 
 // Delete the old LogDebug and LogError functions (they are now replaced by Logger)

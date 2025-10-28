@@ -17,9 +17,13 @@ MouseTracker::MouseTracker()
     , m_pAutomation(nullptr)
     , m_isRunning(false)
     , m_lastClickTime(0)
+    , m_isDragging(false)
+    , m_dragWindow(nullptr)
 {
     m_lastClickPos.x = 0;
     m_lastClickPos.y = 0;
+    m_dragStartPos.x = 0;
+    m_dragStartPos.y = 0;
     s_instance = this;
 }
 
@@ -186,27 +190,74 @@ void MouseTracker::ProcessMouseEvent(WPARAM wParam, const MSLLHOOKSTRUCT* mouseI
 
     switch (wParam) {
         case WM_LBUTTONDOWN: {
+            // 记录拖动开始
+            m_isDragging = true;
+            m_dragStartPos = mouseInfo->pt;
+            m_dragWindow = WindowFromPoint(mouseInfo->pt);
+
             // 检测双击
             if (currentTime - m_lastClickTime < GetDoubleClickTime() &&
                 abs(mouseInfo->pt.x - m_lastClickPos.x) < 5 &&
                 abs(mouseInfo->pt.y - m_lastClickPos.y) < 5) {
                 eventType = MouseEventType::LEFT_DOUBLE_CLICK;
                 m_lastClickTime = 0; // 重置，避免三连击被识别为双击
+                m_isDragging = false; // 双击不算拖动
             } else {
-                eventType = MouseEventType::LEFT_CLICK;
+                // 不立即触发 LEFT_CLICK，等待 LBUTTONUP 来判断是否是文本选择
                 m_lastClickTime = currentTime;
                 m_lastClickPos = mouseInfo->pt;
+                return; // 暂时不处理，等 LBUTTONUP
+            }
+            break;
+        }
+        case WM_LBUTTONUP: {
+            // 检查是否是文本选择（拖动距离超过阈值）
+            if (m_isDragging) {
+                int dragDistance = abs(mouseInfo->pt.x - m_dragStartPos.x) +
+                    abs(mouseInfo->pt.y - m_dragStartPos.y);
+
+                // 如果拖动距离超过10像素，认为是文本选择
+                if (dragDistance > 10) {
+                    eventType = MouseEventType::TEXT_SELECTION;
+
+                    // 快速入队文本选择事件
+                    PendingMouseEvent event;
+                    event.eventType = eventType;
+                    event.position = mouseInfo->pt;
+                    event.pointWindow = m_dragWindow;
+                    event.timestamp = std::chrono::system_clock::now();
+
+                    {
+                        std::lock_guard<std::mutex> lock(s_instance->m_queueMutex);
+                        s_instance->m_eventQueue.push(event);
+                    }
+                    s_instance->m_queueCondition.notify_one();
+
+                    m_isDragging = false;
+                    return; // 文本选择事件已处理，不再处理为点击
+                }
+                else {
+                    // 拖动距离小，是普通点击
+                    eventType = MouseEventType::LEFT_CLICK;
+                }
+
+                m_isDragging = false;
+            }
+            else {
+                // 没有记录 LBUTTONDOWN，可能是其他情况
+                return;
             }
             break;
         }
         case WM_RBUTTONDOWN:
             eventType = MouseEventType::RIGHT_CLICK;
+            m_isDragging = false; // 右键不算拖动
             break;
         default:
             return;
     }
 
-    if (eventType != MouseEventType::UNKNOWN) {
+    if (eventType != MouseEventType::UNKNOWN && eventType != MouseEventType::TEXT_SELECTION) {
         // 快速入队，不阻塞钩子
         PendingMouseEvent event;
         event.eventType = eventType;
@@ -335,7 +386,15 @@ void MouseTracker::RecordMouseOperation(MouseEventType eventType, POINT position
     // 不要延迟，否则UI可能已经更新，元素内容会改变
     ElementInfo contentInfo;
     try {
-        contentInfo = GetElementContentAtPoint(position, pointWindow);
+        if (eventType == MouseEventType::TEXT_SELECTION) {
+            // 对于文本选择，使用特殊方法获取选中的文本
+            contentInfo.content = GetSelectedText(pointWindow);
+            contentInfo.elementType = L"SelectedText";
+        }
+        else {
+            // 对于点击事件，获取元素内容
+            contentInfo = GetElementContentAtPoint(position, pointWindow);
+        }
     } catch (...) {
         contentInfo.content = L"[Error getting content]";
         contentInfo.elementType = L"Unknown";
@@ -1157,4 +1216,126 @@ std::wstring TrimWhitespace(const std::wstring& str) {
     
     // 返回修剪后的字符串
     return str.substr(start, end - start + 1);
+}
+
+// 新增：获取选中的文本
+std::wstring MouseTracker::GetSelectedText(HWND targetWindow) {
+    if (!m_pAutomation) return L"";
+
+    HWND hwnd = targetWindow;
+    if (!hwnd || !IsWindow(hwnd)) {
+        hwnd = GetForegroundWindow();
+    }
+
+    if (!hwnd || !IsWindow(hwnd)) {
+        return L"";
+    }
+
+    // 获取焦点元素（Focus Element）
+    IUIAutomationElement* focusElement = nullptr;
+    HRESULT hr = m_pAutomation->GetFocusedElement(&focusElement);
+
+    if (SUCCEEDED(hr) && focusElement) {
+        // 尝试使用 TextPattern 获取选中的文本
+        IUIAutomationTextPattern* textPattern = nullptr;
+        hr = focusElement->GetCurrentPatternAs(UIA_TextPatternId,
+            __uuidof(IUIAutomationTextPattern), (void**)&textPattern);
+
+        if (SUCCEEDED(hr) && textPattern) {
+            // 获取选中的文本范围
+            IUIAutomationTextRangeArray* selectionArray = nullptr;
+            hr = textPattern->GetSelection(&selectionArray);
+
+            if (SUCCEEDED(hr) && selectionArray) {
+                int length = 0;
+                selectionArray->get_Length(&length);
+
+                std::wstring selectedText;
+
+                // 遍历所有选中的范围（可能有多个）
+                for (int i = 0; i < length; i++) {
+                    IUIAutomationTextRange* textRange = nullptr;
+                    if (SUCCEEDED(selectionArray->GetElement(i, &textRange)) && textRange) {
+                        BSTR text = nullptr;
+                        if (SUCCEEDED(textRange->GetText(-1, &text)) && text) {
+                            if (i > 0) selectedText += L" ";
+                            selectedText += text;
+                            SysFreeString(text);
+                        }
+                        textRange->Release();
+                    }
+                }
+
+                selectionArray->Release();
+                textPattern->Release();
+                focusElement->Release();
+
+                selectedText = TrimWhitespace(selectedText);
+                if (!selectedText.empty()) {
+                    return selectedText;
+                }
+            }
+            else {
+                textPattern->Release();
+            }
+        }
+
+        focusElement->Release();
+    }
+
+    // 后备方案：尝试从剪贴板获取（如果用户复制了选中的文本）
+    // 注意：这个方法并不完美，因为剪贴板可能包含之前的内容
+    // 但作为后备方案，总比没有好
+
+    // 尝试从窗口的根元素查找
+    IUIAutomationElement* rootElement = nullptr;
+    hr = m_pAutomation->ElementFromHandle(hwnd, &rootElement);
+
+    if (SUCCEEDED(hr) && rootElement) {
+        // 查找支持 TextPattern 的元素
+        IUIAutomationTextPattern* textPattern = nullptr;
+        hr = rootElement->GetCurrentPatternAs(UIA_TextPatternId,
+            __uuidof(IUIAutomationTextPattern), (void**)&textPattern);
+
+        if (SUCCEEDED(hr) && textPattern) {
+            IUIAutomationTextRangeArray* selectionArray = nullptr;
+            hr = textPattern->GetSelection(&selectionArray);
+
+            if (SUCCEEDED(hr) && selectionArray) {
+                int length = 0;
+                selectionArray->get_Length(&length);
+
+                std::wstring selectedText;
+
+                for (int i = 0; i < length; i++) {
+                    IUIAutomationTextRange* textRange = nullptr;
+                    if (SUCCEEDED(selectionArray->GetElement(i, &textRange)) && textRange) {
+                        BSTR text = nullptr;
+                        if (SUCCEEDED(textRange->GetText(-1, &text)) && text) {
+                            if (i > 0) selectedText += L" ";
+                            selectedText += text;
+                            SysFreeString(text);
+                        }
+                        textRange->Release();
+                    }
+                }
+
+                selectionArray->Release();
+                textPattern->Release();
+                rootElement->Release();
+
+                selectedText = TrimWhitespace(selectedText);
+                if (!selectedText.empty()) {
+                    return selectedText;
+                }
+            }
+            else {
+                textPattern->Release();
+            }
+        }
+
+        rootElement->Release();
+    }
+
+    return L"[No Text Selected]";
 }

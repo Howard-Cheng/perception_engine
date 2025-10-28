@@ -124,7 +124,7 @@ CComPtr<IUIAutomationElement> FindDocumentElement(IUIAutomation* pAutomation, IU
     hr = pRootElement->FindFirst(TreeScope_Descendants, pCondition, &pDocElement);
     
     if (SUCCEEDED(hr) && pDocElement) {
-        LOG_DEBUG("Found Document element (web content area)");
+        //LOG_DEBUG("Found Document element (web content area)");
         return pDocElement;
     }
     
@@ -191,7 +191,7 @@ bool BrowserContentExtractor::GetBrowserContentByHWND(HWND hwnd, BrowserContentI
     GetWindowTextW(hwnd, windowTitle, 512);
     outInfo.title = windowTitle;
     
-    LOG_DEBUG("Detected browser type:");
+    //LOG_DEBUG("Detected browser type:");
     switch (browserType) {
         case BrowserType::Chrome:
             LOG_DEBUG("Chrome");
@@ -206,7 +206,7 @@ bool BrowserContentExtractor::GetBrowserContentByHWND(HWND hwnd, BrowserContentI
             LOG_DEBUG("Teams");
             break;
         default:
-            LOG_DEBUG("Unknown (will try generic parsing)");
+            //LOG_DEBUG("Unknown (will try generic parsing)");
             break;
     }
     
@@ -228,13 +228,13 @@ bool BrowserContentExtractor::GetBrowserContentByHWND(HWND hwnd, BrowserContentI
     
     outInfo.elementCount = 0;
 
-    LOG_DEBUG("Searching for web content area...");
+    //LOG_DEBUG("Searching for web content area...");
 
     // KEY CHANGE: Only traverse web content area, not entire browser window
     CComPtr<IUIAutomationElement> pContentElement = FindDocumentElement(pAutomation, pRootElement);
 
     if (pContentElement) {
-        LOG_DEBUG("Starting element traversal from content area...");
+        //LOG_DEBUG("Starting element traversal from content area...");
         TraverseElementTree(pContentElement, outInfo, 0);
     } else {
         LOG_WARN("Could not find content area, parsing entire window...");
@@ -242,7 +242,7 @@ bool BrowserContentExtractor::GetBrowserContentByHWND(HWND hwnd, BrowserContentI
         TraverseElementTree(pRootElement, outInfo, 0);
     }
 
-    LOG_DEBUG_FMT("Parsing complete! Found %d elements", outInfo.elementCount);
+    //LOG_DEBUG_FMT("Parsing complete! Found %d elements", outInfo.elementCount);
     
     return true;
 }

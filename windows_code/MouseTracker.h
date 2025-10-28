@@ -72,6 +72,7 @@ private:
     };
     ElementInfo GetElementContentAtPoint(POINT pt, HWND targetWindow);
     
+    std::wstring GetSelectedText(HWND targetWindow);
     std::wstring GetApplicationName(HWND hwnd);
     std::wstring GetWindowTitle(HWND hwnd);
     std::wstring GetElementTypeString(CONTROLTYPEID controlType);
@@ -108,6 +109,11 @@ private:
     DWORD m_lastClickTime;
     POINT m_lastClickPos;
     
+    // 文本选择跟踪
+    bool m_isDragging;
+    POINT m_dragStartPos;
+    HWND m_dragWindow;
+
     std::wofstream m_logFile;
 };
 

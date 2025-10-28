@@ -127,11 +127,10 @@ std::string GetForegroundAppName() {
             if (hProcess) {
                 wchar_t processName[MAX_PATH] = {0};
                 DWORD size = sizeof(processName)/sizeof(wchar_t);
+                bool handleClosed = false;
                 
                 // Prefer QueryFullProcessImageNameW (Unicode version)
                 if (QueryFullProcessImageNameW(hProcess, 0, processName, &size)) {
-                    CloseHandle(hProcess);
-                    
                     std::wstring fullPath(processName);
                     size_t lastSlash = fullPath.find_last_of(L"\\/");
                     if (lastSlash != std::wstring::npos) {
@@ -151,6 +150,7 @@ std::string GetForegroundAppName() {
                             exeNameUtf8 != "csrss" &&
                             exeNameUtf8 != "explorer" &&
                             !exeNameUtf8.empty()) {
+                            CloseHandle(hProcess);
                             return exeNameUtf8;
                         }
                     }
@@ -158,8 +158,6 @@ std::string GetForegroundAppName() {
                     // Fallback to GetModuleBaseNameW
                     wchar_t baseName[MAX_PATH] = {0};
                     if (GetModuleBaseNameW(hProcess, NULL, baseName, sizeof(baseName)/sizeof(wchar_t))) {
-                        CloseHandle(hProcess);
-                        
                         std::wstring name(baseName);
                         size_t dotPos = name.find_last_of(L'.');
                         if (dotPos != std::wstring::npos) {
@@ -168,6 +166,7 @@ std::string GetForegroundAppName() {
                         
                         std::string nameUtf8 = WideStringToUtf8(name);
                         if (!nameUtf8.empty() && nameUtf8 != "explorer") {
+                            CloseHandle(hProcess);
                             return nameUtf8;
                         }
                     }

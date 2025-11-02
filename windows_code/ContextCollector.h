@@ -4,6 +4,10 @@
 #include <chrono>
 #include <mutex>
 #include <string>
+#include <memory>  // For std::unique_ptr
+
+// Forward declaration to avoid header conflicts
+class MouseTracker;
 
 class ContextCollector {
 private:
@@ -24,6 +28,10 @@ private:
     float latestVoiceLatency;
     float latestContextUpdateLatency;
     mutable std::mutex metricsMutex;
+
+    // Mouse tracker for capturing mouse operations
+    std::unique_ptr<MouseTracker> mouseTracker;
+    mutable std::mutex mouseTrackerMutex;
 
     void UpdateCache();
     bool ShouldUpdateCache();

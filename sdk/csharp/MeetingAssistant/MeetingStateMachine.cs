@@ -14,6 +14,7 @@ namespace MeetingAssistant
     public class MeetingStateMachine
     {
         public MeetingState CurrentState { get; private set; } = MeetingState.Idle;
+        public MeetingState LastState { get; private set; } = MeetingState.Idle;
         public MeetingInfo? CurrentMeeting { get; private set; }
 
         // Minimum duration filter to avoid false positives from screen recording software
@@ -28,7 +29,7 @@ namespace MeetingAssistant
         /// <returns>True if state changed</returns>
         public bool Update(bool meetingDetected, MeetingInfo? meetingInfo)
         {
-            var oldState = CurrentState;
+            LastState = CurrentState;
 
             switch (CurrentState)
             {
@@ -85,12 +86,12 @@ namespace MeetingAssistant
                         // Meeting ended
                         CurrentState = MeetingState.Idle;
                         CurrentMeeting = null;
-                        Console.WriteLine($"[State] {oldState} → Idle (meeting ended)");
+                        Console.WriteLine($"[State] {LastState} → Idle (meeting ended)");
                     }
                     break;
             }
 
-            return oldState != CurrentState;
+            return LastState != CurrentState;
         }
 
         /// <summary>

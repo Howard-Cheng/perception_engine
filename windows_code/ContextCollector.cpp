@@ -1,8 +1,10 @@
 #include "ContextCollector.h"
+#include "MouseTracker.h"  // Include here instead of in header
 #include <thread>
 #include <atomic>
 #include <iomanip>
 #include <sstream>
+#include <iostream>  // For console output
 #include <vector>
 #include <map>
 #include <algorithm>
@@ -24,6 +26,24 @@ ContextCollector::ContextCollector()
             activeAppMonitoringInitialized.store(true);
         }
     }
+
+    // Asynchronously initialize MouseTracker (don't block startup)
+    std::thread([this]() {
+        try {
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            std::lock_guard<std::mutex> lock(mouseTrackerMutex);
+            mouseTracker = std::make_unique<MouseTracker>();
+            if (mouseTracker->Initialize()) {
+                mouseTracker->Start();
+                std::cout << "[ContextCollector] MouseTracker initialized (async)" << std::endl;
+            } else {
+                std::cerr << "[ContextCollector] Failed to initialize MouseTracker" << std::endl;
+                mouseTracker.reset();
+            }
+        } catch (...) {
+            std::cerr << "[ContextCollector] Exception in MouseTracker async init" << std::endl;
+        }
+    }).detach();
 }
 
 bool ContextCollector::ShouldUpdateCache() {
@@ -258,6 +278,50 @@ void ContextCollector::UpdateCache() {
         cachedContext.setRaw("activeAppContent", "null");
     }
     
+    // ADD: Get mouse operation records from MouseTracker and add to recentMouseTrack
+    {
+        std::lock_guard<std::mutex> mouseTrackerLock(mouseTrackerMutex);
+        
+        if (mouseTracker) {
+            // MouseTracker已初始化，获取记录
+            try {
+                std::wstring mouseRecordsWide = mouseTracker->GetAllRecordsAsJson();
+                
+                // Convert wstring to UTF-8 string
+                if (!mouseRecordsWide.empty()) {
+                    int size_needed = WideCharToMultiByte(CP_UTF8, 0, &mouseRecordsWide[0], 
+                                                          (int)mouseRecordsWide.size(), NULL, 0, NULL, NULL);
+                    if (size_needed > 0) {
+                        std::string mouseRecordsUtf8(size_needed, 0);
+                        WideCharToMultiByte(CP_UTF8, 0, &mouseRecordsWide[0], (int)mouseRecordsWide.size(), 
+                                           &mouseRecordsUtf8[0], size_needed, NULL, NULL);
+                        
+                        // Add mouse records as raw JSON to recentMouseTrack node
+                        cachedContext.setRaw("recentMouseTrack", mouseRecordsUtf8);
+                    } else {
+                        // Conversion failed, set empty records
+                        cachedContext.setRaw("recentMouseTrack", R"({"records":[]})");
+                    }
+                } else {
+                    // No records yet (empty but initialized)
+                    cachedContext.setRaw("recentMouseTrack", R"({"records":[]})");
+                }
+            } catch (const std::exception& e) {
+                // Error getting records, set empty with error logging
+                std::cerr << "[ContextCollector] Exception getting mouse records: " << e.what() << std::endl;
+                cachedContext.setRaw("recentMouseTrack", R"({"records":[]})");
+            } catch (...) {
+                // Unknown error, set empty
+                std::cerr << "[ContextCollector] Unknown exception getting mouse records" << std::endl;
+                cachedContext.setRaw("recentMouseTrack", R"({"records":[]})");
+            }
+        } else {
+            // MouseTracker 还未初始化（异步初始化中）
+            // 返回一个特殊状态而不是空数组
+            cachedContext.setRaw("recentMouseTrack", R"({"records":[],"status":"initializing"})");
+        }
+    }
+    
     cachedContext.set("timestamp", timestamp);
 
     // cacheMutex is released here automatically
@@ -464,5 +528,17 @@ ContextCollector::~ContextCollector() {
     if (activeAppMonitoringInitialized.load()) {
         WindowsAPIs::CleanupActiveAppMonitoring();
         activeAppMonitoringInitialized.store(false);
+    }
+
+    // ADD: Stop and cleanup MouseTracker
+    if (mouseTracker) {
+        try {
+            std::lock_guard<std::mutex> lock(mouseTrackerMutex);
+            mouseTracker->Stop();
+            mouseTracker.reset();
+            std::cout << "[ContextCollector] MouseTracker stopped and cleaned up" << std::endl;
+        } catch (...) {
+            // Ignore cleanup errors in destructor
+        }
     }
 }

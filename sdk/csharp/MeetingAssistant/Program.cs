@@ -48,9 +48,15 @@ namespace MeetingAssistant
 
                 _notificationService = new NotificationService(
                     onStartClicked: OnUserClickedStart,
-                    onDismissClicked: OnUserClickedDismiss
+                    onDismissClicked: OnUserClickedDismiss,
+                    onStartSummaryClicked: OnUserClickedStartSummarize,
+                    onCancelSummaryClicked: OnUserClickedCancelSummarize
+
                 );
                 Console.WriteLine("[✓] Notification service initialized");
+
+                PayAttentionBridge.Initialize();
+                Console.WriteLine("[✓] PayAttentionBridge SDK initialized.");
 
                 Console.WriteLine();
                 Console.WriteLine("[MeetingAssistant] Running...");
@@ -115,7 +121,16 @@ namespace MeetingAssistant
                         }
                         else if (_stateMachine.CurrentState == MeetingState.Idle)
                         {
-                            Console.WriteLine("[MeetingAssistant] No meeting detected (state: Idle)");
+                            if (_stateMachine.LastState == MeetingState.PayingAttention)
+                            {
+                                PayAttentionBridge.StopRecord();
+                                _notificationService!.ShowMeetingSummaryNotification();
+                                Console.WriteLine("[MeetingAssistant] [State] Detected → Idle, try to stop the record...)");
+                            }
+                            else
+                            {
+                                Console.WriteLine("[MeetingAssistant] No meeting detected (state: Idle)");
+                            }
                         }
                     }
 
@@ -162,6 +177,28 @@ namespace MeetingAssistant
 
             // Update state
             _stateMachine!.OnUserDismissed();
+
+            Console.WriteLine();
+        }
+
+        static void OnUserClickedStartSummarize()
+        {
+            Console.WriteLine();
+            Console.WriteLine("╔════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║  USER ACTION: Clicked 'Start summarize'                     ║");
+            Console.WriteLine("╚════════════════════════════════════════════════════════════╝");
+            // Call Pay Attention SDK (mock for now)
+            PayAttentionBridge.StartMeetingSummarization();
+            Console.WriteLine("Summarize finished...");
+
+            Console.WriteLine();
+        }
+        static void OnUserClickedCancelSummarize()
+        {
+            Console.WriteLine();
+            Console.WriteLine("╔════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║  USER ACTION: Clicked 'Cancel summarize'                     ║");
+            Console.WriteLine("╚════════════════════════════════════════════════════════════╝");
 
             Console.WriteLine();
         }

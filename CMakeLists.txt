@@ -66,6 +66,7 @@ set(PERCEPTION_ENGINE_SOURCES
     AsyncWhisperQueue.cpp
     SileroVAD.cpp
     BrowserContentExtractor.cpp
+    MouseTracker.cpp
 )
 
 set(PERCEPTION_ENGINE_HEADERS
@@ -79,6 +80,7 @@ set(PERCEPTION_ENGINE_HEADERS
     AsyncWhisperQueue.h
     SileroVAD.h
     BrowserContentExtractor.h
+    MouseTracker.h
 )
 
 # ============================================================================
@@ -148,6 +150,7 @@ if(MSVC)
         WINVER=0x0A00       # Windows 10
         _WIN32_WINNT=0x0A00
     )
+
 endif()
 
 # ============================================================================

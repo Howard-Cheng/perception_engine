@@ -1,5 +1,6 @@
 nova_env
 windows_code/third-party/
+sdk/csharp/Hub
 
 # Environment variables and secrets
 .env

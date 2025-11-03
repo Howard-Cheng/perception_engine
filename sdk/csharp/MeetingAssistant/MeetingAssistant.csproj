@@ -12,11 +12,31 @@
     <PackageReference Include="Microsoft.Toolkit.Uwp.Notifications" Version="7.1.3" />
   </ItemGroup>
 
-  <!-- Copy MicrophoneMonitor.dll to output directory -->
+  <!-- Copy MicrophoneMonitor.dll and MSFTCore.dll + dependencies to output directory -->
   <Target Name="CopyNativeDll" AfterTargets="Build">
     <Copy SourceFiles="..\..\..\windows_code\build\bin\Release\MicrophoneMonitor.dll"
           DestinationFolder="$(OutputPath)"
           SkipUnchangedFiles="true" />
+    <Copy SourceFiles="..\Hub\MSFTCore.dll"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true" />
+    <!-- Copy NAudio dependencies (required by MSFTCore.dll) -->
+    <Copy SourceFiles="..\Hub\NAudio.dll"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true"
+          ContinueOnError="true" />
+    <Copy SourceFiles="..\Hub\NAudio.Core.dll"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true"
+          ContinueOnError="true" />
+    <Copy SourceFiles="..\Hub\NAudio.Wasapi.dll"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true"
+          ContinueOnError="true" />
+    <Copy SourceFiles="..\Hub\NAudio.WinMM.dll"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true"
+          ContinueOnError="true" />
   </Target>
 
 </Project>

@@ -67,7 +67,17 @@
       "Bash(powershell:*)",
       "Bash(git check-ignore:*)",
       "Bash(cmd /c \"dir /b \"\"C:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\PE\\setup.bat\"\" 2>nul\")",
-      "Bash(cmd /c \"type nul > \"\"C:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\PE\\setup.bat\"\"\")"
+      "Bash(cmd /c \"type nul > \"\"C:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\PE\\setup.bat\"\"\")",
+      "Bash(findstr:*)",
+      "Bash(cmd /c \"dir /b \"\"c:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\perception_engine\\windows_code\\Logger.cpp\"\" 2>nul\")",
+      "Bash(cmd /c \"dir /b \"\"c:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\perception_engine\\windows_code\\FastVLMTokenizer.cpp\"\" 2>nul\")",
+      "Bash(cmd /c \"dir /b \"\"c:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\perception_engine\\windows_code\\MeetingDetector.cpp\"\" 2>nul\")",
+      "Bash(cmd /c \"cd /d c:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\perception_engine\\windows_code && dir /b Logger.cpp FastVLMTokenizer.cpp MeetingDetector.cpp 2>nul\")",
+      "Bash(cmd /c \"if exist \"\"c:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\perception_engine\\windows_code\\Logger.cpp\"\" (echo Logger.cpp EXISTS) else (echo Logger.cpp MISSING)\")",
+      "Bash(cmd /c \"if exist \"\"c:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\perception_engine\\windows_code\\FastVLMTokenizer.cpp\"\" (echo FastVLMTokenizer.cpp EXISTS) else (echo FastVLMTokenizer.cpp MISSING)\")",
+      "Bash(cmd /c:*)",
+      "Bash(cmake --build:*)",
+      "Bash(Select-Object -Last 50)"
     ],
     "deny": [],
     "ask": []

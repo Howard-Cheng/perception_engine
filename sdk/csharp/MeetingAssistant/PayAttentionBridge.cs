@@ -14,29 +14,31 @@ namespace MeetingAssistant
     public static class PayAttentionBridge
     {
         private static string MeetingContent = "";
-        // QAASR
-        [DllImport("D:\\quantum_payattention\\Quantum_PayAttention\\x64\\Release\\MSFTCore.dll", CallingConvention = CallingConvention.Cdecl)]
+        // QAASR - Updated to use MSFTCore.dll from Hub folder
+        private const string MSFTCoreDll = "MSFTCore.dll";
+
+        [DllImport(MSFTCoreDll, CallingConvention = CallingConvention.Cdecl)]
         public static extern void SetListeningDevice(int deviceID);
 
-        [DllImport("D:\\quantum_payattention\\Quantum_PayAttention\\x64\\Release\\MSFTCore.dll", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+        [DllImport(MSFTCoreDll, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
         public static extern void SetASRLanguage(string language);
 
-        [DllImport("D:\\quantum_payattention\\Quantum_PayAttention\\x64\\Release\\MSFTCore.dll", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(MSFTCoreDll, CallingConvention = CallingConvention.Cdecl)]
         public static extern void SetASRCallback(MSFT_ASRCallback callback);
 
-        [DllImport("D:\\quantum_payattention\\Quantum_PayAttention\\x64\\Release\\MSFTCore.dll", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(MSFTCoreDll, CallingConvention = CallingConvention.Cdecl)]
         public static extern void SetSpeechStateCallback(MSFT_ST_Callback callback);
 
-        [DllImport("D:\\quantum_payattention\\Quantum_PayAttention\\x64\\Release\\MSFTCore.dll", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(MSFTCoreDll, CallingConvention = CallingConvention.Cdecl)]
         public static extern void StartRecord();
 
-        [DllImport("D:\\quantum_payattention\\Quantum_PayAttention\\x64\\Release\\MSFTCore.dll", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(MSFTCoreDll, CallingConvention = CallingConvention.Cdecl)]
         public static extern void StopRecord();
 
-        [DllImport("D:\\quantum_payattention\\Quantum_PayAttention\\x64\\Release\\MSFTCore.dll", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+        [DllImport(MSFTCoreDll, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
         public static extern void EnableSummary(string prompt, string content);
 
-        [DllImport("D:\\quantum_payattention\\Quantum_PayAttention\\x64\\Release\\MSFTCore.dll", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+        [DllImport(MSFTCoreDll, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
         public static extern IntPtr StartSummary();
 
         private static readonly string LogFilePath = Path.Combine(
@@ -66,17 +68,20 @@ namespace MeetingAssistant
             ulong duration,
             bool isFinal)
         {
-            if (isFinal)
+            // Log ALL callbacks for debugging (not just final)
+            Console.WriteLine($"[ASR Callback] Role: {role}, Msg: \"{msg}\", Lang: {targetLang}, Offset: {offset}ms, Duration: {duration}ms, Final: {isFinal}");
+
+            if (isFinal && !string.IsNullOrWhiteSpace(msg))
             {
-                Console.WriteLine($"[ASR] Role: {role}, Msg: {msg}, Lang: {targetLang}, Offset: {offset}, Duration: {duration}, Final: {isFinal}");
                 MeetingContent += msg + "\n";
+                Console.WriteLine($"[ASR Added] Total content length: {MeetingContent.Length} chars");
             }
         }
 
         // Static method for Speech State callback
         private static void OnSpeechStateChanged(bool state)
         {
-            Console.WriteLine($"[SpeechState] State: {(state ? "Speaking" : "Silent")}");
+            Console.WriteLine($"[Speech State] {(state ? "🎤 SPEAKING DETECTED" : "🔇 Silent")}");
         }
 
         /// <summary>
@@ -108,7 +113,11 @@ TODO: Replace with actual SDK call:
 
 ";
             Console.WriteLine("Starting record...");
+            Console.WriteLine("[Debug] Language should be set to: en-US");
+            Console.WriteLine("[Debug] Device should be set to: 3 (Mic+Speaker)");
+            Console.WriteLine("[Debug] Callbacks should be registered");
             StartRecord();
+            Console.WriteLine("[Debug] StartRecord() completed - ASR should now be active");
 
 
             // Log to file
@@ -155,6 +164,9 @@ App: {meeting.AppName}, PID: {meeting.ProcessId}
         {
             // Set listening device (e.g., 1=Microphone, 2=Speaker, 3=Microphone+Speaker)
             SetListeningDevice(3);
+
+            // Set ASR language BEFORE setting callbacks (critical!)
+            SetASRLanguage("en-US");
 
             // Set ASR callback using the static method
             SetASRCallback(OnASRResult);

@@ -11,17 +11,17 @@
 #include "HttpServer.h"
 #include "ContextCollector.h"
 #include "AudioCaptureEngine.h"
-#include "CameraVisionEngine.h"
+// #include "CameraVisionEngine.h"  // Removed - using Python client instead
 
 class PerceptionEngineService : public WindowsService {
 private:
     std::unique_ptr<HttpServer> httpServer;
     std::unique_ptr<ContextCollector> contextCollector;
     std::unique_ptr<AudioCaptureEngine> audioEngine;
-    std::unique_ptr<CameraVisionEngine> cameraEngine;
+    // std::unique_ptr<CameraVisionEngine> cameraEngine;  // Removed - using Python client
     std::unique_ptr<std::thread> serverThread;
     std::unique_ptr<std::thread> audioPollingThread;
-    std::unique_ptr<std::thread> cameraThread;
+    // std::unique_ptr<std::thread> cameraThread;  // Removed - using Python client
     std::atomic<bool> serviceRunning{false};
     bool screenOnlyMode;
 
@@ -80,32 +80,9 @@ public:
                     }
                 }
 
-                // Initialize camera vision engine
-                cameraEngine = std::make_unique<CameraVisionEngine>();
-                if (!cameraEngine->Initialize("models/fastvlm", 0)) {
-                    LOG_WARN("Failed to initialize camera engine");
-                    cameraEngine.reset();
-                } else {
-                    LOG_INFO("Camera vision engine initialized");
-
-                    // Start camera processing thread (every 10 seconds)
-                    cameraThread = std::make_unique<std::thread>([this]() {
-                        while (serviceRunning.load() && cameraEngine) {
-                            if (cameraEngine->IsReady()) {
-                                std::string description = cameraEngine->DescribeScene();
-                                if (!description.empty()) {
-                                    float latency = cameraEngine->GetLastLatencyMs();
-                                    if (contextCollector) {
-                                        contextCollector->UpdateCameraContext(description, latency);
-                                        LOG_INFO_FMT("Camera scene: %s (latency: %d ms)", description.c_str(), static_cast<int>(latency));
-                                    }
-                                }
-                            }
-                            std::this_thread::sleep_for(std::chrono::seconds(10));
-                        }
-                    });
-                    LOG_INFO("Camera processing thread started");
-                }
+                // Camera engine removed - using Python client (win_camera_fastvlm_pytorch.py) instead
+                // Camera updates come via HTTP POST /update_context from Python client
+                LOG_INFO("Camera engine: Using Python client (not C++ engine)");
             } else {
                 LOG_INFO("Audio engine: DISABLED (screen-only mode)");
                 LOG_INFO("Camera engine: DISABLED (screen-only mode)");
@@ -155,17 +132,17 @@ public:
                 LOG_INFO("Audio polling thread joined");
             }
 
-            // Wait for camera thread
-            if (cameraThread && cameraThread->joinable()) {
-                cameraThread->join();
-                LOG_INFO("Camera thread joined");
-            }
+            // Camera thread removed - using Python client instead
+            // if (cameraThread && cameraThread->joinable()) {
+            //     cameraThread->join();
+            //     LOG_INFO("Camera thread joined");
+            // }
 
-            // Clean up camera engine
-            if (cameraEngine) {
-                cameraEngine.reset();
-                LOG_INFO("Camera engine stopped");
-            }
+            // Camera engine removed - using Python client instead
+            // if (cameraEngine) {
+            //     cameraEngine.reset();
+            //     LOG_INFO("Camera engine stopped");
+            // }
 
             if (httpServer) {
                 httpServer->Stop();

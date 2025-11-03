@@ -65,8 +65,6 @@ set(PERCEPTION_ENGINE_SOURCES
     AudioCaptureEngine.cpp
     AsyncWhisperQueue.cpp
     SileroVAD.cpp
-    CameraVisionEngine.cpp
-    FastVLMTokenizer.cpp
     BrowserContentExtractor.cpp
     MouseTracker.cpp
 )
@@ -81,8 +79,6 @@ set(PERCEPTION_ENGINE_HEADERS
     AudioCaptureEngine.h
     AsyncWhisperQueue.h
     SileroVAD.h
-    CameraVisionEngine.h
-    FastVLMTokenizer.h
     BrowserContentExtractor.h
     MouseTracker.h
 )

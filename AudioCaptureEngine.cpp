@@ -972,4 +972,29 @@ std::vector<float> AudioCaptureEngine::ResampleAudio(const std::vector<float>& i
     return output;
 }
 
+// Mix two audio sources (microphone + system audio)
+std::vector<float> AudioCaptureEngine::MixAudioSources(const std::vector<float>& mic, const std::vector<float>& device) {
+    // Use the longer buffer's size
+    size_t maxSize = (mic.size() > device.size()) ? mic.size() : device.size();
+    std::vector<float> mixed;
+    mixed.reserve(maxSize);
+
+    for (size_t i = 0; i < maxSize; ++i) {
+        float micSample = (i < mic.size()) ? mic[i] : 0.0f;
+        float deviceSample = (i < device.size()) ? device[i] : 0.0f;
+
+        // Mix with equal weight (0.5 + 0.5 = 1.0)
+        // Apply soft clipping to prevent overflow
+        float mixed_sample = (micSample * 0.5f) + (deviceSample * 0.5f);
+
+        // Clamp to [-1.0, 1.0] range
+        if (mixed_sample > 1.0f) mixed_sample = 1.0f;
+        if (mixed_sample < -1.0f) mixed_sample = -1.0f;
+
+        mixed.push_back(mixed_sample);
+    }
+
+    return mixed;
+}
+
 // Delete the old LogDebug and LogError functions (they are now replaced by Logger)

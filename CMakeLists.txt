@@ -56,7 +56,7 @@ file(GLOB OPENCV_WORLD_LIB "${OpenCV_LIB_DIR}/opencv_world*.lib")
 
 set(PERCEPTION_ENGINE_SOURCES
     PerceptionEngine.cpp
-    Logger.cpp  # NEW: Logger implementation
+    Logger.cpp
     ContextCollector.cpp
     HttpServer.cpp
     WindowsAPIs.cpp
@@ -72,7 +72,7 @@ set(PERCEPTION_ENGINE_SOURCES
 )
 
 set(PERCEPTION_ENGINE_HEADERS
-    Logger.h  # NEW: Logger header
+    Logger.h
     ContextCollector.h
     HttpServer.h
     WindowsAPIs.h

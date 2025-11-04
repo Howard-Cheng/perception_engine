@@ -54,7 +54,8 @@ if (-not (Test-Path "windows_code\CMakeLists.txt")) {
 try {
     $cmakeVersion = & cmake --version 2>&1 | Select-Object -First 1
     Write-Success "CMake found: $cmakeVersion"
-} catch {
+}
+catch {
     Write-Error-Custom "CMake not found! Please install CMake 3.20+ from https://cmake.org/download/"
     exit 1
 }
@@ -65,11 +66,13 @@ if (Test-Path $vsWhere) {
     $vsPath = & $vsWhere -latest -property installationPath
     if ($vsPath) {
         Write-Success "Visual Studio found: $vsPath"
-    } else {
+    }
+    else {
         Write-Error-Custom "Visual Studio 2019/2022 not found! Please install Visual Studio with C++ workload"
         exit 1
     }
-} else {
+}
+else {
     Write-Warning "Could not verify Visual Studio installation"
 }
 
@@ -78,7 +81,8 @@ if (-not $SkipPython) {
     try {
         $pythonVersion = & python --version 2>&1
         Write-Success "Python found: $pythonVersion"
-    } catch {
+    }
+    catch {
         Write-Error-Custom "Python not found! Please install Python 3.8+ from https://python.org"
         exit 1
     }
@@ -95,7 +99,8 @@ $whisperModelPath = "$whisperModelDir\ggml-small.bin"
 
 if (Test-Path $whisperModelPath) {
     Write-Success "Whisper model already exists: $whisperModelPath"
-} else {
+}
+else {
     Write-Info "Downloading Whisper small multilingual model (~465MB, this may take 2-5 minutes)..."
     New-Item -ItemType Directory -Force -Path $whisperModelDir | Out-Null
 
@@ -104,7 +109,8 @@ if (Test-Path $whisperModelPath) {
     try {
         Invoke-WebRequest -Uri $whisperUrl -OutFile $whisperModelPath -UseBasicParsing
         Write-Success "Downloaded Whisper model: $whisperModelPath"
-    } catch {
+    }
+    catch {
         Write-Error-Custom "Failed to download Whisper model: $_"
         Write-Info "Please download manually from: $whisperUrl"
         exit 1
@@ -122,7 +128,8 @@ $vadModelPath = "$vadModelDir\silero_vad.onnx"
 
 if (Test-Path $vadModelPath) {
     Write-Success "Silero VAD model already exists: $vadModelPath"
-} else {
+}
+else {
     Write-Info "Downloading Silero VAD model (~1.8MB)..."
     New-Item -ItemType Directory -Force -Path $vadModelDir | Out-Null
 
@@ -131,7 +138,8 @@ if (Test-Path $vadModelPath) {
     try {
         Invoke-WebRequest -Uri $vadUrl -OutFile $vadModelPath -UseBasicParsing
         Write-Success "Downloaded Silero VAD model: $vadModelPath"
-    } catch {
+    }
+    catch {
         Write-Error-Custom "Failed to download Silero VAD model: $_"
         Write-Info "Please download manually from: $vadUrl"
         exit 1
@@ -149,7 +157,8 @@ $opencvDll = "$opencvDir\opencv\build\x64\vc16\bin\opencv_world4100.dll"
 
 if (Test-Path $opencvDll) {
     Write-Success "OpenCV already exists"
-} else {
+}
+else {
     Write-Info "Downloading OpenCV 4.10.0 (~120MB, this may take a few minutes)..."
     New-Item -ItemType Directory -Force -Path $opencvDir | Out-Null
 
@@ -184,10 +193,12 @@ if (Test-Path $opencvDll) {
         # Verify extraction
         if (Test-Path $opencvDll) {
             Write-Success "OpenCV extracted successfully"
-        } else {
+        }
+        else {
             throw "OpenCV DLL not found after extraction"
         }
-    } catch {
+    }
+    catch {
         Write-Error-Custom "Failed to download/extract OpenCV: $_"
         Write-Info "Please download manually from: $opencvUrl"
         Write-Info "Extract to: $opencvDir"
@@ -206,7 +217,8 @@ $onnxDll = "$onnxDir\lib\onnxruntime.dll"
 
 if (Test-Path $onnxDll) {
     Write-Success "ONNX Runtime already exists"
-} else {
+}
+else {
     Write-Info "Downloading ONNX Runtime 1.16.3 (~15MB)..."
     New-Item -ItemType Directory -Force -Path $onnxDir | Out-Null
 
@@ -235,10 +247,12 @@ if (Test-Path $onnxDll) {
         # Verify extraction
         if (Test-Path $onnxDll) {
             Write-Success "ONNX Runtime extracted successfully"
-        } else {
+        }
+        else {
             throw "ONNX Runtime DLL not found after extraction"
         }
-    } catch {
+    }
+    catch {
         Write-Error-Custom "Failed to download/extract ONNX Runtime: $_"
         Write-Info "Please download manually from: $onnxUrl"
         Write-Info "Extract to: $onnxDir"
@@ -254,7 +268,8 @@ Write-Step "Initializing whisper.cpp"
 
 if (Test-Path "windows_code\third-party\whisper.cpp\include\whisper.h") {
     Write-Success "whisper.cpp already initialized"
-} else {
+}
+else {
     Write-Info "Initializing whisper.cpp git submodule..."
     try {
         # Initialize only whisper.cpp submodule (ignore llama.cpp errors)
@@ -265,10 +280,12 @@ if (Test-Path "windows_code\third-party\whisper.cpp\include\whisper.h") {
         # Verify whisper.cpp was initialized
         if (Test-Path "windows_code\third-party\whisper.cpp\include\whisper.h") {
             Write-Success "whisper.cpp submodule initialized"
-        } else {
+        }
+        else {
             throw "whisper.cpp files not found after submodule init"
         }
-    } catch {
+    }
+    catch {
         Write-Error-Custom "Failed to initialize whisper.cpp submodule: $_"
         Write-Info "Please run manually: git submodule update --init windows_code/third-party/whisper.cpp"
         exit 1
@@ -293,14 +310,16 @@ if ($hasCuda) {
     Write-Info "CUDA Toolkit detected at: $cudaPath"
     Write-Info "Building whisper.cpp with GPU acceleration (CUDA)..."
     $whisperBuildDir = "windows_code\third-party\whisper.cpp\build_cuda"
-} else {
+}
+else {
     Write-Info "CUDA Toolkit not found, building CPU-only version"
     $whisperBuildDir = "windows_code\third-party\whisper.cpp\build"
 }
 
 if (Test-Path "$whisperBuildDir\src\Release\whisper.lib") {
     Write-Success "whisper.cpp already built"
-} else {
+}
+else {
     Write-Info "Building whisper.cpp (this may take 5-10 minutes)..."
 
     Push-Location "windows_code\third-party\whisper.cpp"
@@ -318,7 +337,8 @@ if (Test-Path "$whisperBuildDir\src\Release\whisper.lib") {
             cmake --build build_cuda --config Release --target whisper
 
             Write-Success "whisper.cpp built successfully with CUDA acceleration"
-        } else {
+        }
+        else {
             # Configure CMake without CUDA
             cmake -B build -G "Visual Studio 17 2022" -A x64 `
                 -DWHISPER_BUILD_TESTS=OFF `
@@ -329,7 +349,8 @@ if (Test-Path "$whisperBuildDir\src\Release\whisper.lib") {
 
             Write-Success "whisper.cpp built successfully (CPU-only)"
         }
-    } catch {
+    }
+    catch {
         Write-Error-Custom "Failed to build whisper.cpp: $_"
         Pop-Location
         exit 1
@@ -343,7 +364,8 @@ $whisperLibPath = "$whisperBuildDir\src\Release\whisper.lib"
 
 if (Test-Path $whisperLibPath) {
     Write-Success "whisper.lib found at: $whisperLibPath"
-} else {
+}
+else {
     Write-Error-Custom "whisper.lib not found after build!"
     exit 1
 }
@@ -357,13 +379,15 @@ if (-not $SkipPython) {
 
     try {
         python -m pip install --upgrade pip
-        python -m pip install -r requirements_windows.txt
+        python -m pip install -r requirements.txt
         Write-Success "Python dependencies installed"
-    } catch {
-        Write-Warning "Failed to install Python dependencies: $_"
-        Write-Info "You can install manually: pip install -r requirements_windows.txt"
     }
-} else {
+    catch {
+        Write-Warning "Failed to install Python dependencies: $_"
+        Write-Info "You can install manually: pip install -r requirements.txt"
+    }
+}
+else {
     Write-Info "Skipping Python dependencies (--SkipPython)"
 }
 
@@ -386,14 +410,16 @@ if (-not $SkipBuild) {
         cmake --build build --config Release --target PerceptionEngine
 
         Write-Success "PerceptionEngine built successfully!"
-    } catch {
+    }
+    catch {
         Write-Error-Custom "Failed to build PerceptionEngine: $_"
         Pop-Location
         exit 1
     }
 
     Pop-Location
-} else {
+}
+else {
     Write-Info "Skipping build (--SkipBuild)"
 }
 
@@ -410,7 +436,8 @@ if (Test-Path $dashboardSource) {
     New-Item -ItemType Directory -Force -Path "windows_code\build\bin\Release" | Out-Null
     Copy-Item $dashboardSource $dashboardDest -Force
     Write-Success "dashboard.html copied to build directory"
-} else {
+}
+else {
     Write-Warning "dashboard.html not found at: $dashboardSource"
 }
 
@@ -428,7 +455,8 @@ $allGood = $true
 # Verify executable
 if (Test-Path $exePath) {
     Write-Success "PerceptionEngine.exe found"
-} else {
+}
+else {
     Write-Error-Custom "PerceptionEngine.exe NOT found!"
     $allGood = $false
 }
@@ -436,7 +464,8 @@ if (Test-Path $exePath) {
 # Verify dashboard
 if (Test-Path $dashboardPath) {
     Write-Success "dashboard.html found"
-} else {
+}
+else {
     Write-Warning "dashboard.html NOT found"
 }
 
@@ -444,7 +473,8 @@ if (Test-Path $dashboardPath) {
 if (Test-Path $whisperModelPath) {
     $whisperSize = (Get-Item $whisperModelPath).Length / 1MB
     Write-Success "Whisper model found ($([math]::Round($whisperSize,1))MB)"
-} else {
+}
+else {
     Write-Error-Custom "Whisper model NOT found!"
     $allGood = $false
 }
@@ -452,7 +482,8 @@ if (Test-Path $whisperModelPath) {
 if (Test-Path $vadModelPath) {
     $vadSize = (Get-Item $vadModelPath).Length / 1MB
     Write-Success "Silero VAD model found ($([math]::Round($vadSize,1))MB)"
-} else {
+}
+else {
     Write-Error-Custom "Silero VAD model NOT found!"
     $allGood = $false
 }
@@ -460,14 +491,16 @@ if (Test-Path $vadModelPath) {
 # Verify third-party libraries
 if (Test-Path $opencvDll) {
     Write-Success "OpenCV library found"
-} else {
+}
+else {
     Write-Error-Custom "OpenCV NOT found!"
     $allGood = $false
 }
 
 if (Test-Path $onnxDll) {
     Write-Success "ONNX Runtime found"
-} else {
+}
+else {
     Write-Error-Custom "ONNX Runtime NOT found!"
     $allGood = $false
 }
@@ -477,7 +510,8 @@ $whisperLibFound = $false
 if (Test-Path "windows_code\third-party\whisper.cpp\build_cuda\src\Release\whisper.lib") {
     Write-Success "whisper.cpp library found (CUDA build)"
     $whisperLibFound = $true
-} elseif (Test-Path "windows_code\third-party\whisper.cpp\build\src\Release\whisper.lib") {
+}
+elseif (Test-Path "windows_code\third-party\whisper.cpp\build\src\Release\whisper.lib") {
     Write-Success "whisper.cpp library found (CPU build)"
     $whisperLibFound = $true
 }
@@ -509,7 +543,8 @@ if ($allGood) {
     Write-Host "  3. Open dashboard in browser:"
     Write-Host "     http://localhost:8777/dashboard"
     Write-Host ""
-} else {
+}
+else {
     Write-Error-Custom "Setup completed with errors!"
     Write-Info "Please check the error messages above and resolve issues"
     exit 1

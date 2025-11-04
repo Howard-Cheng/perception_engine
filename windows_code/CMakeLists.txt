@@ -200,15 +200,15 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml-cuda.dll
 
     # Copy CUDA runtime DLLs to bin/ (required for GPU acceleration)
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cudart64_13.dll"
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/cudart64_13.dll
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cublas64_13.dll"
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/cublas64_13.dll
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cublasLt64_13.dll"
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/cublasLt64_13.dll
+    # COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    #     "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cudart64_13.dll"
+    #     ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/cudart64_13.dll
+    # COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    #     "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cublas64_13.dll"
+    #     ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/cublas64_13.dll
+    # COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    #     "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cublasLt64_13.dll"
+    #     ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/cublasLt64_13.dll
 
     # Copy dashboard.html to bin/
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -251,15 +251,15 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/ggml-cuda.dll
 
     # Copy CUDA runtime DLLs to bin/Release/ (required for GPU acceleration)
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cudart64_13.dll"
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/cudart64_13.dll
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cublas64_13.dll"
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/cublas64_13.dll
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cublasLt64_13.dll"
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/cublasLt64_13.dll
+    # COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    #     "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cudart64_13.dll"
+    #     ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/cudart64_13.dll
+    # COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    #     "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cublas64_13.dll"
+    #     ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/cublas64_13.dll
+    # COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    #     "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cublasLt64_13.dll"
+    #     ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/cublasLt64_13.dll
 
     # Copy dashboard.html to bin/Release/
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

@@ -1,6 +1,6 @@
-#define NOMINMAX  // Prevent Windows.h from defining min/max macros
+#define NOMINMAX // Prevent Windows.h from defining min/max macros
 #include "AudioCaptureEngine.h"
-#include "Logger.h"  // NEW: Add Logger
+#include "Logger.h" // NEW: Add Logger
 #include "AsyncWhisperQueue.h"
 #include "SileroVAD.h"
 #include <iostream>
@@ -20,18 +20,9 @@
 // ============================================================================
 
 AudioCaptureEngine::AudioCaptureEngine()
-    : deviceEnumerator(nullptr)
-    , microphoneDevice(nullptr)
-    , systemAudioDevice(nullptr)
-    , microphoneClient(nullptr)
-    , systemAudioClient(nullptr)
-    , microphoneCaptureClient(nullptr)
-    , systemAudioCaptureClient(nullptr)
-    , whisperContext(nullptr)
-    , useSimpleVAD(true)
-    , vadThreshold(0.0001f)  // Very low threshold for testing
-    , isRunning(false)
-    , inMeetingMode(false)  // NEW: meeting mode off by default
+    : deviceEnumerator(nullptr), microphoneDevice(nullptr), systemAudioDevice(nullptr), microphoneClient(nullptr), systemAudioClient(nullptr), microphoneCaptureClient(nullptr), systemAudioCaptureClient(nullptr), whisperContext(nullptr), useSimpleVAD(true), vadThreshold(0.0001f) // Very low threshold for testing
+      ,
+      isRunning(false), inMeetingMode(false) // NEW: meeting mode off by default
 {
     // Initialize COM
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
@@ -39,23 +30,32 @@ AudioCaptureEngine::AudioCaptureEngine()
     LOG_INFO("AudioCaptureEngine created");
 }
 
-AudioCaptureEngine::~AudioCaptureEngine() {
+AudioCaptureEngine::~AudioCaptureEngine()
+{
     Stop();
 
     // Cleanup whisper
-    if (whisperContext) {
+    if (whisperContext)
+    {
         whisper_free(whisperContext);
         whisperContext = nullptr;
     }
 
     // Cleanup WASAPI
-    if (microphoneCaptureClient) microphoneCaptureClient->Release();
-    if (systemAudioCaptureClient) systemAudioCaptureClient->Release();
-    if (microphoneClient) microphoneClient->Release();
-    if (systemAudioClient) systemAudioClient->Release();
-    if (microphoneDevice) microphoneDevice->Release();
-    if (systemAudioDevice) systemAudioDevice->Release();
-    if (deviceEnumerator) deviceEnumerator->Release();
+    if (microphoneCaptureClient)
+        microphoneCaptureClient->Release();
+    if (systemAudioCaptureClient)
+        systemAudioCaptureClient->Release();
+    if (microphoneClient)
+        microphoneClient->Release();
+    if (systemAudioClient)
+        systemAudioClient->Release();
+    if (microphoneDevice)
+        microphoneDevice->Release();
+    if (systemAudioDevice)
+        systemAudioDevice->Release();
+    if (deviceEnumerator)
+        deviceEnumerator->Release();
 
     CoUninitialize();
 
@@ -66,11 +66,13 @@ AudioCaptureEngine::~AudioCaptureEngine() {
 // Initialization
 // ============================================================================
 
-bool AudioCaptureEngine::Initialize(const std::string& modelPath) {
+bool AudioCaptureEngine::Initialize(const std::string &modelPath)
+{
     LOG_INFO("Initializing AudioCaptureEngine...");
 
     // 1. Initialize Whisper
-    if (!InitializeWhisper(modelPath)) {
+    if (!InitializeWhisper(modelPath))
+    {
         LOG_ERROR("Failed to initialize Whisper");
         return false;
     }
@@ -78,22 +80,27 @@ bool AudioCaptureEngine::Initialize(const std::string& modelPath) {
     // 2. Initialize Silero VAD
     sileroVAD = std::make_unique<SileroVAD>();
     std::wstring vadModelPath = L"models/vad/silero_vad.onnx";
-    if (sileroVAD->Initialize(vadModelPath)) {
+    if (sileroVAD->Initialize(vadModelPath))
+    {
         LOG_INFO("Silero VAD initialized successfully");
-        useSimpleVAD = false;  // Use neural VAD
-    } else {
+        useSimpleVAD = false; // Use neural VAD
+    }
+    else
+    {
         LOG_INFO("Silero VAD failed, falling back to energy-based VAD");
-        useSimpleVAD = true;  // Fall back to energy-based
+        useSimpleVAD = true; // Fall back to energy-based
     }
 
     // 3. Initialize Microphone
-    if (!InitializeMicrophoneCapture()) {
+    if (!InitializeMicrophoneCapture())
+    {
         LOG_ERROR("Failed to initialize microphone capture");
         return false;
     }
 
     // 4. Initialize System Audio (optional - may fail if no audio playing)
-    if (!InitializeSystemAudioCapture()) {
+    if (!InitializeSystemAudioCapture())
+    {
         LOG_INFO("System audio capture not available (non-critical)");
     }
 
@@ -101,7 +108,8 @@ bool AudioCaptureEngine::Initialize(const std::string& modelPath) {
     return true;
 }
 
-bool AudioCaptureEngine::InitializeWhisper(const std::string& modelPath) {
+bool AudioCaptureEngine::InitializeWhisper(const std::string &modelPath)
+{
     LOG_INFO_FMT("Loading Whisper model: %s", modelPath.c_str());
 
     // Initialize whisper context parameters
@@ -111,25 +119,32 @@ bool AudioCaptureEngine::InitializeWhisper(const std::string& modelPath) {
     // Load model with GPU
     whisperContext = whisper_init_from_file_with_params(modelPath.c_str(), cparams);
 
-    if (!whisperContext) {
+    if (!whisperContext)
+    {
         LOG_INFO("GPU initialization failed, falling back to CPU");
         cparams.use_gpu = false;
         whisperContext = whisper_init_from_file_with_params(modelPath.c_str(), cparams);
 
-        if (!whisperContext) {
+        if (!whisperContext)
+        {
             LOG_ERROR_FMT("Failed to load Whisper model from: %s", modelPath.c_str());
             return false;
         }
         LOG_INFO("Whisper model loaded successfully (CPU mode)");
-    } else {
+    }
+    else
+    {
         LOG_INFO("Whisper model loaded successfully (GPU accelerated)");
     }
 
     // Create async whisper queue
-    try {
+    try
+    {
         asyncWhisperQueue = std::make_unique<AsyncWhisperQueue>(whisperContext);
         LOG_INFO("Async whisper queue created");
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         LOG_ERROR_FMT("Failed to create async whisper queue: %s", e.what());
         return false;
     }
@@ -137,7 +152,8 @@ bool AudioCaptureEngine::InitializeWhisper(const std::string& modelPath) {
     return true;
 }
 
-bool AudioCaptureEngine::InitializeMicrophoneCapture() {
+bool AudioCaptureEngine::InitializeMicrophoneCapture()
+{
     LOG_INFO("Initializing microphone capture...");
 
     HRESULT hr;
@@ -148,10 +164,10 @@ bool AudioCaptureEngine::InitializeMicrophoneCapture() {
         nullptr,
         CLSCTX_ALL,
         __uuidof(IMMDeviceEnumerator),
-        (void**)&deviceEnumerator
-    );
+        (void **)&deviceEnumerator);
 
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         LOG_ERROR("Failed to create device enumerator");
         return false;
     }
@@ -160,10 +176,10 @@ bool AudioCaptureEngine::InitializeMicrophoneCapture() {
     hr = deviceEnumerator->GetDefaultAudioEndpoint(
         eCapture,
         eConsole,
-        &microphoneDevice
-    );
+        &microphoneDevice);
 
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         LOG_ERROR("Failed to get default microphone");
         return false;
     }
@@ -173,18 +189,19 @@ bool AudioCaptureEngine::InitializeMicrophoneCapture() {
         __uuidof(IAudioClient),
         CLSCTX_ALL,
         nullptr,
-        (void**)&microphoneClient
-    );
+        (void **)&microphoneClient);
 
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         LOG_ERROR("Failed to activate microphone audio client");
         return false;
     }
 
     // Get mix format (use device's native format)
-    WAVEFORMATEX* pwfx = nullptr;
+    WAVEFORMATEX *pwfx = nullptr;
     hr = microphoneClient->GetMixFormat(&pwfx);
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         LOG_ERROR("Failed to get mix format");
         return false;
     }
@@ -199,14 +216,14 @@ bool AudioCaptureEngine::InitializeMicrophoneCapture() {
         requestedDuration,
         0,
         pwfx,
-        nullptr
-    );
+        nullptr);
 
     // Store format for later conversion
     deviceFormat = *pwfx;
     CoTaskMemFree(pwfx);
 
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         LOG_ERROR_FMT("Failed to initialize microphone audio client (HRESULT: 0x%X)", hr);
         return false;
     }
@@ -214,10 +231,10 @@ bool AudioCaptureEngine::InitializeMicrophoneCapture() {
     // Get capture client
     hr = microphoneClient->GetService(
         __uuidof(IAudioCaptureClient),
-        (void**)&microphoneCaptureClient
-    );
+        (void **)&microphoneCaptureClient);
 
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         LOG_ERROR("Failed to get microphone capture client");
         return false;
     }
@@ -226,7 +243,8 @@ bool AudioCaptureEngine::InitializeMicrophoneCapture() {
     return true;
 }
 
-bool AudioCaptureEngine::InitializeSystemAudioCapture() {
+bool AudioCaptureEngine::InitializeSystemAudioCapture()
+{
     LOG_INFO("Initializing system audio capture (loopback)...");
 
     HRESULT hr;
@@ -235,22 +253,24 @@ bool AudioCaptureEngine::InitializeSystemAudioCapture() {
     hr = deviceEnumerator->GetDefaultAudioEndpoint(
         eRender,
         eConsole,
-        &systemAudioDevice
-    );
+        &systemAudioDevice);
 
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         LOG_ERROR("Failed to get default render device");
         return false;
     }
 
     // Log device information
-    IPropertyStore* pProps = nullptr;
+    IPropertyStore *pProps = nullptr;
     hr = systemAudioDevice->OpenPropertyStore(STGM_READ, &pProps);
-    if (SUCCEEDED(hr)) {
+    if (SUCCEEDED(hr))
+    {
         PROPVARIANT varName;
         PropVariantInit(&varName);
         hr = pProps->GetValue(PKEY_Device_FriendlyName, &varName);
-        if (SUCCEEDED(hr)) {
+        if (SUCCEEDED(hr))
+        {
             LOG_INFO_FMT("System audio loopback device: %S", varName.pwszVal);
             PropVariantClear(&varName);
         }
@@ -262,18 +282,19 @@ bool AudioCaptureEngine::InitializeSystemAudioCapture() {
         __uuidof(IAudioClient),
         CLSCTX_ALL,
         nullptr,
-        (void**)&systemAudioClient
-    );
+        (void **)&systemAudioClient);
 
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         LOG_ERROR("Failed to activate system audio client");
         return false;
     }
 
     // Get mix format
-    WAVEFORMATEX* pwfx = nullptr;
+    WAVEFORMATEX *pwfx = nullptr;
     hr = systemAudioClient->GetMixFormat(&pwfx);
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         LOG_ERROR("Failed to get system audio mix format");
         return false;
     }
@@ -286,12 +307,12 @@ bool AudioCaptureEngine::InitializeSystemAudioCapture() {
         requestedDuration,
         0,
         pwfx,
-        nullptr
-    );
+        nullptr);
 
     CoTaskMemFree(pwfx);
 
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         LOG_ERROR("Failed to initialize system audio client in loopback mode");
         return false;
     }
@@ -299,10 +320,10 @@ bool AudioCaptureEngine::InitializeSystemAudioCapture() {
     // Get capture client
     hr = systemAudioClient->GetService(
         __uuidof(IAudioCaptureClient),
-        (void**)&systemAudioCaptureClient
-    );
+        (void **)&systemAudioCaptureClient);
 
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         LOG_ERROR("Failed to get system audio capture client");
         return false;
     }
@@ -315,8 +336,10 @@ bool AudioCaptureEngine::InitializeSystemAudioCapture() {
 // Start / Stop
 // ============================================================================
 
-bool AudioCaptureEngine::Start() {
-    if (isRunning.load()) {
+bool AudioCaptureEngine::Start()
+{
+    if (isRunning.load())
+    {
         LOG_INFO("AudioCaptureEngine already running");
         return true;
     }
@@ -325,15 +348,18 @@ bool AudioCaptureEngine::Start() {
 
     // Start microphone capture
     HRESULT hr = microphoneClient->Start();
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         LOG_ERROR("Failed to start microphone capture");
         return false;
     }
 
     // Start system audio capture (if available)
-    if (systemAudioClient) {
+    if (systemAudioClient)
+    {
         hr = systemAudioClient->Start();
-        if (FAILED(hr)) {
+        if (FAILED(hr))
+        {
             LOG_INFO("Failed to start system audio capture (non-critical)");
         }
     }
@@ -343,7 +369,8 @@ bool AudioCaptureEngine::Start() {
 
     micThreadPtr = std::make_unique<std::thread>(&AudioCaptureEngine::MicrophoneCaptureThread, this);
 
-    if (systemAudioClient) {
+    if (systemAudioClient)
+    {
         systemAudioThreadPtr = std::make_unique<std::thread>(&AudioCaptureEngine::SystemAudioCaptureThread, this);
     }
 
@@ -353,8 +380,10 @@ bool AudioCaptureEngine::Start() {
     return true;
 }
 
-void AudioCaptureEngine::Stop() {
-    if (!isRunning.load()) {
+void AudioCaptureEngine::Stop()
+{
+    if (!isRunning.load())
+    {
         return;
     }
 
@@ -364,24 +393,29 @@ void AudioCaptureEngine::Stop() {
     isRunning.store(false);
 
     // Wait for threads to finish
-    if (micThreadPtr && micThreadPtr->joinable()) {
+    if (micThreadPtr && micThreadPtr->joinable())
+    {
         micThreadPtr->join();
     }
 
-    if (systemAudioThreadPtr && systemAudioThreadPtr->joinable()) {
+    if (systemAudioThreadPtr && systemAudioThreadPtr->joinable())
+    {
         systemAudioThreadPtr->join();
     }
 
-    if (processingThreadPtr && processingThreadPtr->joinable()) {
+    if (processingThreadPtr && processingThreadPtr->joinable())
+    {
         processingThreadPtr->join();
     }
 
     // Stop WASAPI clients
-    if (microphoneClient) {
+    if (microphoneClient)
+    {
         microphoneClient->Stop();
     }
 
-    if (systemAudioClient) {
+    if (systemAudioClient)
+    {
         systemAudioClient->Stop();
     }
 
@@ -392,20 +426,24 @@ void AudioCaptureEngine::Stop() {
 // Capture Threads
 // ============================================================================
 
-void AudioCaptureEngine::MicrophoneCaptureThread() {
+void AudioCaptureEngine::MicrophoneCaptureThread()
+{
     LOG_INFO("Microphone capture thread started");
 
-    while (isRunning.load()) {
+    while (isRunning.load())
+    {
         UINT32 packetLength = 0;
         HRESULT hr = microphoneCaptureClient->GetNextPacketSize(&packetLength);
 
-        if (FAILED(hr)) {
+        if (FAILED(hr))
+        {
             LOG_ERROR("Failed to get packet size");
             break;
         }
 
-        while (packetLength != 0) {
-            BYTE* pData = nullptr;
+        while (packetLength != 0)
+        {
+            BYTE *pData = nullptr;
             UINT32 numFramesAvailable = 0;
             DWORD flags = 0;
 
@@ -414,28 +452,31 @@ void AudioCaptureEngine::MicrophoneCaptureThread() {
                 &numFramesAvailable,
                 &flags,
                 nullptr,
-                nullptr
-            );
+                nullptr);
 
-            if (FAILED(hr)) {
+            if (FAILED(hr))
+            {
                 LOG_ERROR("Failed to get buffer");
                 break;
             }
 
             // Convert PCM to float and add to buffer
-            if (!(flags & AUDCLNT_BUFFERFLAGS_SILENT)) {
+            if (!(flags & AUDCLNT_BUFFERFLAGS_SILENT))
+            {
                 std::vector<float> audioData = ConvertPCMToFloat(pData, numFramesAvailable);
                 AddMicrophoneData(audioData);
             }
 
             hr = microphoneCaptureClient->ReleaseBuffer(numFramesAvailable);
-            if (FAILED(hr)) {
+            if (FAILED(hr))
+            {
                 LOG_ERROR("Failed to release buffer");
                 break;
             }
 
             hr = microphoneCaptureClient->GetNextPacketSize(&packetLength);
-            if (FAILED(hr)) {
+            if (FAILED(hr))
+            {
                 break;
             }
         }
@@ -446,29 +487,34 @@ void AudioCaptureEngine::MicrophoneCaptureThread() {
     LOG_INFO("Microphone capture thread stopped");
 }
 
-void AudioCaptureEngine::SystemAudioCaptureThread() {
+void AudioCaptureEngine::SystemAudioCaptureThread()
+{
     LOG_INFO("System audio capture thread started");
 
     int loopCount = 0;
     int totalPackets = 0;
 
-    while (isRunning.load()) {
+    while (isRunning.load())
+    {
         UINT32 packetLength = 0;
         HRESULT hr = systemAudioCaptureClient->GetNextPacketSize(&packetLength);
 
-        if (FAILED(hr)) {
+        if (FAILED(hr))
+        {
             LOG_ERROR("Failed to get system audio packet size");
             break;
         }
 
         // Diagnostic logging every 100 loops
-        if (++loopCount % 100 == 0) {
+        if (++loopCount % 100 == 0)
+        {
             LOG_DEBUG_FMT("System audio: %d loops, %d packets captured so far", loopCount, totalPackets);
         }
 
-        while (packetLength != 0) {
+        while (packetLength != 0)
+        {
             totalPackets++;
-            BYTE* pData = nullptr;
+            BYTE *pData = nullptr;
             UINT32 numFramesAvailable = 0;
             DWORD flags = 0;
 
@@ -477,28 +523,31 @@ void AudioCaptureEngine::SystemAudioCaptureThread() {
                 &numFramesAvailable,
                 &flags,
                 nullptr,
-                nullptr
-            );
+                nullptr);
 
-            if (FAILED(hr)) {
+            if (FAILED(hr))
+            {
                 LOG_ERROR("Failed to get system audio buffer");
                 break;
             }
 
             // Convert and add to buffer
-            if (!(flags & AUDCLNT_BUFFERFLAGS_SILENT)) {
+            if (!(flags & AUDCLNT_BUFFERFLAGS_SILENT))
+            {
                 std::vector<float> audioData = ConvertPCMToFloat(pData, numFramesAvailable);
                 AddSystemAudioData(audioData);
             }
 
             hr = systemAudioCaptureClient->ReleaseBuffer(numFramesAvailable);
-            if (FAILED(hr)) {
+            if (FAILED(hr))
+            {
                 LOG_ERROR("Failed to release system audio buffer");
                 break;
             }
 
             hr = systemAudioCaptureClient->GetNextPacketSize(&packetLength);
-            if (FAILED(hr)) {
+            if (FAILED(hr))
+            {
                 break;
             }
         }
@@ -513,54 +562,65 @@ void AudioCaptureEngine::SystemAudioCaptureThread() {
 // Processing Thread (VAD + Whisper)
 // ============================================================================
 
-void AudioCaptureEngine::ProcessingThread() {
+void AudioCaptureEngine::ProcessingThread()
+{
     LOG_INFO("Processing thread started with speech segmentation");
 
     // Speech segmentation parameters (tuned for natural conversation)
     const int VAD_WINDOW_SAMPLES = (SAMPLE_RATE * VAD_CHUNK_MS) / 1000; // 30ms windows for VAD
-    const int SILENCE_THRESHOLD_MS = 1000; // 1000ms silence = end of utterance (prevents mid-sentence cutoff)
-    const int MIN_SPEECH_MS = 400;         // 400ms minimum speech (filters noise, captures short words)
-    const int MAX_SPEECH_SEC = 30;         // 30 seconds max per utterance (prevents buffer overflow)
+    const int SILENCE_THRESHOLD_MS = 1000;                              // 1000ms silence = end of utterance (prevents mid-sentence cutoff)
+    const int MIN_SPEECH_MS = 400;                                      // 400ms minimum speech (filters noise, captures short words)
+    const int MAX_SPEECH_SEC = 30;                                      // 30 seconds max per utterance (prevents buffer overflow)
 
     const int SILENCE_THRESHOLD_SAMPLES = (SAMPLE_RATE * SILENCE_THRESHOLD_MS) / 1000;
     const int MIN_SPEECH_SAMPLES = (SAMPLE_RATE * MIN_SPEECH_MS) / 1000;
     const int MAX_SPEECH_SAMPLES = SAMPLE_RATE * MAX_SPEECH_SEC;
 
     // State machine
-    enum SpeechState { SILENCE, SPEAKING };
+    enum SpeechState
+    {
+        SILENCE,
+        SPEAKING
+    };
     SpeechState currentState = SILENCE;
 
     std::vector<float> speechBuffer;
     size_t silenceDurationSamples = 0;
     size_t speechDurationSamples = 0;
 
-    LOG_INFO_FMT("Speech segmentation: min=%d ms, pause=%d ms, max=%d s", 
+    LOG_INFO_FMT("Speech segmentation: min=%d ms, pause=%d ms, max=%d s",
                  MIN_SPEECH_MS, SILENCE_THRESHOLD_MS, MAX_SPEECH_SEC);
 
-    while (isRunning.load()) {
+    while (isRunning.load())
+    {
         // Get audio buffers
         std::vector<float> micBuffer = GetMicrophoneBuffer();
         std::vector<float> audioToProcess;
 
         // MEETING MODE: Mix microphone + system audio (meeting participants)
-        if (inMeetingMode.load()) {
+        if (inMeetingMode.load())
+        {
             std::vector<float> deviceBuffer = GetSystemAudioBuffer();
             audioToProcess = MixAudioSources(micBuffer, deviceBuffer);
 
             LOG_DEBUG_FMT("Meeting mode: mixed %zu mic + %zu device samples = %zu total",
-                         micBuffer.size(), deviceBuffer.size(), audioToProcess.size());
-        } else {
+                          micBuffer.size(), deviceBuffer.size(), audioToProcess.size());
+        }
+        else
+        {
             // NORMAL MODE: Just use microphone
             audioToProcess = micBuffer;
         }
 
-        if (audioToProcess.empty()) {
+        if (audioToProcess.empty())
+        {
             Sleep(50);
             continue;
         }
 
         // Process in VAD_WINDOW_SAMPLES chunks
-        if (audioToProcess.size() < VAD_WINDOW_SAMPLES) {
+        if (audioToProcess.size() < VAD_WINDOW_SAMPLES)
+        {
             Sleep(10);
             continue;
         }
@@ -568,12 +628,13 @@ void AudioCaptureEngine::ProcessingThread() {
         // Check VAD on latest window
         std::vector<float> vadWindow(
             audioToProcess.end() - VAD_WINDOW_SAMPLES,
-            audioToProcess.end()
-        );
+            audioToProcess.end());
         bool isSpeech = IsSpeechDetected(vadWindow);
 
-        if (currentState == SILENCE) {
-            if (isSpeech) {
+        if (currentState == SILENCE)
+        {
+            if (isSpeech)
+            {
                 // Speech started!
                 LOG_DEBUG("Speech STARTED");
                 currentState = SPEAKING;
@@ -588,14 +649,17 @@ void AudioCaptureEngine::ProcessingThread() {
                     microphoneBuffer.clear();
                 }
                 // In meeting mode, also clear system audio buffer
-                if (inMeetingMode.load()) {
+                if (inMeetingMode.load())
+                {
                     std::lock_guard<std::mutex> lock(systemAudioBufferMutex);
                     systemAudioBuffer.clear();
                 }
             }
         }
-        else if (currentState == SPEAKING) {
-            if (isSpeech) {
+        else if (currentState == SPEAKING)
+        {
+            if (isSpeech)
+            {
                 // Continue speaking
                 silenceDurationSamples = 0;
                 speechDurationSamples += audioToProcess.size();
@@ -609,18 +673,21 @@ void AudioCaptureEngine::ProcessingThread() {
                     microphoneBuffer.clear();
                 }
                 // In meeting mode, also clear system audio buffer
-                if (inMeetingMode.load()) {
+                if (inMeetingMode.load())
+                {
                     std::lock_guard<std::mutex> lock(systemAudioBufferMutex);
                     systemAudioBuffer.clear();
                 }
 
                 // Safety: Max utterance length
-                if (speechBuffer.size() >= MAX_SPEECH_SAMPLES) {
+                if (speechBuffer.size() >= MAX_SPEECH_SAMPLES)
+                {
                     LOG_DEBUG("Max utterance length reached, forcing transcription");
                     goto transcribe_now;
                 }
             }
-            else {
+            else
+            {
                 // Silence detected during speech
                 silenceDurationSamples += audioToProcess.size();
                 speechBuffer.insert(speechBuffer.end(), audioToProcess.begin(), audioToProcess.end());
@@ -631,30 +698,35 @@ void AudioCaptureEngine::ProcessingThread() {
                     microphoneBuffer.clear();
                 }
                 // In meeting mode, also clear system audio buffer
-                if (inMeetingMode.load()) {
+                if (inMeetingMode.load())
+                {
                     std::lock_guard<std::mutex> lock(systemAudioBufferMutex);
                     systemAudioBuffer.clear();
                 }
 
                 // Check if silence duration exceeded threshold
-                if (silenceDurationSamples >= SILENCE_THRESHOLD_SAMPLES) {
+                if (silenceDurationSamples >= SILENCE_THRESHOLD_SAMPLES)
+                {
                     LOG_DEBUG_FMT("Speech ENDED (silence detected: %d ms)",
-                                 silenceDurationSamples * 1000 / SAMPLE_RATE);
+                                  silenceDurationSamples * 1000 / SAMPLE_RATE);
 
-transcribe_now:
+                transcribe_now:
                     // Check minimum speech duration
-                    if (speechBuffer.size() >= MIN_SPEECH_SAMPLES) {
+                    if (speechBuffer.size() >= MIN_SPEECH_SAMPLES)
+                    {
                         LOG_DEBUG_FMT("Queuing %.1f s of speech for async transcription",
-                                     static_cast<float>(speechBuffer.size()) / SAMPLE_RATE);
+                                      static_cast<float>(speechBuffer.size()) / SAMPLE_RATE);
 
                         // Queue for async transcription (non-blocking!)
-                        if (asyncWhisperQueue) {
+                        if (asyncWhisperQueue)
+                        {
                             asyncWhisperQueue->QueueAudio(speechBuffer);
                         }
                     }
-                    else {
+                    else
+                    {
                         LOG_DEBUG_FMT("Speech too short (%d ms), ignoring",
-                                     speechBuffer.size() * 1000 / SAMPLE_RATE);
+                                      speechBuffer.size() * 1000 / SAMPLE_RATE);
                     }
 
                     // Reset state
@@ -676,16 +748,19 @@ transcribe_now:
 // VAD
 // ============================================================================
 
-bool AudioCaptureEngine::IsSpeechDetected(const std::vector<float>& audioChunk) {
+bool AudioCaptureEngine::IsSpeechDetected(const std::vector<float> &audioChunk)
+{
     bool isSpeech = false;
 
-    if (!useSimpleVAD && sileroVAD) {
+    if (!useSimpleVAD && sileroVAD)
+    {
         // Use Silero VAD (neural network-based)
         const size_t SILERO_CHUNK_SIZE = 512;
 
         // Process in 512-sample chunks
         float maxProbability = 0.0f;
-        for (size_t i = 0; i + SILERO_CHUNK_SIZE <= audioChunk.size(); i += SILERO_CHUNK_SIZE) {
+        for (size_t i = 0; i + SILERO_CHUNK_SIZE <= audioChunk.size(); i += SILERO_CHUNK_SIZE)
+        {
             float probability = sileroVAD->Process(&audioChunk[i], SILERO_CHUNK_SIZE);
             maxProbability = (std::max)(maxProbability, probability);
         }
@@ -695,15 +770,19 @@ bool AudioCaptureEngine::IsSpeechDetected(const std::vector<float>& audioChunk) 
 
         // Only log significant changes
         static bool lastSpeechState = false;
-        if (isSpeech != lastSpeechState) {
+        if (isSpeech != lastSpeechState)
+        {
             LOG_DEBUG_FMT("Silero VAD: %s (probability: %.2f)",
-                         isSpeech ? "SPEECH" : "SILENCE", maxProbability);
+                          isSpeech ? "SPEECH" : "SILENCE", maxProbability);
             lastSpeechState = isSpeech;
         }
-    } else {
+    }
+    else
+    {
         // Fallback: Simple energy-based VAD
         float energy = 0.0f;
-        for (float sample : audioChunk) {
+        for (float sample : audioChunk)
+        {
             energy += sample * sample;
         }
         energy /= audioChunk.size();
@@ -712,9 +791,10 @@ bool AudioCaptureEngine::IsSpeechDetected(const std::vector<float>& audioChunk) 
 
         // Only log significant changes
         static bool lastEnergyState = false;
-        if (isSpeech != lastEnergyState) {
+        if (isSpeech != lastEnergyState)
+        {
             LOG_DEBUG_FMT("Energy VAD: %s (energy: %.6f)",
-                         isSpeech ? "SPEECH" : "SILENCE", energy);
+                          isSpeech ? "SPEECH" : "SILENCE", energy);
             lastEnergyState = isSpeech;
         }
     }
@@ -731,8 +811,10 @@ bool AudioCaptureEngine::IsSpeechDetected(const std::vector<float>& audioChunk) 
 // Whisper Transcription
 // ============================================================================
 
-std::string AudioCaptureEngine::TranscribeAudio(const std::vector<float>& audioData) {
-    if (!whisperContext) {
+std::string AudioCaptureEngine::TranscribeAudio(const std::vector<float> &audioData)
+{
+    if (!whisperContext)
+    {
         return "";
     }
 
@@ -752,10 +834,10 @@ std::string AudioCaptureEngine::TranscribeAudio(const std::vector<float>& audioD
         whisperContext,
         params,
         audioData.data(),
-        static_cast<int>(audioData.size())
-    );
+        static_cast<int>(audioData.size()));
 
-    if (result != 0) {
+    if (result != 0)
+    {
         LOG_ERROR("Whisper transcription failed");
         return "";
     }
@@ -764,19 +846,23 @@ std::string AudioCaptureEngine::TranscribeAudio(const std::vector<float>& audioD
     std::string transcription;
     int n_segments = whisper_full_n_segments(whisperContext);
 
-    for (int i = 0; i < n_segments; ++i) {
-        const char* text = whisper_full_get_segment_text(whisperContext, i);
-        if (text) {
+    for (int i = 0; i < n_segments; ++i)
+    {
+        const char *text = whisper_full_get_segment_text(whisperContext, i);
+        if (text)
+        {
             transcription += text;
         }
     }
 
     // Clean up whitespace
-    if (!transcription.empty()) {
+    if (!transcription.empty())
+    {
         // Trim leading/trailing whitespace
         size_t start = transcription.find_first_not_of(" \t\n\r");
         size_t end = transcription.find_last_not_of(" \t\n\r");
-        if (start != std::string::npos && end != std::string::npos) {
+        if (start != std::string::npos && end != std::string::npos)
+        {
             transcription = transcription.substr(start, end - start + 1);
         }
     }
@@ -788,39 +874,43 @@ std::string AudioCaptureEngine::TranscribeAudio(const std::vector<float>& audioD
 // Buffer Management
 // ============================================================================
 
-void AudioCaptureEngine::AddMicrophoneData(const std::vector<float>& data) {
+void AudioCaptureEngine::AddMicrophoneData(const std::vector<float> &data)
+{
     std::lock_guard<std::mutex> lock(micBufferMutex);
 
     microphoneBuffer.insert(microphoneBuffer.end(), data.begin(), data.end());
 
     // Prevent buffer overflow
-    if (microphoneBuffer.size() > MAX_BUFFER_SAMPLES) {
+    if (microphoneBuffer.size() > MAX_BUFFER_SAMPLES)
+    {
         microphoneBuffer.erase(
             microphoneBuffer.begin(),
-            microphoneBuffer.begin() + (microphoneBuffer.size() - MAX_BUFFER_SAMPLES)
-        );
+            microphoneBuffer.begin() + (microphoneBuffer.size() - MAX_BUFFER_SAMPLES));
     }
 }
 
-void AudioCaptureEngine::AddSystemAudioData(const std::vector<float>& data) {
+void AudioCaptureEngine::AddSystemAudioData(const std::vector<float> &data)
+{
     std::lock_guard<std::mutex> lock(systemAudioBufferMutex);
 
     systemAudioBuffer.insert(systemAudioBuffer.end(), data.begin(), data.end());
 
-    if (systemAudioBuffer.size() > MAX_BUFFER_SAMPLES) {
+    if (systemAudioBuffer.size() > MAX_BUFFER_SAMPLES)
+    {
         systemAudioBuffer.erase(
             systemAudioBuffer.begin(),
-            systemAudioBuffer.begin() + (systemAudioBuffer.size() - MAX_BUFFER_SAMPLES)
-        );
+            systemAudioBuffer.begin() + (systemAudioBuffer.size() - MAX_BUFFER_SAMPLES));
     }
 }
 
-std::vector<float> AudioCaptureEngine::GetMicrophoneBuffer() {
+std::vector<float> AudioCaptureEngine::GetMicrophoneBuffer()
+{
     std::lock_guard<std::mutex> lock(micBufferMutex);
     return microphoneBuffer;
 }
 
-std::vector<float> AudioCaptureEngine::GetSystemAudioBuffer() {
+std::vector<float> AudioCaptureEngine::GetSystemAudioBuffer()
+{
     std::lock_guard<std::mutex> lock(systemAudioBufferMutex);
     return systemAudioBuffer;
 }
@@ -829,11 +919,14 @@ std::vector<float> AudioCaptureEngine::GetSystemAudioBuffer() {
 // Public Getters
 // ============================================================================
 
-std::string AudioCaptureEngine::GetLatestUserSpeech() {
+std::string AudioCaptureEngine::GetLatestUserSpeech()
+{
     // Get result from async queue
-    if (asyncWhisperQueue) {
+    if (asyncWhisperQueue)
+    {
         std::string result = asyncWhisperQueue->GetLatestResult();
-        if (!result.empty()) {
+        if (!result.empty())
+        {
             // Cache for legacy support
             {
                 std::lock_guard<std::mutex> lock(resultsMutex);
@@ -843,13 +936,15 @@ std::string AudioCaptureEngine::GetLatestUserSpeech() {
             // Trigger callback if set
             {
                 std::lock_guard<std::mutex> lock(callbackMutex);
-                if (transcriptionCallback) {
+                if (transcriptionCallback)
+                {
                     transcriptionCallback(result);
                 }
             }
 
             // Store in meeting transcript if in meeting mode
-            if (inMeetingMode.load()) {
+            if (inMeetingMode.load())
+            {
                 TranscriptSegment segment;
                 segment.timestamp = std::chrono::system_clock::now();
                 segment.text = result;
@@ -859,7 +954,7 @@ std::string AudioCaptureEngine::GetLatestUserSpeech() {
                 meetingTranscriptSegments.push_back(segment);
 
                 LOG_DEBUG_FMT("Meeting transcript segment added: \"%s\" (total segments: %zu)",
-                             result.c_str(), meetingTranscriptSegments.size());
+                              result.c_str(), meetingTranscriptSegments.size());
             }
 
             return result;
@@ -871,17 +966,20 @@ std::string AudioCaptureEngine::GetLatestUserSpeech() {
     return latestUserSpeech;
 }
 
-void AudioCaptureEngine::SetTranscriptionCallback(TranscriptionCallback callback) {
+void AudioCaptureEngine::SetTranscriptionCallback(TranscriptionCallback callback)
+{
     std::lock_guard<std::mutex> lock(callbackMutex);
     transcriptionCallback = callback;
 }
 
-std::string AudioCaptureEngine::GetLatestSystemAudio() {
+std::string AudioCaptureEngine::GetLatestSystemAudio()
+{
     std::lock_guard<std::mutex> lock(resultsMutex);
     return latestSystemAudio;
 }
 
-AudioCaptureEngine::PerformanceMetrics AudioCaptureEngine::GetMetrics() const {
+AudioCaptureEngine::PerformanceMetrics AudioCaptureEngine::GetMetrics() const
+{
     std::lock_guard<std::mutex> lock(metricsMutex);
     return metrics;
 }
@@ -890,47 +988,61 @@ AudioCaptureEngine::PerformanceMetrics AudioCaptureEngine::GetMetrics() const {
 // Helper Functions
 // ============================================================================
 
-std::vector<float> AudioCaptureEngine::ConvertPCMToFloat(const BYTE* pcmData, UINT32 numFrames) {
+std::vector<float> AudioCaptureEngine::ConvertPCMToFloat(const BYTE *pcmData, UINT32 numFrames)
+{
     // Handle different audio formats
     std::vector<float> floatData;
 
     // Check if format is float32 (common for WASAPI)
     if (deviceFormat.wFormatTag == WAVE_FORMAT_IEEE_FLOAT ||
-        deviceFormat.wBitsPerSample == 32) {
+        deviceFormat.wBitsPerSample == 32)
+    {
         // Already float format
-        const float* samples = reinterpret_cast<const float*>(pcmData);
+        const float *samples = reinterpret_cast<const float *>(pcmData);
 
         // Convert to mono if needed (average channels)
-        if (deviceFormat.nChannels == 1) {
+        if (deviceFormat.nChannels == 1)
+        {
             floatData.assign(samples, samples + numFrames);
-        } else {
+        }
+        else
+        {
             // Convert stereo/multi-channel to mono by averaging
             floatData.reserve(numFrames);
-            for (UINT32 i = 0; i < numFrames; ++i) {
+            for (UINT32 i = 0; i < numFrames; ++i)
+            {
                 float mono = 0.0f;
-                for (UINT32 ch = 0; ch < deviceFormat.nChannels; ++ch) {
+                for (UINT32 ch = 0; ch < deviceFormat.nChannels; ++ch)
+                {
                     mono += samples[i * deviceFormat.nChannels + ch];
                 }
                 floatData.push_back(mono / deviceFormat.nChannels);
             }
         }
     }
-    else if (deviceFormat.wBitsPerSample == 16) {
+    else if (deviceFormat.wBitsPerSample == 16)
+    {
         // 16-bit PCM format
-        const int16_t* samples = reinterpret_cast<const int16_t*>(pcmData);
+        const int16_t *samples = reinterpret_cast<const int16_t *>(pcmData);
 
         // Convert to mono if needed
-        if (deviceFormat.nChannels == 1) {
+        if (deviceFormat.nChannels == 1)
+        {
             floatData.reserve(numFrames);
-            for (UINT32 i = 0; i < numFrames; ++i) {
+            for (UINT32 i = 0; i < numFrames; ++i)
+            {
                 floatData.push_back(samples[i] / 32768.0f);
             }
-        } else {
+        }
+        else
+        {
             // Convert stereo/multi-channel to mono
             floatData.reserve(numFrames);
-            for (UINT32 i = 0; i < numFrames; ++i) {
+            for (UINT32 i = 0; i < numFrames; ++i)
+            {
                 float mono = 0.0f;
-                for (UINT32 ch = 0; ch < deviceFormat.nChannels; ++ch) {
+                for (UINT32 ch = 0; ch < deviceFormat.nChannels; ++ch)
+                {
                     mono += samples[i * deviceFormat.nChannels + ch] / 32768.0f;
                 }
                 floatData.push_back(mono / deviceFormat.nChannels);
@@ -939,17 +1051,20 @@ std::vector<float> AudioCaptureEngine::ConvertPCMToFloat(const BYTE* pcmData, UI
     }
 
     // Resample to 16kHz if needed
-    if (deviceFormat.nSamplesPerSec != SAMPLE_RATE) {
+    if (deviceFormat.nSamplesPerSec != SAMPLE_RATE)
+    {
         floatData = ResampleAudio(floatData, deviceFormat.nSamplesPerSec, SAMPLE_RATE);
     }
 
     return floatData;
 }
 
-std::vector<float> AudioCaptureEngine::ResampleAudio(const std::vector<float>& input,
-                                                      int inputSampleRate,
-                                                      int outputSampleRate) {
-    if (inputSampleRate == outputSampleRate) {
+std::vector<float> AudioCaptureEngine::ResampleAudio(const std::vector<float> &input,
+                                                     int inputSampleRate,
+                                                     int outputSampleRate)
+{
+    if (inputSampleRate == outputSampleRate)
+    {
         return input;
     }
 
@@ -959,7 +1074,8 @@ std::vector<float> AudioCaptureEngine::ResampleAudio(const std::vector<float>& i
     std::vector<float> output;
     output.reserve(outputSize);
 
-    for (size_t i = 0; i < outputSize; ++i) {
+    for (size_t i = 0; i < outputSize; ++i)
+    {
         float srcIndex = i * ratio;
         size_t index0 = static_cast<size_t>(srcIndex);
         size_t index1 = (index0 + 1 < input.size()) ? index0 + 1 : input.size() - 1;
@@ -973,30 +1089,32 @@ std::vector<float> AudioCaptureEngine::ResampleAudio(const std::vector<float>& i
     return output;
 }
 
-std::vector<float> AudioCaptureEngine::MixAudioSources(const std::vector<float>& mic, const std::vector<float>& device) {
-    // Mix microphone and system audio by averaging samples
-    // This is used in meeting mode to capture both the user and other participants
+// std::vector<float> AudioCaptureEngine::MixAudioSources(const std::vector<float>& mic, const std::vector<float>& device) {
+//     // Mix microphone and system audio by averaging samples
+//     // This is used in meeting mode to capture both the user and other participants
 
-    size_t minSize = std::min(mic.size(), device.size());
-    std::vector<float> mixed;
-    mixed.reserve(minSize);
+//     size_t minSize = std::min(mic.size(), device.size());
+//     std::vector<float> mixed;
+//     mixed.reserve(minSize);
 
-    for (size_t i = 0; i < minSize; ++i) {
-        // Average the two sources to prevent clipping
-        mixed.push_back((mic[i] + device[i]) * 0.5f);
-    }
+//     for (size_t i = 0; i < minSize; ++i) {
+//         // Average the two sources to prevent clipping
+//         mixed.push_back((mic[i] + device[i]) * 0.5f);
+//     }
 
-    return mixed;
-}
+//     return mixed;
+// }
 
 // Mix two audio sources (microphone + system audio)
-std::vector<float> AudioCaptureEngine::MixAudioSources(const std::vector<float>& mic, const std::vector<float>& device) {
+std::vector<float> AudioCaptureEngine::MixAudioSources(const std::vector<float> &mic, const std::vector<float> &device)
+{
     // Use the longer buffer's size
     size_t maxSize = (mic.size() > device.size()) ? mic.size() : device.size();
     std::vector<float> mixed;
     mixed.reserve(maxSize);
 
-    for (size_t i = 0; i < maxSize; ++i) {
+    for (size_t i = 0; i < maxSize; ++i)
+    {
         float micSample = (i < mic.size()) ? mic[i] : 0.0f;
         float deviceSample = (i < device.size()) ? device[i] : 0.0f;
 
@@ -1005,8 +1123,10 @@ std::vector<float> AudioCaptureEngine::MixAudioSources(const std::vector<float>&
         float mixed_sample = (micSample * 0.5f) + (deviceSample * 0.5f);
 
         // Clamp to [-1.0, 1.0] range
-        if (mixed_sample > 1.0f) mixed_sample = 1.0f;
-        if (mixed_sample < -1.0f) mixed_sample = -1.0f;
+        if (mixed_sample > 1.0f)
+            mixed_sample = 1.0f;
+        if (mixed_sample < -1.0f)
+            mixed_sample = -1.0f;
 
         mixed.push_back(mixed_sample);
     }

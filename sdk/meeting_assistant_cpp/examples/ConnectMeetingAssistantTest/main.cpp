@@ -1,55 +1,37 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <Windows.h>
 #include "ConnectMeetingAssistant.h"
 
 // Callback function that will be called when meeting status changes
 UserDecision OnMeetingStatusChanged(MeetingStatus status, const char* appName, unsigned long processId) {
-    std::cout << "\n╔════════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  MEETING STATUS CHANGED NOTIFICATION                       ║\n";
-    std::cout << "╚════════════════════════════════════════════════════════════╝\n";
+    // ? 使用 ASCII 字符（兼容所有编码）
+    std::cout << "\n+============================================================+\n";
+    std::cout << "|  MEETING STATUS CHANGED NOTIFICATION                       |\n";
+    std::cout << "+============================================================+\n";
     
     if (status == MEETING_STATUS_STARTED) {
         std::cout << "Status: Meeting STARTED\n";
         std::cout << "Application: " << appName << "\n";
         std::cout << "Process ID: " << processId << "\n";
         std::cout << "\n";
-        std::cout << "Do you want to start meeting recording? (y/n): ";
-        
-        char choice;
-        std::cin >> choice;
-        
-        if (choice == 'y' || choice == 'Y') {
-            std::cout << "? User chose to START recording\n";
-            return USER_DECISION_ACCEPT;
-        } else {
-            std::cout << "? User chose to DECLINE recording\n";
-            return USER_DECISION_DECLINE;
-        }
         
     } else if (status == MEETING_STATUS_ENDED) {
         std::cout << "Status: Meeting ENDED\n";
         std::cout << "Application: " << appName << "\n";
         std::cout << "Process ID: " << processId << "\n";
         std::cout << "\n";
-        std::cout << "Do you want to start meeting summarization? (y/n): ";
-        
-        char choice;
-        std::cin >> choice;
-        
-        if (choice == 'y' || choice == 'Y') {
-            std::cout << "? User chose to START summarization\n";
-            return USER_DECISION_ACCEPT;
-        } else {
-            std::cout << "? User chose to DECLINE summarization\n";
-            return USER_DECISION_DECLINE;
-        }
     }
     
     return USER_DECISION_DECLINE;
 }
 
 int main() {
+    // ? 设置控制台为 UTF-8 编码
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+    
     std::cout << "================================================================================\n";
     std::cout << "ConnectMeetingAssistant Test Application\n";
     std::cout << "================================================================================\n";

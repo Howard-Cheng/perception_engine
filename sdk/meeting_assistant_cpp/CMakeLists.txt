@@ -5,6 +5,11 @@ project(MeetingAssistant VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# ? 强制使用 UTF-8 编码（修复中文/特殊字符显示问题）
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
+
 # Output directories
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -67,17 +72,6 @@ endif()
 # MeetingAssistant Application (EXE)
 ################################################################################
 
-# Define MSFTCore SDK path (use relative path from CMakeLists.txt location)
-set(MSFTCORE_SDK_PATH "${CMAKE_CURRENT_SOURCE_DIR}/third-party/MSFT")
-set(MSFTCORE_LIB_PATH "${MSFTCORE_SDK_PATH}/lib")
-set(MSFTCORE_INCLUDE_PATH "${MSFTCORE_SDK_PATH}/include")
-
-# Check if MSFTCore SDK exists
-if(NOT EXISTS "${MSFTCORE_LIB_PATH}/MSFTCore.lib")
-    message(WARNING "MSFTCore.lib not found at: ${MSFTCORE_LIB_PATH}/MSFTCore.lib")
-    message(WARNING "Please ensure MSFTCore SDK is placed in: ${MSFTCORE_SDK_PATH}")
-endif()
-
 add_executable(MeetingAssistant
     # Headers
     include/MeetingAssistant/MeetingStateMachine.h
@@ -102,7 +96,6 @@ target_include_directories(MeetingAssistant PRIVATE
 target_link_libraries(MeetingAssistant PRIVATE
     MicrophoneMonitor
     windowsapp.lib  # For Windows Runtime (WinRT)
-    ${MSFTCORE_LIB_PATH}/MSFTCore.lib  # Link MSFTCore SDK
 )
 
 target_compile_definitions(MeetingAssistant PRIVATE
@@ -200,14 +193,6 @@ add_custom_command(TARGET MeetingAssistant POST_BUILD
         $<TARGET_FILE:MicrophoneMonitor>
         $<TARGET_FILE_DIR:MeetingAssistant>
     COMMENT "Copying MicrophoneMonitor.dll to executable directory"
-)
-
-# Copy MSFTCore.dll and its dependencies to executable directory
-add_custom_command(TARGET MeetingAssistant POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${MSFTCORE_LIB_PATH}
-        $<TARGET_FILE_DIR:MeetingAssistant>
-    COMMENT "Copying MSFTCore.dll and dependencies to executable directory"
 )
 
 # Copy ConnectMeetingAssistant.dll to test application directory

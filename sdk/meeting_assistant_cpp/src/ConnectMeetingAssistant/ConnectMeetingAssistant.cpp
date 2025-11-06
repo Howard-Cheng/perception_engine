@@ -66,21 +66,6 @@ void PipeListenerThread() {
             decision = g_callback(status, appName.c_str(), processId);
             std::cout << "[ConnectMA] User decision: " << (decision == USER_DECISION_ACCEPT ? "ACCEPT" : "DECLINE") << "\n";
         }
-
-        // Send response back to server
-        const char* response = (decision == USER_DECISION_ACCEPT) ? "1" : "2";
-        DWORD bytesWritten;
-        success = WriteFile(
-            g_hPipe,
-            response,
-            (DWORD)strlen(response),
-            &bytesWritten,
-            NULL
-        );
-
-        if (!success) {
-            std::cout << "[ConnectMA] Failed to send response. Error: " << GetLastError() << "\n";
-        }
     }
 
     g_running = false;

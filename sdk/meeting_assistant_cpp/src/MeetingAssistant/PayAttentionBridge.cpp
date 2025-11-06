@@ -1,6 +1,5 @@
 #include "PayAttentionBridge.h"
 #include "MeetingStateMachine.h"
-#include "MSFTCore.h"
 #include <iostream>
 #include <fstream>
 #include <Windows.h>
@@ -12,8 +11,8 @@
 namespace MeetingAssistant {
 
 // Use the MSFTCore SDK namespaces
-using namespace QAASR;
-using namespace QTSummary;
+//using namespace QAASR;
+//using namespace QTSummary;
 
 // Static members
 std::wstring PayAttentionBridge::meetingContent_;
@@ -22,13 +21,13 @@ std::string PayAttentionBridge::logFilePath_ = "meeting_assistant.log";
 
 void PayAttentionBridge::Initialize() {
     // Set listening device (1=Microphone, 2=Speaker, 3=Microphone+Speaker)
-    QAASR::SetListeningDevice(2);
+    //QAASR::SetListeningDevice(2);
 
-    // Set ASR callback
-    QAASR::SetASRCallback(OnASRResult);
+    //// Set ASR callback
+    //QAASR::SetASRCallback(OnASRResult);
 
-    // Set speech state callback
-    QAASR::SetSpeechStateCallback(OnSpeechStateChanged);
+    //// Set speech state callback
+    //QAASR::SetSpeechStateCallback(OnSpeechStateChanged);
 
     std::cout << "[PayAttentionBridge] SDK Initialized.\n";
 }
@@ -57,7 +56,7 @@ void PayAttentionBridge::StartMeetingTranscription(const MeetingInfo& meeting) {
     logMessage << "================================================================================\n\n";
 
     std::cout << "Starting record...\n";
-    QAASR::StartRecord();
+    //QAASR::StartRecord();
 
     // Log to file
     try {
@@ -87,7 +86,7 @@ void PayAttentionBridge::StopMeetingTranscription(const MeetingInfo& meeting) {
     logMessage << "App: " << meeting.appName << ", PID: " << meeting.processId << "\n";
 
     std::cout << "Stopping record...\n";
-    QAASR::StopRecord();
+   /* QAASR::StopRecord();*/
     meetingContent_.clear();
     lastMsg_.clear();
 
@@ -107,16 +106,16 @@ void PayAttentionBridge::StartMeetingSummarization() {
                             L"analyze it and extract the main points. Organize the key ideas as "
                             L"a clear outline. Keep the summary within 300 words. Output in English only.";
     
-    QTSummary::EnableSummary(prompt, meetingContent_.c_str());
+    /*QTSummary::EnableSummary(prompt, meetingContent_.c_str());
 
     wchar_t* summaryPtr = QTSummary::StartSummary();
     std::wstring summary = summaryPtr ? summaryPtr : L"";
-    
-    std::wcout << L"[Meeting Summary]\n" << summary << L"\n";
+    */
+    //std::wcout << L"[Meeting Summary]\n" << summary << L"\n";
 }
 
 void PayAttentionBridge::StopRecord() {
-    QAASR::StopRecord();
+    //QAASR::StopRecord();
 }
 
 void PayAttentionBridge::OnASRResult(const wchar_t* role, const wchar_t* msg, const wchar_t* targetLang,

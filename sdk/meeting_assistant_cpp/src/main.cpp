@@ -7,8 +7,6 @@
 #include <winrt/base.h>
 
 #include "MeetingStateMachine.h"
-#include "NotificationService.h"
-#include "PayAttentionBridge.h"
 #include "MicrophoneMonitorDLL.h"
 #include "NamedPipeServer.h"
 
@@ -17,8 +15,6 @@ using namespace MeetingAssistant;
 // Global variables
 std::atomic<bool> g_running(true);
 MicrophoneMonitorHandle g_monitor = nullptr;
-std::unique_ptr<MeetingStateMachine> g_stateMachine;
-std::unique_ptr<NotificationService> g_notificationService;
 std::unique_ptr<NamedPipeServer> g_pipeServer;
 
 // Signal handler for Ctrl+C
@@ -31,62 +27,17 @@ BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
     return FALSE;
 }
 
-// Callback functions
-void OnUserClickedStart() {
-    std::cout << "\n╔════════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  USER ACTION: Clicked 'Start'                              ║\n";
-    std::cout << "╚════════════════════════════════════════════════════════════╝\n";
-
-    if (g_stateMachine->GetCurrentMeeting().has_value()) {
-        // Call Pay Attention SDK
-        PayAttentionBridge::StartMeetingTranscription(g_stateMachine->GetCurrentMeeting().value());
-
-        // Update state
-        g_stateMachine->OnUserConfirmed();
-    } else {
-        std::cout << "[WARNING] No current meeting to start transcription for\n";
-    }
-
-    std::cout << "\n";
-}
-
-void OnUserClickedDismiss() {
-    std::cout << "\n╔════════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  USER ACTION: Clicked 'Dismiss'                            ║\n";
-    std::cout << "╚════════════════════════════════════════════════════════════╝\n";
-
-    // Update state
-    g_stateMachine->OnUserDismissed();
-
-    std::cout << "\n";
-}
-
-void OnUserClickedStartSummarize() {
-    std::cout << "\n╔════════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  USER ACTION: Clicked 'Start summarize'                     ║\n";
-    std::cout << "╚════════════════════════════════════════════════════════════╝\n";
-
-    // Call Pay Attention SDK
-    PayAttentionBridge::StartMeetingSummarization();
-    std::cout << "Summarize finished...\n";
-
-    std::cout << "\n";
-}
-
-void OnUserClickedCancelSummarize() {
-    std::cout << "\n╔════════════════════════════════════════════════════════════╗\n";
-    std::cout << "║  USER ACTION: Clicked 'Cancel summarize'                     ║\n";
-    std::cout << "╚════════════════════════════════════════════════════════════╝\n";
-
-    std::cout << "\n";
-}
-
 void RunServiceLoop() {
     while (g_running) {
         try {
             // Check for meeting apps
             bool meetingDetected = MicrophoneMonitor_IsMeetingAppUsingMicrophone(g_monitor) != 0;
             std::optional<MeetingInfo> meetingInfo;
+            MeetingInfo info;
+            info.appName = "empty";
+            info.processId = 0;
+            info.detectedAt = std::chrono::system_clock::now();
+            meetingInfo = info;
 
             if (meetingDetected) {
                 char buffer[256] = { 0 };
@@ -94,7 +45,6 @@ void RunServiceLoop() {
                 unsigned long pid = MicrophoneMonitor_GetMeetingAppPID(g_monitor);
 
                 if (length > 0) {
-                    MeetingInfo info;
                     info.appName = buffer;
                     info.processId = pid;
                     info.detectedAt = std::chrono::system_clock::now();
@@ -102,78 +52,26 @@ void RunServiceLoop() {
                 }
             }
 
-            // Update state machine
-            bool stateChanged = g_stateMachine->Update(meetingDetected, meetingInfo);
-
-            // Handle state transitions
-            if (stateChanged) {
-                if (g_stateMachine->GetCurrentState() == MeetingState::Detected && meetingInfo.has_value()) {
-                    // NEW MEETING DETECTED - Show notification
-                    std::cout << "[MeetingAssistant] Meeting detected: " << meetingInfo->ToString() << "\n";
-
-                    // Notify pipe clients if connected
-                    if (g_pipeServer && g_pipeServer->IsRunning()) {
-                        UserResponse response = g_pipeServer->NotifyMeetingEvent(
-                            MeetingEvent::Started,
-                            meetingInfo->appName,
-                            meetingInfo->processId
-                        );
-
-                        if (response == UserResponse::Accept) {
-                            std::cout << "[MeetingAssistant] Pipe client accepted - starting transcription\n";
-                            //PayAttentionBridge::StartMeetingTranscription(meetingInfo.value());
-                            g_stateMachine->OnUserConfirmed();
-                        } else if (response == UserResponse::Decline) {
-                            std::cout << "[MeetingAssistant] Pipe client declined\n";
-                            g_stateMachine->OnUserDismissed();
-                        } else {
-                            std::cout << "[MeetingAssistant] No pipe client response\n";
-                            // No pipe client response, show notification as fallback
-                            //g_notificationService->ShowMeetingDetectedNotification(meetingInfo->appName);
-                        }
-                    } else {
-                        std::cout << "[MeetingAssistant] No pipe server, use notification\n";
-                        // No pipe server, use notification
-                        //g_notificationService->ShowMeetingDetectedNotification(meetingInfo->appName);
-                    }
-
-                } else if (g_stateMachine->GetCurrentState() == MeetingState::Idle) {
-                    if (g_stateMachine->GetLastState() == MeetingState::PayingAttention) {
-                        PayAttentionBridge::StopRecord();
-
-                        // Get last meeting info
-                        auto lastMeeting = g_stateMachine->GetCurrentMeeting();
-
-                        // Notify pipe clients if connected
-                        if (g_pipeServer && g_pipeServer->IsRunning() && lastMeeting.has_value()) {
-                            UserResponse response = g_pipeServer->NotifyMeetingEvent(
-                                MeetingEvent::Ended,
-                                lastMeeting->appName,
-                                lastMeeting->processId
-                            );
-
-                            if (response == UserResponse::Accept) {
-                                std::cout << "[MeetingAssistant] Pipe client accepted - starting summarization\n";
-                                //PayAttentionBridge::StartMeetingSummarization();
-                            } else if (response == UserResponse::Decline) {
-                                std::cout << "[MeetingAssistant] Pipe client declined summarization\n";
-                            } else {
-                                std::cout << "[MeetingAssistant] No pipe client response, show notification\n";
-                                // No pipe client response, show notification as fallback
-                                //g_notificationService->ShowMeetingSummaryNotification();
-                            }
-                        } else {
-                            // No pipe server, use notification
-                            std::cout << "[MeetingAssistant] No pipe server, use notification\n";
-                            //g_notificationService->ShowMeetingSummaryNotification();
-                        }
-                        
-                        std::cout << "[MeetingAssistant] [State] PayingAttention → Idle, stopped recording\n";
-                    } else {
-                        std::cout << "[MeetingAssistant] No meeting detected (state: Idle)\n";
-                    }
-                }
+            // ✅ 只有在 meetingInfo 有值时才通知
+            if (meetingDetected && meetingInfo.has_value()) {
+                UserResponse response = g_pipeServer->NotifyMeetingEvent(
+                    MeetingEvent::Started,
+                    meetingInfo->appName,
+                    meetingInfo->processId
+                );
             }
+            else {
+                UserResponse response = g_pipeServer->NotifyMeetingEvent(
+                    MeetingEvent::Ended,
+                    meetingInfo->appName,
+                    meetingInfo->processId
+                );
+            }
+            
+            std::this_thread::sleep_for(std::chrono::seconds(2));  // Poll every 2 seconds
+            continue;
+
+            // ========== 以下代码被 continue 跳过，保留以便后续恢复 ==========
 
             // Wait before next check
             std::this_thread::sleep_for(std::chrono::seconds(2));  // Poll every 2 seconds
@@ -218,17 +116,6 @@ int main() {
         }
         std::cout << "[✓] MicrophoneMonitor initialized\n";
 
-        g_stateMachine = std::make_unique<MeetingStateMachine>();
-        std::cout << "[✓] State machine initialized\n";
-
-        g_notificationService = std::make_unique<NotificationService>(
-            OnUserClickedStart,
-            OnUserClickedDismiss,
-            OnUserClickedStartSummarize,
-            OnUserClickedCancelSummarize
-        );
-        std::cout << "[✓] Notification service initialized\n";
-
         // Initialize named pipe server
         g_pipeServer = std::make_unique<NamedPipeServer>();
         if (g_pipeServer->Start()) {
@@ -237,8 +124,6 @@ int main() {
             std::cout << "[WARNING] Failed to start named pipe server\n";
         }
 
-        PayAttentionBridge::Initialize();
-        std::cout << "[✓] PayAttentionBridge SDK initialized\n";
 
         std::cout << "\n";
         std::cout << "[MeetingAssistant] Running...\n";
@@ -265,9 +150,6 @@ int main() {
     if (g_monitor) {
         MicrophoneMonitor_Destroy(g_monitor);
     }
-    
-    g_notificationService.reset();
-    g_stateMachine.reset();
     
     std::cout << "[MeetingAssistant] Goodbye!\n";
 

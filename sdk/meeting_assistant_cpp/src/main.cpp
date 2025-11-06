@@ -1,4 +1,4 @@
-#include <iostream>
+ï»¿#include <iostream>
 #include <thread>
 #include <chrono>
 #include <atomic>
@@ -10,6 +10,7 @@
 #include "NotificationService.h"
 #include "PayAttentionBridge.h"
 #include "MicrophoneMonitorDLL.h"
+#include "NamedPipeServer.h"
 
 using namespace MeetingAssistant;
 
@@ -18,6 +19,7 @@ std::atomic<bool> g_running(true);
 MicrophoneMonitorHandle g_monitor = nullptr;
 std::unique_ptr<MeetingStateMachine> g_stateMachine;
 std::unique_ptr<NotificationService> g_notificationService;
+std::unique_ptr<NamedPipeServer> g_pipeServer;
 
 // Signal handler for Ctrl+C
 BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
@@ -31,9 +33,9 @@ BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
 
 // Callback functions
 void OnUserClickedStart() {
-    std::cout << "\n¨X¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨[\n";
-    std::cout << "¨U  USER ACTION: Clicked 'Start'                              ¨U\n";
-    std::cout << "¨^¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨a\n";
+    std::cout << "\nâ•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—\n";
+    std::cout << "â•‘  USER ACTION: Clicked 'Start'                              â•‘\n";
+    std::cout << "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n";
 
     if (g_stateMachine->GetCurrentMeeting().has_value()) {
         // Call Pay Attention SDK
@@ -49,9 +51,9 @@ void OnUserClickedStart() {
 }
 
 void OnUserClickedDismiss() {
-    std::cout << "\n¨X¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨[\n";
-    std::cout << "¨U  USER ACTION: Clicked 'Dismiss'                            ¨U\n";
-    std::cout << "¨^¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨a\n";
+    std::cout << "\nâ•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—\n";
+    std::cout << "â•‘  USER ACTION: Clicked 'Dismiss'                            â•‘\n";
+    std::cout << "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n";
 
     // Update state
     g_stateMachine->OnUserDismissed();
@@ -60,9 +62,9 @@ void OnUserClickedDismiss() {
 }
 
 void OnUserClickedStartSummarize() {
-    std::cout << "\n¨X¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨[\n";
-    std::cout << "¨U  USER ACTION: Clicked 'Start summarize'                     ¨U\n";
-    std::cout << "¨^¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨a\n";
+    std::cout << "\nâ•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—\n";
+    std::cout << "â•‘  USER ACTION: Clicked 'Start summarize'                     â•‘\n";
+    std::cout << "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n";
 
     // Call Pay Attention SDK
     PayAttentionBridge::StartMeetingSummarization();
@@ -72,9 +74,9 @@ void OnUserClickedStartSummarize() {
 }
 
 void OnUserClickedCancelSummarize() {
-    std::cout << "\n¨X¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨[\n";
-    std::cout << "¨U  USER ACTION: Clicked 'Cancel summarize'                     ¨U\n";
-    std::cout << "¨^¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨a\n";
+    std::cout << "\nâ•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—\n";
+    std::cout << "â•‘  USER ACTION: Clicked 'Cancel summarize'                     â•‘\n";
+    std::cout << "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n";
 
     std::cout << "\n";
 }
@@ -108,12 +110,65 @@ void RunServiceLoop() {
                 if (g_stateMachine->GetCurrentState() == MeetingState::Detected && meetingInfo.has_value()) {
                     // NEW MEETING DETECTED - Show notification
                     std::cout << "[MeetingAssistant] Meeting detected: " << meetingInfo->ToString() << "\n";
-                    g_notificationService->ShowMeetingDetectedNotification(meetingInfo->appName);
+
+                    // Notify pipe clients if connected
+                    if (g_pipeServer && g_pipeServer->IsRunning()) {
+                        UserResponse response = g_pipeServer->NotifyMeetingEvent(
+                            MeetingEvent::Started,
+                            meetingInfo->appName,
+                            meetingInfo->processId
+                        );
+
+                        if (response == UserResponse::Accept) {
+                            std::cout << "[MeetingAssistant] Pipe client accepted - starting transcription\n";
+                            //PayAttentionBridge::StartMeetingTranscription(meetingInfo.value());
+                            g_stateMachine->OnUserConfirmed();
+                        } else if (response == UserResponse::Decline) {
+                            std::cout << "[MeetingAssistant] Pipe client declined\n";
+                            g_stateMachine->OnUserDismissed();
+                        } else {
+                            std::cout << "[MeetingAssistant] No pipe client response\n";
+                            // No pipe client response, show notification as fallback
+                            //g_notificationService->ShowMeetingDetectedNotification(meetingInfo->appName);
+                        }
+                    } else {
+                        std::cout << "[MeetingAssistant] No pipe server, use notification\n";
+                        // No pipe server, use notification
+                        //g_notificationService->ShowMeetingDetectedNotification(meetingInfo->appName);
+                    }
+
                 } else if (g_stateMachine->GetCurrentState() == MeetingState::Idle) {
                     if (g_stateMachine->GetLastState() == MeetingState::PayingAttention) {
                         PayAttentionBridge::StopRecord();
-                        g_notificationService->ShowMeetingSummaryNotification();
-                        std::cout << "[MeetingAssistant] [State] Detected ¡ú Idle, try to stop the record...)\n";
+
+                        // Get last meeting info
+                        auto lastMeeting = g_stateMachine->GetCurrentMeeting();
+
+                        // Notify pipe clients if connected
+                        if (g_pipeServer && g_pipeServer->IsRunning() && lastMeeting.has_value()) {
+                            UserResponse response = g_pipeServer->NotifyMeetingEvent(
+                                MeetingEvent::Ended,
+                                lastMeeting->appName,
+                                lastMeeting->processId
+                            );
+
+                            if (response == UserResponse::Accept) {
+                                std::cout << "[MeetingAssistant] Pipe client accepted - starting summarization\n";
+                                //PayAttentionBridge::StartMeetingSummarization();
+                            } else if (response == UserResponse::Decline) {
+                                std::cout << "[MeetingAssistant] Pipe client declined summarization\n";
+                            } else {
+                                std::cout << "[MeetingAssistant] No pipe client response, show notification\n";
+                                // No pipe client response, show notification as fallback
+                                //g_notificationService->ShowMeetingSummaryNotification();
+                            }
+                        } else {
+                            // No pipe server, use notification
+                            std::cout << "[MeetingAssistant] No pipe server, use notification\n";
+                            //g_notificationService->ShowMeetingSummaryNotification();
+                        }
+                        
+                        std::cout << "[MeetingAssistant] [State] PayingAttention â†’ Idle, stopped recording\n";
                     } else {
                         std::cout << "[MeetingAssistant] No meeting detected (state: Idle)\n";
                     }
@@ -146,9 +201,10 @@ int main() {
     std::cout << "================================================================================\n";
     std::cout << "\n";
 
-    // Set up Ctrl+C handler
+    // Set Ctrl+C handler
     if (!SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE)) {
         std::cerr << "[ERROR] Failed to set console control handler\n";
+        winrt::uninit_apartment();
         return 1;
     }
 
@@ -160,10 +216,10 @@ int main() {
         if (g_monitor == nullptr) {
             throw std::runtime_error("Failed to create MicrophoneMonitor instance");
         }
-        std::cout << "[?] MicrophoneMonitor initialized\n";
+        std::cout << "[âœ“] MicrophoneMonitor initialized\n";
 
         g_stateMachine = std::make_unique<MeetingStateMachine>();
-        std::cout << "[?] State machine initialized\n";
+        std::cout << "[âœ“] State machine initialized\n";
 
         g_notificationService = std::make_unique<NotificationService>(
             OnUserClickedStart,
@@ -171,10 +227,18 @@ int main() {
             OnUserClickedStartSummarize,
             OnUserClickedCancelSummarize
         );
-        std::cout << "[?] Notification service initialized\n";
+        std::cout << "[âœ“] Notification service initialized\n";
+
+        // Initialize named pipe server
+        g_pipeServer = std::make_unique<NamedPipeServer>();
+        if (g_pipeServer->Start()) {
+            std::cout << "[âœ“] Named pipe server started\n";
+        } else {
+            std::cout << "[WARNING] Failed to start named pipe server\n";
+        }
 
         PayAttentionBridge::Initialize();
-        std::cout << "[?] PayAttentionBridge SDK initialized.\n";
+        std::cout << "[âœ“] PayAttentionBridge SDK initialized\n";
 
         std::cout << "\n";
         std::cout << "[MeetingAssistant] Running...\n";
@@ -185,12 +249,18 @@ int main() {
 
     } catch (const std::exception& ex) {
         std::cout << "[ERROR] " << ex.what() << "\n";
+        winrt::uninit_apartment();
         return 1;
     }
 
     // Cleanup
     std::cout << "\n";
     std::cout << "[MeetingAssistant] Cleaning up...\n";
+    
+    if (g_pipeServer) {
+        g_pipeServer->Stop();
+        g_pipeServer.reset();
+    }
     
     if (g_monitor) {
         MicrophoneMonitor_Destroy(g_monitor);

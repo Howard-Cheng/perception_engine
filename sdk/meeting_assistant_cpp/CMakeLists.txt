@@ -83,11 +83,13 @@ add_executable(MeetingAssistant
     include/MeetingAssistant/MeetingStateMachine.h
     include/MeetingAssistant/NotificationService.h
     include/MeetingAssistant/PayAttentionBridge.h
+    include/MeetingAssistant/NamedPipeServer.h
     
     # Sources
     src/MeetingAssistant/MeetingStateMachine.cpp
     src/MeetingAssistant/NotificationService.cpp
     src/MeetingAssistant/PayAttentionBridge.cpp
+    src/MeetingAssistant/NamedPipeServer.cpp
     src/main.cpp
 )
 
@@ -122,6 +124,73 @@ if(MSVC)
 endif()
 
 ################################################################################
+# ConnectMeetingAssistant Library (DLL)
+################################################################################
+
+add_library(ConnectMeetingAssistant SHARED
+    # Headers
+    include/ConnectMeetingAssistant/ConnectMeetingAssistant.h
+    
+    # Sources
+    src/ConnectMeetingAssistant/ConnectMeetingAssistant.cpp
+)
+
+target_include_directories(ConnectMeetingAssistant
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/ConnectMeetingAssistant>
+        $<INSTALL_INTERFACE:include/ConnectMeetingAssistant>
+)
+
+target_compile_definitions(ConnectMeetingAssistant PRIVATE
+    BUILDING_CONNECT_DLL
+    _UNICODE
+    UNICODE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+)
+
+if(MSVC)
+    target_compile_options(ConnectMeetingAssistant PRIVATE
+        /W3
+        /std:c++17
+    )
+endif()
+
+################################################################################
+# ConnectMeetingAssistantTest Application (EXE)
+################################################################################
+
+add_executable(ConnectMeetingAssistantTest
+    examples/ConnectMeetingAssistantTest/main.cpp
+)
+
+target_include_directories(ConnectMeetingAssistantTest PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/ConnectMeetingAssistant
+)
+
+target_link_libraries(ConnectMeetingAssistantTest PRIVATE
+    ConnectMeetingAssistant
+)
+
+target_compile_definitions(ConnectMeetingAssistantTest PRIVATE
+    _UNICODE
+    UNICODE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+)
+
+if(MSVC)
+    target_compile_options(ConnectMeetingAssistantTest PRIVATE
+        /W3
+        /std:c++17
+    )
+    
+    set_target_properties(ConnectMeetingAssistantTest PROPERTIES
+        LINK_FLAGS "/SUBSYSTEM:CONSOLE"
+    )
+endif()
+
+################################################################################
 # Post-build: Copy DLL to executable directory
 ################################################################################
 
@@ -141,6 +210,14 @@ add_custom_command(TARGET MeetingAssistant POST_BUILD
     COMMENT "Copying MSFTCore.dll and dependencies to executable directory"
 )
 
+# Copy ConnectMeetingAssistant.dll to test application directory
+add_custom_command(TARGET ConnectMeetingAssistantTest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:ConnectMeetingAssistant>
+        $<TARGET_FILE_DIR:ConnectMeetingAssistantTest>
+    COMMENT "Copying ConnectMeetingAssistant.dll to test application directory"
+)
+
 # Build completion message
 add_custom_command(TARGET MeetingAssistant POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo "========================================================================================"
@@ -148,11 +225,16 @@ add_custom_command(TARGET MeetingAssistant POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo "========================================================================================"
     COMMAND ${CMAKE_COMMAND} -E echo "Output Directory: ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
     COMMAND ${CMAKE_COMMAND} -E echo ""
-    COMMAND ${CMAKE_COMMAND} -E echo "Files copied:"
+    COMMAND ${CMAKE_COMMAND} -E echo "Files generated:"
+    COMMAND ${CMAKE_COMMAND} -E echo "  - MeetingAssistant.exe (Main application with pipe server)"
     COMMAND ${CMAKE_COMMAND} -E echo "  - MicrophoneMonitor.dll"
+    COMMAND ${CMAKE_COMMAND} -E echo "  - ConnectMeetingAssistant.dll (Client library)"
+    COMMAND ${CMAKE_COMMAND} -E echo "  - ConnectMeetingAssistantTest.exe (Test application)"
     COMMAND ${CMAKE_COMMAND} -E echo "  - MSFTCore.dll and all dependencies"
     COMMAND ${CMAKE_COMMAND} -E echo ""
-    COMMAND ${CMAKE_COMMAND} -E echo "Ready to run: MeetingAssistant.exe"
+    COMMAND ${CMAKE_COMMAND} -E echo "Usage:"
+    COMMAND ${CMAKE_COMMAND} -E echo "  1. Run MeetingAssistant.exe first (starts pipe server)"
+    COMMAND ${CMAKE_COMMAND} -E echo "  2. Run ConnectMeetingAssistantTest.exe (connects to pipe)"
     COMMAND ${CMAKE_COMMAND} -E echo "========================================================================================"
 )
 
@@ -160,7 +242,7 @@ add_custom_command(TARGET MeetingAssistant POST_BUILD
 # Installation (optional)
 ################################################################################
 
-install(TARGETS MicrophoneMonitor MeetingAssistant
+install(TARGETS MicrophoneMonitor MeetingAssistant ConnectMeetingAssistant ConnectMeetingAssistantTest
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib

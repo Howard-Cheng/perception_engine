@@ -119,11 +119,29 @@ find_package(DuckDB QUIET CONFIG)
 
 # If not found, try to directly include the exports file
 if(NOT DuckDB_FOUND AND NOT TARGET duckdb AND NOT TARGET duckdb_static)
-    set(DUCKDB_CMAKE_DIR "C:/vcpkg/installed/x64-windows/share/duckdb")
+    # Try to find DuckDB in vcpkg installation paths
+    # Priority order: project local paths first, then system paths
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_installed/x64-windows/share/duckdb")
+        set(DUCKDB_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_installed/x64-windows/share/duckdb")
+        message(STATUS "Trying vcpkg_installed path: ${DUCKDB_CMAKE_DIR}")
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_install/installed/x64-windows/share/duckdb")
+        set(DUCKDB_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_install/installed/x64-windows/share/duckdb")
+        message(STATUS "Trying vcpkg_install path: ${DUCKDB_CMAKE_DIR}")
+    elseif(DEFINED ENV{VCPKG_ROOT})
+        set(DUCKDB_CMAKE_DIR "$ENV{VCPKG_ROOT}/installed/x64-windows/share/duckdb")
+        message(STATUS "Trying VCPKG_ROOT path: ${DUCKDB_CMAKE_DIR}")
+    else()
+        set(DUCKDB_CMAKE_DIR "C:/vcpkg/installed/x64-windows/share/duckdb")
+        message(STATUS "Trying default C:/vcpkg path: ${DUCKDB_CMAKE_DIR}")
+    endif()
+    
+    message(STATUS "Checking for DuckDBExports.cmake at: ${DUCKDB_CMAKE_DIR}/DuckDBExports.cmake")
     if(EXISTS "${DUCKDB_CMAKE_DIR}/DuckDBExports.cmake")
         message(STATUS "Manually including DuckDB exports from ${DUCKDB_CMAKE_DIR}")
         include("${DUCKDB_CMAKE_DIR}/DuckDBExports.cmake")
         set(DuckDB_FOUND TRUE)
+    else()
+        message(STATUS "DuckDBExports.cmake not found at expected location")
     endif()
 endif()
 

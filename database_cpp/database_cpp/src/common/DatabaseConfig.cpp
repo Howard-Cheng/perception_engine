@@ -10,7 +10,7 @@ DatabaseConfig::DatabaseConfig()
     , qdrantPath("vector_store")
     , rawRetentionHours(24)
     , compressedRetentionDays(7)
-    , idleThresholdSeconds(300)
+    , idleThresholdSeconds(30)
     , minSessionDurationSeconds(3)
     , compressionDelaySeconds(60)
     , embeddingModel("sentence-transformers/all-MiniLM-L6-v2")
@@ -60,7 +60,7 @@ std::filesystem::path DatabaseConfig::getQdrantPath() const {
 }
 
 SessionConfig::SessionConfig()
-    : idleThresholdSeconds(300)
+    : idleThresholdSeconds(30)
     , domainChangeTriggers(true)
     , appTypeChangeTriggers(true)
     , contentTypeChangeTriggers(true)

@@ -23,7 +23,8 @@ CompressionPipeline::CompressionPipeline(
     const SessionConfig& config)
     : sqlitePath_(sqlitePath)
     , duckdbPath_(duckdbPath)
-    , config_(config) {
+    , config_(config)
+    , useElasticsearch_(false) {  // Default to SQLite
     
     LOG_INFO("Initializing Compression Pipeline");
     LOG_INFO("SQLite DB: " + sqlitePath);
@@ -37,13 +38,48 @@ CompressionPipeline::CompressionPipeline(
         classifier_ = std::make_unique<ContentClassifier>();
         duckdb_ = std::make_unique<DuckDBManager>(duckdbPath);
         
-        LOG_INFO("Compression Pipeline initialized successfully");
+        LOG_INFO("Compression Pipeline initialized successfully (using SQLite)");
         
     } catch (const std::exception& e) {
         LOG_ERROR("Failed to initialize Compression Pipeline: " + std::string(e.what()));
         throw;
     }
 }
+
+#ifdef ELASTICSEARCH_ENABLED
+CompressionPipeline::CompressionPipeline(
+    const std::string& sqlitePath,
+    const std::string& duckdbPath,
+    const SessionConfig& config,
+    const std::string& esUrl)
+    : sqlitePath_(sqlitePath)
+    , duckdbPath_(duckdbPath)
+    , config_(config)
+    , useElasticsearch_(true) {  // Use Elasticsearch
+    
+    LOG_INFO("Initializing Compression Pipeline with Elasticsearch");
+    LOG_INFO("Elasticsearch URL: " + esUrl);
+    LOG_INFO("DuckDB: " + duckdbPath);
+    
+    try {
+        // Initialize components
+        detector_ = std::make_unique<SessionDetector>(config);
+        calculator_ = std::make_unique<EngagementCalculator>();
+        extractor_ = std::make_unique<ContentExtractor>();
+        classifier_ = std::make_unique<ContentClassifier>();
+        duckdb_ = std::make_unique<DuckDBManager>(duckdbPath);
+        
+        // Initialize Elasticsearch client
+        esClient_ = std::make_unique<layer0::ElasticsearchClient>(esUrl);
+        
+        LOG_INFO("Compression Pipeline initialized successfully (using Elasticsearch)");
+        
+    } catch (const std::exception& e) {
+        LOG_ERROR("Failed to initialize Compression Pipeline: " + std::string(e.what()));
+        throw;
+    }
+}
+#endif
 
 CompressionPipeline::~CompressionPipeline() = default;
 
@@ -109,6 +145,15 @@ int CompressionPipeline::processUncompressedEvents() {
 }
 
 std::vector<layer0::RawEvent> CompressionPipeline::fetchUncompressedEvents() {
+#ifdef ELASTICSEARCH_ENABLED
+    if (useElasticsearch_) {
+        // Use Elasticsearch
+        LOG_DEBUG("Fetching uncompressed events from Elasticsearch");
+        return esClient_->getUncompressedEvents(240);  // 240 hours = 10 days
+    }
+#endif
+    
+    // Use SQLite (original implementation)
     std::vector<layer0::RawEvent> events;
     
     try {
@@ -121,7 +166,7 @@ std::vector<layer0::RawEvent> CompressionPipeline::fetchUncompressedEvents() {
             return events;
         }
         
-        // Query uncompressed events from last 24 hours
+        // Query uncompressed events from last 240 hours
         const char* sql = R"(
             SELECT 
                 event_id, timestamp, device_id, app_name, window_title, url,
@@ -400,6 +445,31 @@ void CompressionPipeline::markEventsAsCompressed(const std::vector<layer0::RawEv
             return;
         }
         
+#ifdef ELASTICSEARCH_ENABLED
+        if (useElasticsearch_) {
+            // Use Elasticsearch
+            std::string sessionId;
+            if (events[0].sessionId.has_value()) {
+                sessionId = events[0].sessionId.value();
+            } else {
+                LOG_WARNING("Events do not have session_id set");
+                return;
+            }
+            
+            std::vector<std::string> eventIds;
+            for (const auto& event : events) {
+                eventIds.push_back(event.eventId);
+            }
+            
+            if (esClient_->markEventsAsCompressed(eventIds, sessionId)) {
+                LOG_DEBUG("Marked " + std::to_string(events.size()) + 
+                         " events as compressed in Elasticsearch with session_id: " + sessionId);
+            }
+            return;
+        }
+#endif
+        
+        // Use SQLite (original implementation)
         sqlite3* db = nullptr;
         int rc = sqlite3_open(sqlitePath_.c_str(), &db);
         

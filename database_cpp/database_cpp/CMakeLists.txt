@@ -18,6 +18,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 option(BUILD_TESTS "Build unit tests" ON)
 option(BUILD_EXAMPLES "Build examples" ON)
 option(BUILD_COLLECTOR "Build data collector" ON)
+option(ENABLE_ELASTICSEARCH "Enable Elasticsearch support" ON)
 
 # Find required packages
 # Try to find SQLite3 - vcpkg uses unofficial-sqlite3
@@ -99,18 +100,19 @@ if(NOT OpenSSL_FOUND)
     add_compile_definitions(NO_OPENSSL)
 endif()
 
-# Find CURL (optional, for data collector)
+# Find CURL (optional, for data collector and Elasticsearch)
 find_package(CURL QUIET)
 
-if(NOT CURL_FOUND AND BUILD_COLLECTOR)
+if(NOT CURL_FOUND AND (BUILD_COLLECTOR OR ENABLE_ELASTICSEARCH))
     message(WARNING 
-        "CURL not found. Data collector will not be built.\n"
-        "To build the data collector, install CURL:\n"
+        "CURL not found. Data collector and Elasticsearch support will not be built.\n"
+        "To enable these features, install CURL:\n"
         "  - Windows: vcpkg install curl\n"
         "  - Ubuntu: sudo apt-get install libcurl4-openssl-dev\n"
         "  - macOS:  brew install curl\n"
     )
     set(BUILD_COLLECTOR OFF)
+    set(ENABLE_ELASTICSEARCH OFF)
 endif()
 
 # Find DuckDB (optional, for Layer 1 compression)
@@ -190,6 +192,15 @@ set(LAYER0_SOURCES
     src/layer0/SchemaManager.cpp
 )
 
+# Add Elasticsearch client if enabled
+if(ENABLE_ELASTICSEARCH)
+    list(APPEND LAYER0_SOURCES
+        src/layer0/ElasticsearchClient.cpp
+    )
+    add_compile_definitions(ELASTICSEARCH_ENABLED)
+    message(STATUS "Elasticsearch support enabled")
+endif()
+
 # Source files - Layer 1
 set(LAYER1_SOURCES
     src/layer1/SessionDetector.cpp
@@ -239,6 +250,14 @@ target_link_libraries(perception_db_core
         $<$<BOOL:${JSON_LIBRARIES}>:${JSON_LIBRARIES}>
 )
 
+# Link CURL if Elasticsearch is enabled
+if(ENABLE_ELASTICSEARCH)
+    target_link_libraries(perception_db_core
+        PUBLIC
+            CURL::libcurl
+    )
+endif()
+
 # Link OpenSSL if found
 if(OpenSSL_FOUND)
     target_link_libraries(perception_db_core
@@ -282,6 +301,25 @@ if(BUILD_TESTS)
     # enable_testing()
     # add_subdirectory(tests)
     message(STATUS "Tests not yet implemented")
+    
+    # Simple Elasticsearch test
+    if(ENABLE_ELASTICSEARCH AND CURL_FOUND)
+        add_executable(simple_es_test
+            test/simple_es_test.cpp
+        )
+        
+        target_link_libraries(simple_es_test
+            PRIVATE
+                perception_db_core
+        )
+        
+        set_target_properties(simple_es_test
+            PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+        )
+        
+        message(STATUS "Building simple Elasticsearch test")
+    endif()
 endif()
 
 # Data Collector (optional, depends on CURL)
@@ -346,6 +384,7 @@ message(STATUS "nlohmann/json found: ${nlohmann_json_FOUND}")
 message(STATUS "OpenSSL found: ${OpenSSL_FOUND}")
 message(STATUS "CURL found: ${CURL_FOUND}")
 message(STATUS "DuckDB found: ${BUILD_LAYER1_DUCKDB}")
+message(STATUS "Elasticsearch enabled: ${ENABLE_ELASTICSEARCH}")
 message(STATUS "Build examples: ${BUILD_EXAMPLES}")
 message(STATUS "Build collector: ${BUILD_COLLECTOR}")
 message(STATUS "Build Layer1 DuckDB: ${BUILD_LAYER1_DUCKDB}")

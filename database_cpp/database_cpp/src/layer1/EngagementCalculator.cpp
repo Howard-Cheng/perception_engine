@@ -1,5 +1,6 @@
 #include "layer1/EngagementCalculator.h"
 #include "common/Logger.h"
+#include "layer0/ElasticsearchClient.h"
 #include <algorithm>
 
 namespace perception {

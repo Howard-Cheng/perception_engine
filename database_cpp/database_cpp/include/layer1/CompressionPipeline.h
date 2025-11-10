@@ -8,6 +8,11 @@
 #include "layer0/DataIngestion.h"
 #include "layer1/DuckDBManager.h"
 
+// Conditional includes based on build configuration
+#ifdef ELASTICSEARCH_ENABLED
+#include "layer0/ElasticsearchClient.h"
+#endif
+
 // Forward declarations
 namespace perception {
 namespace layer1 {
@@ -40,6 +45,16 @@ public:
         const SessionConfig& config
     );
     
+#ifdef ELASTICSEARCH_ENABLED
+    // Constructor with Elasticsearch URL
+    CompressionPipeline(
+        const std::string& sqlitePath,
+        const std::string& duckdbPath,
+        const SessionConfig& config,
+        const std::string& esUrl
+    );
+#endif
+    
     // Destructor
     ~CompressionPipeline();
     
@@ -58,7 +73,7 @@ public:
     int cleanupOldCompressedSessions(int retentionDays);
     
 private:
-    // Fetch uncompressed events from SQLite
+    // Fetch uncompressed events from SQLite or Elasticsearch
     std::vector<layer0::RawEvent> fetchUncompressedEvents();
     
     // Compress a single session
@@ -80,7 +95,7 @@ private:
     // Convert metadata to JSON
     std::string metadataToJson(const ContentMetadata& metadata) const;
     
-    // Mark events as compressed in SQLite
+    // Mark events as compressed in SQLite or Elasticsearch
     void markEventsAsCompressed(const std::vector<layer0::RawEvent>& events);
     
     // Paths
@@ -90,12 +105,19 @@ private:
     // Configuration
     SessionConfig config_;
     
+    // Storage backend flag
+    bool useElasticsearch_;
+    
     // Components
     std::unique_ptr<SessionDetector> detector_;
     std::unique_ptr<EngagementCalculator> calculator_;
     std::unique_ptr<ContentExtractor> extractor_;
     std::unique_ptr<ContentClassifier> classifier_;
     std::unique_ptr<DuckDBManager> duckdb_;
+    
+#ifdef ELASTICSEARCH_ENABLED
+    std::unique_ptr<layer0::ElasticsearchClient> esClient_;
+#endif
     
     // Statistics
     CompressionStatistics stats_;

@@ -24,7 +24,7 @@ REM Check for vcpkg
 set "LOCAL_VCPKG_DIR=%CD%\vcpkg_install"
 set "LOCAL_VCPKG_EXE=%LOCAL_VCPKG_DIR%\vcpkg.exe"
 
-if defined VCPKG_ROOT_TEST (
+if defined VCPKG_ROOT (
     echo [INFO] VCPKG_ROOT is set to: %VCPKG_ROOT%
     set "VCPKG_EXE=%VCPKG_ROOT%\vcpkg.exe"
     set "VCPKG_TOOLCHAIN=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake"

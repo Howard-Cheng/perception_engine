@@ -133,7 +133,7 @@ std::vector<layer0::RawEvent> CompressionPipeline::fetchUncompressedEvents() {
                 content_type, domain, session_id
             FROM raw_events 
             WHERE compressed = 0 
-            AND datetime(timestamp) >= datetime('now', '-24 hours')
+            AND datetime(timestamp) >= datetime('now', '-240 hours')
             ORDER BY timestamp ASC
         )";
         
@@ -248,6 +248,12 @@ CompressedSession CompressionPipeline::compressSession(
              << firstEvent.appName << "_"
              << sessionEvents.size();
     compressed.sessionId = utils::computeMD5(idStream.str());
+    
+    // IMPORTANT: Set session_id on all events in this session
+    // This is needed for markEventsAsCompressed to work properly
+    for (auto& event : const_cast<std::vector<layer0::RawEvent>&>(sessionEvents)) {
+        event.sessionId = compressed.sessionId;
+    }
     
     // Basic session info
     compressed.deviceId = sessionEvents[0].deviceId;
@@ -390,6 +396,10 @@ std::string CompressionPipeline::metadataToJson(const ContentMetadata& metadata)
 
 void CompressionPipeline::markEventsAsCompressed(const std::vector<layer0::RawEvent>& events) {
     try {
+        if (events.empty()) {
+            return;
+        }
+        
         sqlite3* db = nullptr;
         int rc = sqlite3_open(sqlitePath_.c_str(), &db);
         
@@ -401,14 +411,40 @@ void CompressionPipeline::markEventsAsCompressed(const std::vector<layer0::RawEv
         // Begin transaction
         sqlite3_exec(db, "BEGIN TRANSACTION", nullptr, nullptr, nullptr);
         
-        // Prepare update statement
-        const char* sql = "UPDATE raw_events SET compressed = 1 WHERE event_id = ?";
+        // Prepare update statement - update both compressed and session_id
+        const char* sql = "UPDATE raw_events SET compressed = 1, session_id = ? WHERE event_id = ?";
         sqlite3_stmt* stmt = nullptr;
         sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
         
-        // Update each event
+        // Get session_id from first event (all events in this batch belong to same session)
+        std::string sessionId;
+        if (events[0].sessionId.has_value()) {
+            sessionId = events[0].sessionId.value();
+        } else {
+            LOG_WARNING("Events do not have session_id set");
+            // Fallback to old behavior if session_id is not set
+            sqlite3_finalize(stmt);
+            const char* fallbackSql = "UPDATE raw_events SET compressed = 1 WHERE event_id = ?";
+            sqlite3_prepare_v2(db, fallbackSql, -1, &stmt, nullptr);
+            
+            for (const auto& event : events) {
+                sqlite3_bind_text(stmt, 1, event.eventId.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_step(stmt);
+                sqlite3_reset(stmt);
+            }
+            
+            sqlite3_finalize(stmt);
+            sqlite3_exec(db, "COMMIT", nullptr, nullptr, nullptr);
+            sqlite3_close(db);
+            
+            LOG_DEBUG("Marked " + std::to_string(events.size()) + " events as compressed (no session_id)");
+            return;
+        }
+        
+        // Update each event with session_id and compressed flag
         for (const auto& event : events) {
-            sqlite3_bind_text(stmt, 1, event.eventId.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 1, sessionId.c_str(), -1, SQLITE_TRANSIENT);  // session_id
+            sqlite3_bind_text(stmt, 2, event.eventId.c_str(), -1, SQLITE_TRANSIENT);  // event_id
             sqlite3_step(stmt);
             sqlite3_reset(stmt);
         }
@@ -420,7 +456,8 @@ void CompressionPipeline::markEventsAsCompressed(const std::vector<layer0::RawEv
         
         sqlite3_close(db);
         
-        LOG_DEBUG("Marked " + std::to_string(events.size()) + " events as compressed");
+        LOG_DEBUG("Marked " + std::to_string(events.size()) + 
+                 " events as compressed with session_id: " + sessionId);
         
     } catch (const std::exception& e) {
         LOG_ERROR("Failed to mark events as compressed: " + std::string(e.what()));

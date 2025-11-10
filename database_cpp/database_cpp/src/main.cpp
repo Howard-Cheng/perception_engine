@@ -1,7 +1,8 @@
-#include "common/Logger.h"
+﻿#include "common/Logger.h"
 #include "common/DatabaseConfig.h"
 #include "layer0/DataIngestion.h"
 #include "layer0/SchemaManager.h"
+#include "layer1/CompressionPipeline.h"
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -45,7 +46,7 @@ struct ServiceConfig {
     std::string deviceId = "pc_001";
     std::string logLevel = "INFO";
     std::string logFile = "";
-    int compressionInterval = 300;  // 5 minutes
+    int compressionInterval = 20;  // 5 minutes
     int cleanupInterval = 3600;     // 1 hour
 };
 
@@ -104,11 +105,27 @@ public:
         LOG_INFO("Base directory: " + config.baseDir);
         LOG_INFO("Device ID: " + config.deviceId);
         
-        // Initialize data ingestion
+        // Initialize data ingestion (Layer 0)
         ingestion_ = std::make_unique<layer0::DataIngestion>(
             dbConfig_.getSqlitePath().string(),
             config.deviceId
         );
+        
+#ifdef DUCKDB_ENABLED
+        // Initialize compression pipeline (Layer 1)
+        SessionConfig sessionConfig;
+        sessionConfig.idleThresholdSeconds = dbConfig_.idleThresholdSeconds;
+        
+        pipeline_ = std::make_unique<layer1::CompressionPipeline>(
+            dbConfig_.getSqlitePath().string(),
+            dbConfig_.getDuckdbPath().string(),
+            sessionConfig
+        );
+        
+        LOG_INFO("Compression pipeline initialized with DuckDB support");
+#else
+        LOG_WARNING("DuckDB support not enabled - compression disabled");
+#endif
         
         LOG_INFO("Database service initialized successfully");
     }
@@ -128,7 +145,7 @@ public:
             auto now = std::chrono::steady_clock::now();
             
             // Print statistics every minute
-            if (std::chrono::duration_cast<std::chrono::seconds>(now - lastStats).count() >= 60) {
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - lastStats).count() >= 10) {
                 printStatistics();
                 lastStats = now;
             }
@@ -156,50 +173,123 @@ public:
     
 private:
     void runCompression() {
+        LOG_INFO("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         LOG_INFO("Running compression pipeline...");
+        LOG_INFO("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         
         try {
+            // Check for uncompressed events in Layer 0 (SQLite)
             int uncompressed = ingestion_->getUncompressedEventCount();
             
             if (uncompressed == 0) {
                 LOG_INFO("No uncompressed events to process");
+                LOG_INFO("");
                 return;
             }
             
-            LOG_INFO("Found " + std::to_string(uncompressed) + " uncompressed events");
+            LOG_INFO("Found " + std::to_string(uncompressed) + " uncompressed events in Layer 0");
             
-            // TODO: Implement actual compression pipeline
-            // For now, just log
-            LOG_INFO("Compression pipeline not yet implemented");
+#ifdef DUCKDB_ENABLED
+            // Execute compression pipeline:
+            // 1. Fetch uncompressed events from SQLite (Layer 0)
+            // 2. Detect interaction sessions
+            // 3. Calculate engagement scores
+            // 4. Extract and classify content
+            // 5. Compress content (with LLM if available)
+            // 6. Store compressed sessions to DuckDB (Layer 1)
+            // 7. Mark source events as compressed in SQLite
+            
+            LOG_INFO("Starting Layer 0 → Layer 1 compression...");
+            int sessionsCompressed = pipeline_->processUncompressedEvents();
+            
+            if (sessionsCompressed > 0) {
+                LOG_INFO("✓ Successfully compressed " + std::to_string(sessionsCompressed) + " sessions");
+                
+                // Verify compression
+                int remainingUncompressed = ingestion_->getUncompressedEventCount();
+                LOG_INFO("Remaining uncompressed events: " + std::to_string(remainingUncompressed));
+                
+                // Get pipeline statistics
+                auto stats = pipeline_->getStatistics();
+                LOG_INFO("Pipeline stats:");
+                LOG_INFO("  - Events processed: " + std::to_string(stats.eventsProcessed));
+                LOG_INFO("  - Sessions created: " + std::to_string(stats.sessionsCompressed));
+                
+            } else {
+                LOG_WARNING("No sessions were compressed (events may not meet session criteria)");
+            }
+#else
+            LOG_WARNING("Compression skipped - DuckDB support not enabled");
+            LOG_INFO("Please rebuild with DUCKDB_ENABLED flag to enable compression");
+#endif
             
         } catch (const std::exception& e) {
             LOG_ERROR("Compression failed: " + std::string(e.what()));
         }
+        
+        LOG_INFO("");
     }
     
     void runCleanup() {
+        LOG_INFO("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         LOG_INFO("Running data cleanup...");
+        LOG_INFO("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         
         try {
-            // TODO: Implement cleanup logic
-            LOG_INFO("Cleanup not yet implemented");
+#ifdef DUCKDB_ENABLED
+            // Clean up old compressed sessions in DuckDB (Layer 1)
+            int retentionDays = dbConfig_.compressedRetentionDays;
+            LOG_INFO("Cleaning up compressed sessions older than " + 
+                    std::to_string(retentionDays) + " days");
+            
+            int deletedSessions = pipeline_->cleanupOldCompressedSessions(retentionDays);
+            
+            if (deletedSessions > 0) {
+                LOG_INFO("✓ Cleaned up " + std::to_string(deletedSessions) + 
+                        " old compressed sessions from DuckDB");
+            } else {
+                LOG_INFO("No old sessions to clean up");
+            }
+#else
+            LOG_INFO("Cleanup skipped - DuckDB support not enabled");
+#endif
+            
+            // TODO: Clean up raw events from SQLite (Layer 0) based on retention policy
+            // Keep raw events for rawRetentionHours, then delete after compression
             
         } catch (const std::exception& e) {
             LOG_ERROR("Cleanup failed: " + std::string(e.what()));
         }
+        
+        LOG_INFO("");
     }
     
     void printStatistics() {
         try {
+            LOG_INFO("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            LOG_INFO("Database Statistics");
+            LOG_INFO("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            
+            // Layer 0 (SQLite) statistics
             int total = ingestion_->getEventCount();
             int uncompressed = ingestion_->getUncompressedEventCount();
             int today = ingestion_->getTodayEventCount();
             
-            LOG_INFO("--- Database Statistics ---");
-            LOG_INFO("Total events: " + std::to_string(total));
-            LOG_INFO("Uncompressed: " + std::to_string(uncompressed));
-            LOG_INFO("Today: " + std::to_string(today));
-            LOG_INFO("---------------------------");
+            LOG_INFO("Layer 0 (SQLite - Raw Events):");
+            LOG_INFO("  Total events: " + std::to_string(total));
+            LOG_INFO("  Uncompressed: " + std::to_string(uncompressed));
+            LOG_INFO("  Today: " + std::to_string(today));
+            
+#ifdef DUCKDB_ENABLED
+            // Layer 1 (DuckDB) statistics
+            auto stats = pipeline_->getStatistics();
+            LOG_INFO("Layer 1 (DuckDB - Compressed Sessions):");
+            LOG_INFO("  Total sessions compressed: " + std::to_string(stats.sessionsCompressed));
+            LOG_INFO("  Total events processed: " + std::to_string(stats.eventsProcessed));
+#endif
+            
+            LOG_INFO("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            LOG_INFO("");
             
         } catch (const std::exception& e) {
             LOG_ERROR("Failed to get statistics: " + std::string(e.what()));
@@ -209,6 +299,9 @@ private:
     ServiceConfig config_;
     DatabaseConfig dbConfig_;
     std::unique_ptr<layer0::DataIngestion> ingestion_;
+#ifdef DUCKDB_ENABLED
+    std::unique_ptr<layer1::CompressionPipeline> pipeline_;
+#endif
 };
 
 int main(int argc, char* argv[]) {

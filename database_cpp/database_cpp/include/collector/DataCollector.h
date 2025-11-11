@@ -9,11 +9,19 @@
 namespace perception {
 namespace layer0 {
 class DataIngestion;
+#ifdef ELASTICSEARCH_ENABLED
+class ElasticsearchClient;
+#endif
 }
 }
 
 namespace perception {
 namespace collector {
+
+enum class StorageBackend {
+    SQLITE,
+    ELASTICSEARCH
+};
 
 struct CollectorConfig {
     std::string apiUrl = "http://localhost:8777/context";
@@ -22,6 +30,11 @@ struct CollectorConfig {
     int pollIntervalSeconds = 5;
     int connectionTimeoutSeconds = 10;
     int maxRetries = 3;
+    
+    // Elasticsearch configuration
+    StorageBackend storageBackend = StorageBackend::SQLITE;
+    std::string elasticsearchUrl = "http://localhost:9200";
+    std::string elasticsearchIndex = "perception_raw_events";
     
     CollectorConfig() = default;
 };
@@ -63,6 +76,9 @@ private:
     
     CollectorConfig config_;
     std::unique_ptr<layer0::DataIngestion> ingestion_;
+#ifdef ELASTICSEARCH_ENABLED
+    std::unique_ptr<layer0::ElasticsearchClient> esClient_;
+#endif
     std::atomic<bool> running_;
     std::atomic<int> totalEvents_;
     std::atomic<int> failedRequests_;

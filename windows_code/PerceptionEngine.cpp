@@ -45,6 +45,15 @@ public:
             contextCollector->StartPeriodicUpdate();
             LOG_INFO("Context collector started");
 
+            // ⚡ NEW: Initialize Elasticsearch (optional feature)
+            // If ES is not available, system continues without it
+            if (contextCollector->InitializeElasticsearch("http://localhost:9200", "perception_context")) {
+                LOG_INFO("✅ Elasticsearch initialized - auto storage every 5 seconds");
+            } else {
+                LOG_WARN("⚠️  Elasticsearch not available - running without ES storage");
+                LOG_INFO("   To enable ES: Install and start Elasticsearch on http://localhost:9200");
+            }
+
             // Initialize audio capture engine (only if NOT in screen-only mode)
             if (!screenOnlyMode) {
                 audioEngine = std::make_unique<AudioCaptureEngine>();
@@ -237,6 +246,86 @@ private:
                     LOG_ERROR("Context collector not initialized");
                 }
             }
+            // ⚡ NEW: Elasticsearch query endpoint
+            else if (request.path.find("/query") == 0 && request.method == "GET") {
+                if (!contextCollector) {
+                    response.SetBody("{\"error\":\"Service not initialized\"}");
+                    response.status = 500;
+                    return;
+                }
+                
+                if (!contextCollector->IsElasticsearchAvailable()) {
+                    response.SetBody("{\"error\":\"Elasticsearch not available\"}");
+                    response.status = 503;
+                    return;
+                }
+                
+                try {
+                    // Parse query parameters
+                    std::string keyword;
+                    int hours = 24;  // Default: last 24 hours
+                    int maxResults = 100;
+                    
+                    // Simple query parameter parsing
+                    size_t queryPos = request.path.find('?');
+                    if (queryPos != std::string::npos) {
+                        std::string queryString = request.path.substr(queryPos + 1);
+                        
+                        // Parse keyword
+                        size_t keywordPos = queryString.find("keyword=");
+                        if (keywordPos != std::string::npos) {
+                            size_t keywordEnd = queryString.find('&', keywordPos);
+                            if (keywordEnd == std::string::npos) {
+                                keyword = queryString.substr(keywordPos + 8);
+                            } else {
+                                keyword = queryString.substr(keywordPos + 8, keywordEnd - keywordPos - 8);
+                            }
+                        }
+                        
+                        // Parse hours
+                        size_t hoursPos = queryString.find("hours=");
+                        if (hoursPos != std::string::npos) {
+                            size_t hoursEnd = queryString.find('&', hoursPos);
+                            std::string hoursStr;
+                            if (hoursEnd == std::string::npos) {
+                                hoursStr = queryString.substr(hoursPos + 6);
+                            } else {
+                                hoursStr = queryString.substr(hoursPos + 6, hoursEnd - hoursPos - 6);
+                            }
+                            hours = std::stoi(hoursStr);
+                        }
+                        
+                        // Parse maxResults
+                        size_t maxPos = queryString.find("max=");
+                        if (maxPos != std::string::npos) {
+                            std::string maxStr = queryString.substr(maxPos + 4);
+                            size_t maxEnd = maxStr.find('&');
+                            if (maxEnd != std::string::npos) {
+                                maxStr = maxStr.substr(0, maxEnd);
+                            }
+                            maxResults = std::stoi(maxStr);
+                        }
+                    }
+                    
+                    // Calculate time range
+                    std::time_t endTime = std::time(nullptr);
+                    std::time_t startTime = endTime - (hours * 3600);
+                    
+                    // Query ES
+                    Json results = contextCollector->GetESDBData(keyword, startTime, endTime, maxResults);
+                    
+                    response.SetHeader("Content-Type", "application/json");
+                    response.SetBody(results.toString());
+                    response.status = 200;
+                    
+                    LOG_INFO("ES Query: keyword='" + keyword + "' hours=" + std::to_string(hours));
+                    
+                } catch (const std::exception& e) {
+                    response.SetBody("{\"error\":\"Query failed: " + std::string(e.what()) + "\"}");
+                    response.status = 500;
+                    LOG_ERROR("ES query failed: " + std::string(e.what()));
+                }
+            }
             else if (request.path == "/dashboard" && request.method == "GET") {
                 std::string html = LoadDashboardHTML();
                 response.SetHeader("Content-Type", "text/html; charset=utf-8");
@@ -362,6 +451,13 @@ int main(int argc, char* argv[]) {
                 LOG_INFO("Starting context collector...");
                 collector.StartPeriodicUpdate();
 
+                // ⚡ NEW: Initialize Elasticsearch (optional feature)
+                if (collector.InitializeElasticsearch("http://localhost:9200", "perception_context")) {
+                    LOG_INFO("✅ Elasticsearch initialized - auto storage every 5 seconds");
+                } else {
+                    LOG_WARN("⚠️  Elasticsearch not available - running without ES storage");
+                }
+
                 // Initialize audio engine (only if NOT in screen-only mode)
                 std::atomic<bool> audioRunning{false};
                 std::unique_ptr<std::thread> audioPollingThread;
@@ -412,6 +508,79 @@ int main(int argc, char* argv[]) {
                         response.SetBody(context.toString());
                         response.status = 200;
                         LOG_DEBUG("Sent context response");
+                    }
+                    // ⚡ NEW: Elasticsearch query endpoint
+                    else if (request.path.find("/query") == 0 && request.method == "GET") {
+                        if (!collector.IsElasticsearchAvailable()) {
+                            response.SetBody("{\"error\":\"Elasticsearch not available\"}");
+                            response.status = 503;
+                            return;
+                        }
+                        
+                        try {
+                            // Parse query parameters (same as service mode)
+                            std::string keyword;
+                            int hours = 24;
+                            int maxResults = 100;
+                            
+                            size_t queryPos = request.path.find('?');
+                            if (queryPos != std::string::npos) {
+                                std::string queryString = request.path.substr(queryPos + 1);
+                                
+                                // Parse keyword
+                                size_t keywordPos = queryString.find("keyword=");
+                                if (keywordPos != std::string::npos) {
+                                    size_t keywordEnd = queryString.find('&', keywordPos);
+                                    if (keywordEnd == std::string::npos) {
+                                        keyword = queryString.substr(keywordPos + 8);
+                                    } else {
+                                        keyword = queryString.substr(keywordPos + 8, keywordEnd - keywordPos - 8);
+                                    }
+                                }
+                                
+                                // Parse hours
+                                size_t hoursPos = queryString.find("hours=");
+                                if (hoursPos != std::string::npos) {
+                                    size_t hoursEnd = queryString.find('&', hoursPos);
+                                    std::string hoursStr;
+                                    if (hoursEnd == std::string::npos) {
+                                        hoursStr = queryString.substr(hoursPos + 6);
+                                    } else {
+                                        hoursStr = queryString.substr(hoursPos + 6, hoursEnd - hoursPos - 6);
+                                    }
+                                    hours = std::stoi(hoursStr);
+                                }
+                                
+                                // Parse maxResults
+                                size_t maxPos = queryString.find("max=");
+                                if (maxPos != std::string::npos) {
+                                    std::string maxStr = queryString.substr(maxPos + 4);
+                                    size_t maxEnd = maxStr.find('&');
+                                    if (maxEnd != std::string::npos) {
+                                        maxStr = maxStr.substr(0, maxEnd);
+                                    }
+                                    maxResults = std::stoi(maxStr);
+                                }
+                            }
+                            
+                            // Calculate time range
+                            std::time_t endTime = std::time(nullptr);
+                            std::time_t startTime = endTime - (hours * 3600);
+                            
+                            // Query ES
+                            Json results = collector.GetESDBData(keyword, startTime, endTime, maxResults);
+                            
+                            response.SetHeader("Content-Type", "application/json");
+                            response.SetBody(results.toString());
+                            response.status = 200;
+                            
+                            LOG_INFO("ES Query: keyword='" + keyword + "' hours=" + std::to_string(hours));
+                            
+                        } catch (const std::exception& e) {
+                            response.SetBody("{\"error\":\"Query failed: " + std::string(e.what()) + "\"}");
+                            response.status = 500;
+                            LOG_ERROR("ES query failed: " + std::string(e.what()));
+                        }
                     }
                     else if (request.path == "/dashboard" || request.path == "/" && request.method == "GET") {
                         std::ifstream file("dashboard.html");

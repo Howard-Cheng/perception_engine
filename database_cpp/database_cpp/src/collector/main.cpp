@@ -31,7 +31,10 @@ void printHelp() {
     std::cout << std::endl;
     std::cout << "Options:" << std::endl;
     std::cout << "  --api-url URL          Perception Engine API URL (default: http://localhost:8777/context)" << std::endl;
-    std::cout << "  --db-path PATH         Database file path (default: ./perception_data/raw_events.db)" << std::endl;
+    std::cout << "  --storage BACKEND      Storage backend: sqlite or elasticsearch (default: sqlite)" << std::endl;
+    std::cout << "  --db-path PATH         SQLite database file path (default: ./perception_data/raw_events.db)" << std::endl;
+    std::cout << "  --es-url URL           Elasticsearch URL (default: http://localhost:9200)" << std::endl;
+    std::cout << "  --es-index NAME        Elasticsearch index name (default: perception_raw_events)" << std::endl;
     std::cout << "  --device-id ID         Device identifier (default: pc_001)" << std::endl;
     std::cout << "  --poll-interval SEC    Polling interval in seconds (default: 5)" << std::endl;
     std::cout << "  --timeout SEC          Connection timeout in seconds (default: 10)" << std::endl;
@@ -39,6 +42,13 @@ void printHelp() {
     std::cout << "  --log-level LEVEL      Log level: DEBUG, INFO, WARNING, ERROR (default: INFO)" << std::endl;
     std::cout << "  --log-file PATH        Log file path (optional)" << std::endl;
     std::cout << "  --help, -h             Show this help message" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Examples:" << std::endl;
+    std::cout << "  # Use SQLite (default)" << std::endl;
+    std::cout << "  perception_data_collector --storage sqlite" << std::endl;
+    std::cout << std::endl;
+    std::cout << "  # Use Elasticsearch" << std::endl;
+    std::cout << "  perception_data_collector --storage elasticsearch --es-url http://localhost:9200" << std::endl;
     std::cout << std::endl;
 }
 
@@ -55,8 +65,26 @@ CollectorConfig parseArguments(int argc, char* argv[]) {
         else if (arg == "--api-url" && i + 1 < argc) {
             config.apiUrl = argv[++i];
         }
+        else if (arg == "--storage" && i + 1 < argc) {
+            std::string backend = argv[++i];
+            if (backend == "sqlite") {
+                config.storageBackend = StorageBackend::SQLITE;
+            } else if (backend == "elasticsearch" || backend == "es") {
+                config.storageBackend = StorageBackend::ELASTICSEARCH;
+            } else {
+                std::cerr << "Unknown storage backend: " << backend << std::endl;
+                std::cerr << "Valid options: sqlite, elasticsearch" << std::endl;
+                exit(1);
+            }
+        }
         else if (arg == "--db-path" && i + 1 < argc) {
             config.dbPath = argv[++i];
+        }
+        else if (arg == "--es-url" && i + 1 < argc) {
+            config.elasticsearchUrl = argv[++i];
+        }
+        else if (arg == "--es-index" && i + 1 < argc) {
+            config.elasticsearchIndex = argv[++i];
         }
         else if (arg == "--device-id" && i + 1 < argc) {
             config.deviceId = argv[++i];
@@ -101,15 +129,18 @@ int main(int argc, char* argv[]) {
         // Parse command line arguments
         CollectorConfig config = parseArguments(argc, argv);
 
-        std::filesystem::path exePath = std::filesystem::current_path();
-        std::filesystem::path dataDir = exePath / "perception_data";
+        // Only set dbPath if using SQLite backend
+        if (config.storageBackend == StorageBackend::SQLITE) {
+            std::filesystem::path exePath = std::filesystem::current_path();
+            std::filesystem::path dataDir = exePath / "perception_data";
 
-        // Ensure the data directory exists
-        if (!std::filesystem::exists(dataDir)) {
-            std::filesystem::create_directories(dataDir);
-            LOG_INFO("Created data directory: " + dataDir.string());
+            // Ensure the data directory exists
+            if (!std::filesystem::exists(dataDir)) {
+                std::filesystem::create_directories(dataDir);
+                LOG_INFO("Created data directory: " + dataDir.string());
+            }
+            config.dbPath = (dataDir / "raw_events.db").string();
         }
-        config.dbPath = dataDir.string() + "raw_events.db";
 
         // Initialize logger
         Logger::getInstance().setLogLevel(LogLevel::INFO);

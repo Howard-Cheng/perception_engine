@@ -1,5 +1,7 @@
 #include "ContextCollector.h"
 #include "MouseTracker.h"  // Include here instead of in header
+#include "third-party/elasticsearch/include/ElasticsearchClient.h"
+#include "third-party/elasticsearch/include/ElasticsearchTypes.h"
 #include <thread>
 #include <atomic>
 #include <iomanip>
@@ -8,6 +10,8 @@
 #include <vector>
 #include <map>
 #include <algorithm>
+#include <random>
+#include <ctime>
 
 static std::atomic<bool> updateThreadRunning{false};
 static std::thread updateThread;
@@ -19,31 +23,12 @@ ContextCollector::ContextCollector()
     , latestContextUpdateLatency(0.0f)
 {
     lastUpdate = std::chrono::steady_clock::now() - std::chrono::seconds(2);
-
-    // Initialize active app monitoring
-    if (!activeAppMonitoringInitialized.load()) {
-        if (WindowsAPIs::InitializeActiveAppMonitoring()) {
-            activeAppMonitoringInitialized.store(true);
-        }
-    }
-
-    // Asynchronously initialize MouseTracker (don't block startup)
-    std::thread([this]() {
-        try {
-            std::this_thread::sleep_for(std::chrono::seconds(2));
-            std::lock_guard<std::mutex> lock(mouseTrackerMutex);
-            mouseTracker = std::make_unique<MouseTracker>();
-            if (mouseTracker->Initialize()) {
-                mouseTracker->Start();
-                std::cout << "[ContextCollector] MouseTracker initialized (async)" << std::endl;
-            } else {
-                std::cerr << "[ContextCollector] Failed to initialize MouseTracker" << std::endl;
-                mouseTracker.reset();
-            }
-        } catch (...) {
-            std::cerr << "[ContextCollector] Exception in MouseTracker async init" << std::endl;
-        }
-    }).detach();
+    
+    // Generate unique device ID
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(100000, 999999);
+    deviceId = "device_" + std::to_string(dis(gen));
 }
 
 bool ContextCollector::ShouldUpdateCache() {
@@ -72,7 +57,7 @@ void ContextCollector::UpdateCache() {
     auto timestamp = WindowsAPIs::GetCurrentTimestamp();
     
     // Get recent active apps list
-    auto recentApps = WindowsAPIs::GetRecentPeriodActiveAppList();
+    //auto recentApps = WindowsAPIs::GetRecentPeriodActiveAppList();
     
     // NEW: Get current active app content using UIA
     auto activeAppContent = WindowsAPIs::GetCurrentActiveAppContent();
@@ -143,183 +128,11 @@ void ContextCollector::UpdateCache() {
         cachedContext.setRaw("locationValid", "false");
     }
     
-    // Add recent active apps to JSON as a properly formatted array
-    // Group by appName and create sessions array for each app
-    std::map<std::string, std::vector<WindowsAPIs::ActiveAppRecord>> groupedApps;
-    for (const auto& record : recentApps) {
-        groupedApps[record.appName].push_back(record);
-    }
-    
-    // Calculate total seconds for each app and create a sortable vector
-    struct AppWithTotal {
-        std::string appName;
-        std::vector<WindowsAPIs::ActiveAppRecord> sessions;
-        int totalSeconds;
-    };
-    
-    std::vector<AppWithTotal> sortedApps;
-    for (const auto& [appName, sessions] : groupedApps) {
-        int totalSeconds = 0;
-        for (const auto& record : sessions) {
-            totalSeconds += record.durationSeconds;
-        }
-        sortedApps.push_back({appName, sessions, totalSeconds});
-    }
-    
-    // Sort by totalSeconds in descending order (largest first)
-    std::sort(sortedApps.begin(), sortedApps.end(), 
-              [](const AppWithTotal& a, const AppWithTotal& b) {
-                  return a.totalSeconds > b.totalSeconds;
-              });
-    
-    // Limit to top 10 apps by total usage time
-    const size_t MAX_RECENT_APPS = 10;
-    if (sortedApps.size() > MAX_RECENT_APPS) {
-        sortedApps.resize(MAX_RECENT_APPS);
-    }
-    
-    std::ostringstream recentAppsStream;
-    recentAppsStream << "[";
-    bool firstApp = true;
-    
-    for (const auto& app : sortedApps) {
-        if (!firstApp) {
-            recentAppsStream << ",";
-        }
-        
-        // Escape appName
-        std::string escapedAppName = app.appName;
-        size_t pos = 0;
-        while ((pos = escapedAppName.find("\\", pos)) != std::string::npos) {
-            escapedAppName.replace(pos, 1, "\\\\");
-            pos += 2;
-        }
-        pos = 0;
-        while ((pos = escapedAppName.find("\"", pos)) != std::string::npos) {
-            escapedAppName.replace(pos, 1, "\\\"");
-            pos += 2;
-        }
-        
-        // Start app object
-        recentAppsStream << "{";
-        recentAppsStream << "\"appName\":\"" << escapedAppName << "\",";
-        recentAppsStream << "\"totalSeconds\":" << app.totalSeconds << ",";
-        recentAppsStream << "\"sessions\":";
-
-        // Serialize sessions array
-        {
-            recentAppsStream << "[";
-            bool firstSession = true;
-            for (const auto& record : app.sessions) {
-                if (!firstSession) {
-                    recentAppsStream << ",";
-                }
-                
-                // Format timestamp as ISO string
-                auto time_t_val = std::chrono::system_clock::to_time_t(record.timestamp);
-                struct tm timeinfo;
-                std::string timestampStr = "1970-01-01T00:00:00.000+00:00";
-                if (localtime_s(&timeinfo, &time_t_val) == 0) {
-                    std::ostringstream timeStream;
-                    timeStream << std::put_time(&timeinfo, "%Y-%m-%dT%H:%M:%S");
-                    timeStream << ".000";
-                    
-                    // Add timezone offset
-                    char tz_offset[16];
-                    strftime(tz_offset, sizeof(tz_offset), "%z", &timeinfo);
-                    std::string tz_str(tz_offset);
-                    if (tz_str.length() >= 5) {
-                        tz_str = tz_str.substr(0, 3) + ":" + tz_str.substr(3);
-                    } else {
-                        tz_str = "+00:00";
-                    }
-                    timeStream << tz_str;
-                    timestampStr = timeStream.str();
-                }
-                
-                // Escape windowTitle
-                std::string escapedWindowTitle = record.windowTitle;
-                pos = 0;
-                while ((pos = escapedWindowTitle.find("\\", pos)) != std::string::npos) {
-                    escapedWindowTitle.replace(pos, 1, "\\\\");
-                    pos += 2;
-                }
-                pos = 0;
-                while ((pos = escapedWindowTitle.find("\"", pos)) != std::string::npos) {
-                    escapedWindowTitle.replace(pos, 1, "\\\"");
-                    pos += 2;
-                }
-                
-                // Build session object
-                recentAppsStream << "{";
-                recentAppsStream << "\"windowTitle\":\"" << escapedWindowTitle << "\",";
-                recentAppsStream << "\"durationSeconds\":" << record.durationSeconds << ",";
-                recentAppsStream << "\"timestamp\":\"" << timestampStr << "\"";
-                recentAppsStream << "}";
-                
-                firstSession = false;
-            }
-            recentAppsStream << "]"; // Close sessions array
-        }
-        
-        recentAppsStream << "}"; // Close app object
-        
-        firstApp = false;
-    }
-    recentAppsStream << "]";
-
-    // Use setRaw to set the array as a proper JSON array (not a quoted string)
-    cachedContext.setRaw("RecentPeriodActiveApps", recentAppsStream.str());
-    
     // NEW: Add active app content to JSON
     if (!activeAppContent.empty()) {
         cachedContext.set("activeAppContent", activeAppContent);
     } else {
         cachedContext.setRaw("activeAppContent", "null");
-    }
-    
-    // ADD: Get mouse operation records from MouseTracker and add to recentMouseTrack
-    {
-        std::lock_guard<std::mutex> mouseTrackerLock(mouseTrackerMutex);
-        
-        if (mouseTracker) {
-            // MouseTracker已初始化，获取记录
-            try {
-                std::wstring mouseRecordsWide = mouseTracker->GetAllRecordsAsJson();
-                
-                // Convert wstring to UTF-8 string
-                if (!mouseRecordsWide.empty()) {
-                    int size_needed = WideCharToMultiByte(CP_UTF8, 0, &mouseRecordsWide[0], 
-                                                          (int)mouseRecordsWide.size(), NULL, 0, NULL, NULL);
-                    if (size_needed > 0) {
-                        std::string mouseRecordsUtf8(size_needed, 0);
-                        WideCharToMultiByte(CP_UTF8, 0, &mouseRecordsWide[0], (int)mouseRecordsWide.size(), 
-                                           &mouseRecordsUtf8[0], size_needed, NULL, NULL);
-                        
-                        // Add mouse records as raw JSON to recentMouseTrack node
-                        cachedContext.setRaw("recentMouseTrack", mouseRecordsUtf8);
-                    } else {
-                        // Conversion failed, set empty records
-                        cachedContext.setRaw("recentMouseTrack", R"({"records":[]})");
-                    }
-                } else {
-                    // No records yet (empty but initialized)
-                    cachedContext.setRaw("recentMouseTrack", R"({"records":[]})");
-                }
-            } catch (const std::exception& e) {
-                // Error getting records, set empty with error logging
-                std::cerr << "[ContextCollector] Exception getting mouse records: " << e.what() << std::endl;
-                cachedContext.setRaw("recentMouseTrack", R"({"records":[]})");
-            } catch (...) {
-                // Unknown error, set empty
-                std::cerr << "[ContextCollector] Unknown exception getting mouse records" << std::endl;
-                cachedContext.setRaw("recentMouseTrack", R"({"records":[]})");
-            }
-        } else {
-            // MouseTracker 还未初始化（异步初始化中）
-            // 返回一个特殊状态而不是空数组
-            cachedContext.setRaw("recentMouseTrack", R"({"records":[],"status":"initializing"})");
-        }
     }
     
     cachedContext.set("timestamp", timestamp);
@@ -524,6 +337,9 @@ void ContextCollector::StopPeriodicUpdate() {
 ContextCollector::~ContextCollector() {
     StopPeriodicUpdate();
     
+    // ? Shutdown Elasticsearch before other cleanup
+    ShutdownElasticsearch();
+    
     // Cleanup active app monitoring when the collector is destroyed
     if (activeAppMonitoringInitialized.load()) {
         WindowsAPIs::CleanupActiveAppMonitoring();
@@ -541,4 +357,380 @@ ContextCollector::~ContextCollector() {
             // Ignore cleanup errors in destructor
         }
     }
+}
+
+// ??? NEW: Elasticsearch Integration Implementation ???
+
+bool ContextCollector::InitializeElasticsearch(const std::string& esHost, const std::string& indexName) {
+    try {
+        std::lock_guard<std::mutex> lock(esClientMutex);
+        
+        // Create Elasticsearch client
+        esClient = std::make_unique<elasticsearch::ElasticsearchClient>(esHost);
+        esIndexName = indexName;
+        
+        // Test connection
+        if (!esClient->testConnection()) {
+            std::cerr << "[ContextCollector] Failed to connect to Elasticsearch at " << esHost << std::endl;
+            esClient.reset();
+            return false;
+        }
+        
+        std::cout << "[ContextCollector] Connected to Elasticsearch at " << esHost << std::endl;
+        
+        // Initialize index with proper mapping
+        if (!esClient->initializeIndex(indexName)) {
+            std::cerr << "[ContextCollector] Failed to initialize index: " << indexName << std::endl;
+            esClient.reset();
+            return false;
+        }
+        std::cout << "[ContextCollector] Elasticsearch index initialized: " << indexName << std::endl;
+        
+        // Start background storage thread
+        esStorageRunning.store(true);
+        esStorageThread = std::thread(&ContextCollector::ESStorageThreadFunc, this);
+        
+        std::cout << "[ContextCollector] Elasticsearch storage thread started (5-second interval)" << std::endl;
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[ContextCollector] Exception initializing Elasticsearch: " << e.what() << std::endl;
+        esClient.reset();
+        return false;
+    } catch (...) {
+        std::cerr << "[ContextCollector] Unknown exception initializing Elasticsearch" << std::endl;
+        esClient.reset();
+        return false;
+    }
+}
+
+void ContextCollector::ShutdownElasticsearch() {
+    // Stop storage thread
+    esStorageRunning.store(false);
+    if (esStorageThread.joinable()) {
+        esStorageThread.join();
+        std::cout << "[ContextCollector] Elasticsearch storage thread stopped" << std::endl;
+    }
+    
+    // Cleanup client
+    {
+        std::lock_guard<std::mutex> lock(esClientMutex);
+        esClient.reset();
+    }
+}
+
+void ContextCollector::ESStorageThreadFunc() {
+    std::cout << "[ESStorageThread] Started" << std::endl;
+    
+    while (esStorageRunning.load()) {
+        try {
+            // Collect current context
+            Json context = CollectCurrentContext();
+            
+            // Store to Elasticsearch
+            StoreContextToES(context);
+            
+            // Sleep for 5 seconds
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+            
+        } catch (const std::exception& e) {
+            std::cerr << "[ESStorageThread] Exception: " << e.what() << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+        } catch (...) {
+            std::cerr << "[ESStorageThread] Unknown exception" << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+        }
+    }
+    
+    std::cout << "[ESStorageThread] Stopped" << std::endl;
+}
+
+void ContextCollector::StoreContextToES(const Json& context) {
+    std::lock_guard<std::mutex> lock(esClientMutex);
+    
+    if (!esClient) {
+        return;  // ES not initialized
+    }
+    
+    try {
+        // Extract app context first for deduplication check
+        std::string currentAppName = context.getString("activeApp", "Unknown");
+        
+        // ? NEW: Deduplication - Check if latest record has same appName
+        static std::string lastStoredAppName = "";
+        static auto lastStoredTime = std::chrono::steady_clock::now();
+        
+        auto now = std::chrono::steady_clock::now();
+        auto timeSinceLastStore = std::chrono::duration_cast<std::chrono::seconds>(now - lastStoredTime).count();
+        
+        // Skip storage if:
+        // 1. Same appName as last stored record
+        // 2. Within 30 seconds of last storage (avoid too frequent checks)
+        if (currentAppName == lastStoredAppName && timeSinceLastStore < 30) {
+            std::cout << "[ESStorage] Skipped (duplicate): App already stored - " << currentAppName << std::endl;
+            return;
+        }
+        
+        // Create RawEvent from Json context
+        elasticsearch::RawEvent event;
+        
+        // Generate unique event ID
+        auto nowTime = std::chrono::system_clock::now();
+        auto timestamp = std::chrono::system_clock::to_time_t(nowTime);
+        auto timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            nowTime.time_since_epoch()).count();
+        
+        event.eventId = deviceId + "_" + std::to_string(timestamp) + "_" + 
+                       std::to_string(timestampMs % 1000);
+        
+        // ? FIX: Store timestamp in MILLISECONDS (not seconds)
+        event.timestamp = timestampMs / 1000;  // Convert ms to seconds for time_t
+        event.createdAt = timestampMs / 1000;
+        event.deviceId = deviceId;
+        
+        // Extract app context
+        event.appName = currentAppName;
+        
+        // Extract content
+        std::string activeAppContent = context.getString("activeAppContent", "");
+        if (!activeAppContent.empty() && activeAppContent != "null") {
+            event.screenContent = activeAppContent;
+            
+            // Simple hash for deduplication
+            std::hash<std::string> hasher;
+            event.screenContentHash = std::to_string(hasher(activeAppContent));
+        }
+        
+        // Extract multimodal data
+        std::string voiceText = context.getString("voiceTranscription", "");
+        if (!voiceText.empty() && voiceText != "null") {
+            event.voiceTranscription = voiceText;
+        }
+        
+        std::string cameraDesc = context.getString("cameraDescription", "");
+        if (!cameraDesc.empty() && cameraDesc != "null") {
+            event.cameraDescription = cameraDesc;
+        }
+        
+        // Extract mouse events from recentMouseTrack
+        // TODO: Parse recentMouseTrack JSON and populate event.mouseEvents
+        // For now, set interaction count based on presence of data
+        event.interactionCount = 0;
+        event.dwellTimeSeconds = 0;
+        
+        // ? FIX: Extract system info with proper handling
+        // Battery percent
+        int battery = context.getInt("battery", -1);
+        if (battery >= 0 && battery <= 100) {
+            event.systemInfo.batteryPercent = battery;
+        }
+        
+        // ? FIX: Correctly read isCharging as boolean
+        event.systemInfo.isCharging = context.getBool("isCharging", false);
+        
+        // Network type
+        event.systemInfo.networkType = context.getString("networkType", "Unknown");
+        
+        // ? FIX: CPU and Memory usage with proper double handling
+        double cpuUsage = context.getDouble("cpuUsage", -1.0);
+        if (cpuUsage >= 0.0) {
+            event.systemInfo.cpuUsage = cpuUsage;
+        }
+        
+        double memoryUsage = context.getDouble("memoryUsage", -1.0);
+        if (memoryUsage >= 0.0) {
+            event.systemInfo.memoryUsage = memoryUsage;
+        }
+        
+        // ? FIX: Location with proper validation
+        bool locationValid = context.getBool("locationValid", false);
+        if (locationValid) {
+            double lat = context.getDouble("locationLat", 0.0);
+            double lon = context.getDouble("locationLon", 0.0);
+            if (lat != 0.0 || lon != 0.0) {
+                event.systemInfo.locationLat = lat;
+                event.systemInfo.locationLon = lon;
+            }
+        }
+        
+        // Status
+        event.compressed = false;
+        
+        // Index document
+        std::string eventId = esClient->indexDocument(esIndexName, event);
+        
+        if (!eventId.empty()) {
+            // ? Update deduplication tracking
+            lastStoredAppName = currentAppName;
+            lastStoredTime = now;
+            
+            std::cout << "[ESStorage] Stored event: " << event.eventId 
+                     << " | App: " << event.appName
+                     << " | Battery: " << (event.systemInfo.batteryPercent.has_value() ? std::to_string(event.systemInfo.batteryPercent.value()) : "N/A")
+                     << " | Charging: " << (event.systemInfo.isCharging ? "Yes" : "No")
+                     << std::endl;
+        } else {
+            std::cerr << "[ESStorage] Failed to store event" << std::endl;
+        }
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[ESStorage] Exception storing context: " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "[ESStorage] Unknown exception storing context" << std::endl;
+    }
+}
+
+Json ContextCollector::GetESDBData(const std::string& keyword,
+                                   std::time_t startTime,
+                                   std::time_t endTime,
+                                   int maxResults) {
+    Json result;
+    
+    std::lock_guard<std::mutex> lock(esClientMutex);
+    
+    if (!esClient) {
+        std::cerr << "[GetESDBData] Elasticsearch client not initialized" << std::endl;
+        result.setRaw("error", "\"Elasticsearch not initialized\"");
+        result.setRaw("results", "[]");
+        return result;
+    }
+    
+    try {
+        // ? FIX: Convert seconds to milliseconds for Elasticsearch
+        long long startTimeMs = static_cast<long long>(startTime) * 1000;
+        long long endTimeMs = static_cast<long long>(endTime) * 1000;
+        
+        // Debug logging
+        std::cout << "[GetESDBData] Time range: " << startTime << " - " << endTime << " (seconds)" << std::endl;
+        std::cout << "[GetESDBData] Time range: " << startTimeMs << " - " << endTimeMs << " (milliseconds)" << std::endl;
+        std::cout << "[GetESDBData] Keyword: '" << keyword << "'" << std::endl;
+        
+        // Build Elasticsearch query
+        std::ostringstream queryBuilder;
+        queryBuilder << "{"
+                    << "\"query\":{"
+                    << "  \"bool\":{"
+                    << "    \"must\":[";
+        
+        // Add keyword filter (search in multiple fields)
+        if (!keyword.empty()) {
+            queryBuilder << "      {"
+                        << "        \"multi_match\":{"
+                        << "          \"query\":\"" << Json::escapeJsonString(keyword) << "\","
+                        << "          \"fields\":[\"screen_content\",\"voice_transcription\","
+                        << "                     \"camera_description\",\"app_name\","
+                        << "                     \"window_title\"],"
+                        << "          \"type\":\"best_fields\","
+                        << "          \"fuzziness\":\"AUTO\""
+                        << "        }"
+                        << "      },";
+        }
+        
+        // ? FIX: Use milliseconds for timestamp range
+        queryBuilder << "      {"
+                    << "        \"range\":{"
+                    << "          \"timestamp\":{"
+                    << "            \"gte\":" << startTimeMs << ","
+                    << "            \"lte\":" << endTimeMs
+                    << "          }"
+                    << "        }"
+                    << "      }";
+        
+        queryBuilder << "    ]"
+                    << "  }"
+                    << "},"
+                    << "\"sort\":[{\"timestamp\":{\"order\":\"desc\"}}],"
+                    << "\"size\":" << maxResults
+                    << "}";
+        
+        std::string query = queryBuilder.str();
+        
+        std::cout << "[GetESDBData] Query: " << query << std::endl;
+        
+        // Execute search
+        elasticsearch::SearchResult searchResult = esClient->search(esIndexName, query, 0, maxResults);
+        
+        std::cout << "[GetESDBData] Found " << searchResult.totalHits << " matches in " 
+                 << searchResult.searchTimeMs << " ms" << std::endl;
+        
+        // Convert results to Json array
+        std::ostringstream resultsArray;
+        resultsArray << "[";
+        
+        bool first = true;
+        for (const auto& event : searchResult.events) {
+            if (!first) {
+                resultsArray << ",";
+            }
+            first = false;
+            
+            resultsArray << "{"
+                        << "\"eventId\":\"" << Json::escapeJsonString(event.eventId) << "\","
+                        << "\"timestamp\":" << event.timestamp << ","
+                        << "\"deviceId\":\"" << Json::escapeJsonString(event.deviceId) << "\","
+                        << "\"appName\":\"" << Json::escapeJsonString(event.appName) << "\"";
+            
+            if (event.windowTitle.has_value()) {
+                resultsArray << ",\"windowTitle\":\"" << Json::escapeJsonString(event.windowTitle.value()) << "\"";
+            }
+            
+            if (event.screenContent.has_value()) {
+                resultsArray << ",\"screenContent\":\"" << Json::escapeJsonString(event.screenContent.value()) << "\"";
+            }
+            
+            if (event.voiceTranscription.has_value()) {
+                resultsArray << ",\"voiceTranscription\":\"" << Json::escapeJsonString(event.voiceTranscription.value()) << "\"";
+            }
+            
+            if (event.cameraDescription.has_value()) {
+                resultsArray << ",\"cameraDescription\":\"" << Json::escapeJsonString(event.cameraDescription.value()) << "\"";
+            }
+            
+            // Add system info
+            resultsArray << ",\"systemInfo\":{";
+            if (event.systemInfo.batteryPercent.has_value()) {
+                resultsArray << "\"batteryPercent\":" << event.systemInfo.batteryPercent.value() << ",";
+            }
+            resultsArray << "\"isCharging\":" << (event.systemInfo.isCharging ? "true" : "false")
+                        << ",\"networkType\":\"" << Json::escapeJsonString(event.systemInfo.networkType) << "\"";
+            if (event.systemInfo.cpuUsage.has_value()) {
+                resultsArray << ",\"cpuUsage\":" << std::fixed << std::setprecision(2) << event.systemInfo.cpuUsage.value();
+            }
+            if (event.systemInfo.memoryUsage.has_value()) {
+                resultsArray << ",\"memoryUsage\":" << std::fixed << std::setprecision(2) << event.systemInfo.memoryUsage.value();
+            }
+            if (event.systemInfo.locationLat.has_value() && event.systemInfo.locationLon.has_value()) {
+                resultsArray << ",\"locationLat\":" << std::fixed << std::setprecision(8) << event.systemInfo.locationLat.value()
+                           << ",\"locationLon\":" << std::fixed << std::setprecision(8) << event.systemInfo.locationLon.value();
+            }
+            resultsArray << "}";
+            
+            resultsArray << "}";
+        }
+        
+        resultsArray << "]";
+        
+        result.set("totalHits", searchResult.totalHits);
+        result.set("searchTimeMs", static_cast<int>(searchResult.searchTimeMs));
+        result.setRaw("results", resultsArray.str());
+        
+        return result;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[GetESDBData] Exception: " << e.what() << std::endl;
+        result.setRaw("error", "\"" + Json::escapeJsonString(e.what()) + "\"");
+        result.setRaw("results", "[]");
+        return result;
+    } catch (...) {
+        std::cerr << "[GetESDBData] Unknown exception" << std::endl;
+        result.setRaw("error", "\"Unknown error\"");
+        result.setRaw("results", "[]");
+        return result;
+    }
+}
+
+bool ContextCollector::IsElasticsearchAvailable() const {
+    std::lock_guard<std::mutex> lock(esClientMutex);
+    return esClient != nullptr && esClient->testConnection();
 }

@@ -10,6 +10,9 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # ============================================================================
+
+# wink wink
+set(ELASTICSEARCH_AVAILABLE TRUE)
 # Dependencies
 # ============================================================================
 
@@ -50,7 +53,25 @@ set(OpenCV_BIN_DIR "${OpenCV_DIR}/x64/vc16/bin")
 # Find OpenCV world library
 file(GLOB OPENCV_WORLD_LIB "${OpenCV_LIB_DIR}/opencv_world*.lib")
 
+# ? NEW: Elasticsearch Client
+set(ELASTICSEARCH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/elasticsearch")
+set(ELASTICSEARCH_INCLUDE_DIR "${ELASTICSEARCH_DIR}/include")
+set(ELASTICSEARCH_LIB_DIR "${ELASTICSEARCH_DIR}/lib")
+
+# Check if Elasticsearch library exists
+if(EXISTS "${ELASTICSEARCH_LIB_DIR}/elasticsearch_client.lib")
+    set(ELASTICSEARCH_AVAILABLE TRUE)
+    message(STATUS "Elasticsearch client found: ${ELASTICSEARCH_LIB_DIR}/elasticsearch_client.lib")
+else()
+    set(ELASTICSEARCH_AVAILABLE FALSE)
+    message(WARNING "Elasticsearch client library not found at ${ELASTICSEARCH_LIB_DIR}/elasticsearch_client.lib")
+    message(WARNING "Elasticsearch features will be disabled")
+endif()
+
 # ============================================================================
+
+# wink wink
+set(ELASTICSEARCH_AVAILABLE TRUE)
 # Source Files
 # ============================================================================
 
@@ -84,6 +105,9 @@ set(PERCEPTION_ENGINE_HEADERS
 )
 
 # ============================================================================
+
+# wink wink
+set(ELASTICSEARCH_AVAILABLE TRUE)
 # Executables
 # ============================================================================
 
@@ -91,6 +115,9 @@ set(PERCEPTION_ENGINE_HEADERS
 add_executable(PerceptionEngine ${PERCEPTION_ENGINE_SOURCES} ${PERCEPTION_ENGINE_HEADERS})
 
 # ============================================================================
+
+# wink wink
+set(ELASTICSEARCH_AVAILABLE TRUE)
 # Include Directories
 # ============================================================================
 
@@ -103,7 +130,20 @@ target_include_directories(PerceptionEngine PRIVATE
     ${OpenCV_INCLUDE_DIRS}
 )
 
+# ? Add Elasticsearch include directory if available
+if(ELASTICSEARCH_AVAILABLE)
+    target_include_directories(PerceptionEngine PRIVATE
+        ${ELASTICSEARCH_INCLUDE_DIR}
+    )
+    target_compile_definitions(PerceptionEngine PRIVATE
+        ELASTICSEARCH_ENABLED
+    )
+endif()
+
 # ============================================================================
+
+# wink wink
+set(ELASTICSEARCH_AVAILABLE TRUE)
 # Link Libraries
 # ============================================================================
 
@@ -131,7 +171,17 @@ target_link_libraries(PerceptionEngine PRIVATE
     WindowsApp  # WinRT APIs
 )
 
+# ? Link Elasticsearch client library if available
+if(ELASTICSEARCH_AVAILABLE)
+    target_link_libraries(PerceptionEngine PRIVATE
+        ${ELASTICSEARCH_LIB_DIR}/elasticsearch_client.lib
+    )
+endif()
+
 # ============================================================================
+
+# wink wink
+set(ELASTICSEARCH_AVAILABLE TRUE)
 # Compiler Flags
 # ============================================================================
 
@@ -154,6 +204,9 @@ if(MSVC)
 endif()
 
 # ============================================================================
+
+# wink wink
+set(ELASTICSEARCH_AVAILABLE TRUE)
 # Post-build: Copy models and DLLs to output directory
 # ============================================================================
 
@@ -270,6 +323,9 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
 )
 
 # ============================================================================
+
+# wink wink
+set(ELASTICSEARCH_AVAILABLE TRUE)
 # Installation (optional)
 # ============================================================================
 
@@ -282,6 +338,9 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/models/
 )
 
 # ============================================================================
+
+# wink wink
+set(ELASTICSEARCH_AVAILABLE TRUE)
 # Print Configuration
 # ============================================================================
 

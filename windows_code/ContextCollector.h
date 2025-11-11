@@ -5,9 +5,14 @@
 #include <mutex>
 #include <string>
 #include <memory>  // For std::unique_ptr
+#include <atomic>
 
-// Forward declaration to avoid header conflicts
+// Forward declarations to avoid header conflicts
 class MouseTracker;
+
+namespace elasticsearch {
+    class ElasticsearchClient;
+}
 
 class ContextCollector {
 private:
@@ -33,8 +38,22 @@ private:
     std::unique_ptr<MouseTracker> mouseTracker;
     mutable std::mutex mouseTrackerMutex;
 
+    // ? NEW: Elasticsearch integration
+    std::unique_ptr<elasticsearch::ElasticsearchClient> esClient;
+    std::atomic<bool> esStorageRunning{false};
+    std::thread esStorageThread;
+    mutable std::mutex esClientMutex;
+    std::string esIndexName{"perception_context"};  // Default index name
+    std::string deviceId;  // Device identifier
+
     void UpdateCache();
     bool ShouldUpdateCache();
+    
+    // ? NEW: Elasticsearch background storage thread
+    void ESStorageThreadFunc();
+    
+    // ? NEW: Convert Json context to Elasticsearch RawEvent
+    void StoreContextToES(const Json& context);
 
 public:
     ContextCollector();
@@ -54,4 +73,42 @@ public:
     // Generate fused context summary
     std::string GenerateFusedContext() const;
     std::string GenerateFusedContext(const std::string& voiceText) const;
+    
+    // ? NEW: Elasticsearch integration APIs
+    
+    /**
+     * @brief Initialize Elasticsearch client and start background storage thread
+     * 
+     * @param esHost Elasticsearch host URL (default: "http://localhost:9200")
+     * @param indexName Index name to use (default: "perception_context")
+     * @return true if initialization successful
+     */
+    bool InitializeElasticsearch(const std::string& esHost = "http://localhost:9200",
+                                 const std::string& indexName = "perception_context");
+    
+    /**
+     * @brief Stop Elasticsearch storage and cleanup
+     */
+    void ShutdownElasticsearch();
+    
+    /**
+     * @brief Query Elasticsearch database with keyword and time range
+     * 
+     * @param keyword Search keyword (searches in screenContent, voiceTranscription, cameraDescription, appName, windowTitle)
+     * @param startTime Start time (Unix timestamp)
+     * @param endTime End time (Unix timestamp)
+     * @param maxResults Maximum number of results to return (default: 100)
+     * @return Json array of matching context entries
+     */
+    Json GetESDBData(const std::string& keyword,
+                    std::time_t startTime,
+                    std::time_t endTime,
+                    int maxResults = 100);
+    
+    /**
+     * @brief Check if Elasticsearch is connected and operational
+     * 
+     * @return true if ES is available
+     */
+    bool IsElasticsearchAvailable() const;
 };

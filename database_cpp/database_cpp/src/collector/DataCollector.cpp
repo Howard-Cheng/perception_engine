@@ -1,5 +1,8 @@
-#include "collector/DataCollector.h"
+﻿#include "collector/DataCollector.h"
 #include "layer0/DataIngestion.h"
+#ifdef ELASTICSEARCH_ENABLED
+#include "layer0/ElasticsearchClient.h"
+#endif
 #include "common/Logger.h"
 #include "common/Utils.h"
 #include <curl/curl.h>
@@ -30,23 +33,50 @@ DataCollector::DataCollector(const CollectorConfig& config)
     
     LOG_INFO("Initializing Data Collector Service");
     LOG_INFO("API URL: " + config_.apiUrl);
-    LOG_INFO("Database: " + config_.dbPath);
     LOG_INFO("Device ID: " + config_.deviceId);
     LOG_INFO("Poll interval: " + std::to_string(config_.pollIntervalSeconds) + "s");
     
     // Initialize CURL globally
     curl_global_init(CURL_GLOBAL_DEFAULT);
     
-    // Initialize data ingestion
-    try {
-        ingestion_ = std::make_unique<layer0::DataIngestion>(
-            config_.dbPath,
-            config_.deviceId
-        );
-        LOG_INFO("Data ingestion initialized successfully");
-    } catch (const std::exception& e) {
-        LOG_ERROR("Failed to initialize data ingestion: " + std::string(e.what()));
-        throw;
+    // Initialize storage backend
+    if (config_.storageBackend == StorageBackend::ELASTICSEARCH) {
+#ifdef ELASTICSEARCH_ENABLED
+        LOG_INFO("Storage Backend: Elasticsearch");
+        LOG_INFO("Elasticsearch URL: " + config_.elasticsearchUrl);
+        LOG_INFO("Index: " + config_.elasticsearchIndex);
+        
+        try {
+            esClient_ = std::make_unique<layer0::ElasticsearchClient>(config_.elasticsearchUrl);
+            
+            // Initialize index
+            if (!esClient_->initializeIndex(config_.elasticsearchIndex)) {
+                throw std::runtime_error("Failed to initialize Elasticsearch index");
+            }
+            
+            LOG_INFO("? Elasticsearch client initialized successfully");
+        } catch (const std::exception& e) {
+            LOG_ERROR("Failed to initialize Elasticsearch: " + std::string(e.what()));
+            throw;
+        }
+#else
+        LOG_ERROR("Elasticsearch support not enabled! Rebuild with -DENABLE_ELASTICSEARCH=ON");
+        throw std::runtime_error("Elasticsearch not enabled");
+#endif
+    } else {
+        LOG_INFO("Storage Backend: SQLite");
+        LOG_INFO("Database: " + config_.dbPath);
+        
+        try {
+            ingestion_ = std::make_unique<layer0::DataIngestion>(
+                config_.dbPath,
+                config_.deviceId
+            );
+            LOG_INFO("? Data ingestion initialized successfully");
+        } catch (const std::exception& e) {
+            LOG_ERROR("Failed to initialize data ingestion: " + std::string(e.what()));
+            throw;
+        }
     }
 }
 
@@ -180,6 +210,9 @@ bool DataCollector::processContextData(const std::string& jsonData) {
         // Create raw event
         layer0::RawEvent event;
         
+        // Generate event ID
+        event.eventId = utils::generateUUID();
+        
         // Set timestamp - use API timestamp if available, otherwise current time
         if (apiData.contains("timestamp") && !apiData["timestamp"].is_null()) {
             // TODO: Parse ISO timestamp string if needed
@@ -189,6 +222,7 @@ bool DataCollector::processContextData(const std::string& jsonData) {
             event.timestamp = utils::now();
         }
         
+        event.createdAt = utils::now();
         event.deviceId = config_.deviceId;
         
         // Extract app_name (required field with default)
@@ -310,12 +344,26 @@ bool DataCollector::processContextData(const std::string& jsonData) {
             }
         }
         
-        // Ingest the event
-        EventId eventId = ingestion_->ingestEvent(event);
+        event.compressed = false;
+        
+        // Ingest the event to the selected backend
+        std::string eventId;
+        
+        if (config_.storageBackend == StorageBackend::ELASTICSEARCH) {
+#ifdef ELASTICSEARCH_ENABLED
+            eventId = esClient_->indexDocument(config_.elasticsearchIndex, event);
+            if (eventId.empty()) {
+                LOG_ERROR("Failed to index document to Elasticsearch");
+                return false;
+            }
+#endif
+        } else {
+            eventId = ingestion_->ingestEvent(event);
+        }
         
         // Log success with formatted output
         std::ostringstream oss;
-        oss << "? Collected: ";
+        oss << "✅ Collected: ";
         oss << std::left << std::setw(25) << event.appName;
         
         // Show CPU usage if available
@@ -336,21 +384,28 @@ bool DataCollector::processContextData(const std::string& jsonData) {
         
         oss << " | Events: " << totalEvents_ + 1;
         
+        // Show backend
+        if (config_.storageBackend == StorageBackend::ELASTICSEARCH) {
+            oss << " [ES]";
+        } else {
+            oss << " [SQLite]";
+        }
+        
         LOG_INFO(oss.str());
         
         return true;
         
     } catch (const json::parse_error& e) {
-        LOG_ERROR("? JSON parse error: " + std::string(e.what()));
+        LOG_ERROR("❌ JSON parse error: " + std::string(e.what()));
         return false;
     } catch (const json::type_error& e) {
-        LOG_ERROR("? JSON type error: " + std::string(e.what()));
+        LOG_ERROR("❌ JSON type error: " + std::string(e.what()));
         return false;
     } catch (const json::out_of_range& e) {
-        LOG_ERROR("? JSON out of range error: " + std::string(e.what()));
+        LOG_ERROR("❌ JSON out of range error: " + std::string(e.what()));
         return false;
     } catch (const std::exception& e) {
-        LOG_ERROR("? Failed to process context data: " + std::string(e.what()));
+        LOG_ERROR("❌ Failed to process context data: " + std::string(e.what()));
         return false;
     }
 }

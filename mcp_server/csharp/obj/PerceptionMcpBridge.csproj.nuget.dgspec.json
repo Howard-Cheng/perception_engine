@@ -1,23 +1,23 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\perception_engine\\mcp_server\\csharp\\PerceptionMcpBridge.csproj": {}
+    "D:\\PerceiptionEngine_Howard\\perception_engine\\mcp_server\\csharp\\PerceptionMcpBridge.csproj": {}
   },
   "projects": {
-    "C:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\perception_engine\\mcp_server\\csharp\\PerceptionMcpBridge.csproj": {
+    "D:\\PerceiptionEngine_Howard\\perception_engine\\mcp_server\\csharp\\PerceptionMcpBridge.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\perception_engine\\mcp_server\\csharp\\PerceptionMcpBridge.csproj",
+        "projectUniqueName": "D:\\PerceiptionEngine_Howard\\perception_engine\\mcp_server\\csharp\\PerceptionMcpBridge.csproj",
         "projectName": "PerceptionMcpBridge",
-        "projectPath": "C:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\perception_engine\\mcp_server\\csharp\\PerceptionMcpBridge.csproj",
-        "packagesPath": "C:\\Users\\hc001\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\hc001\\OneDrive - Lenovo\\Desktop\\perception_engine\\mcp_server\\csharp\\obj\\",
+        "projectPath": "D:\\PerceiptionEngine_Howard\\perception_engine\\mcp_server\\csharp\\PerceptionMcpBridge.csproj",
+        "packagesPath": "C:\\Users\\up_fi\\.nuget\\packages\\",
+        "outputPath": "D:\\PerceiptionEngine_Howard\\perception_engine\\mcp_server\\csharp\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
         ],
         "configFilePaths": [
-          "C:\\Users\\hc001\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Users\\up_fi\\AppData\\Roaming\\NuGet\\NuGet.Config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
@@ -94,17 +94,30 @@
           ],
           "assetTargetFallback": true,
           "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "Microsoft.AspNetCore.App.Ref",
+              "version": "[8.0.21, 8.0.21]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Host.win-x64",
+              "version": "[8.0.21, 8.0.21]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Ref",
+              "version": "[8.0.21, 8.0.21]"
+            },
+            {
+              "name": "Microsoft.WindowsDesktop.App.Ref",
+              "version": "[8.0.21, 8.0.21]"
+            }
+          ],
           "frameworkReferences": {
             "Microsoft.NETCore.App": {
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.305/PortableRuntimeIdentifierGraph.json"
-        }
-      },
-      "runtimes": {
-        "win-x64": {
-          "#import": []
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.306/PortableRuntimeIdentifierGraph.json"
         }
       }
     }

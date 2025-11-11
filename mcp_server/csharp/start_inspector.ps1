@@ -110,7 +110,7 @@ Write-Host "Starting MCP Inspector..." -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Inspector will open in your browser at:" -ForegroundColor Yellow
-Write-Host "  http://localhost:5173" -ForegroundColor White
+Write-Host "  http://localhost:6277 " -ForegroundColor White
 Write-Host ""
 Write-Host "What to do next:" -ForegroundColor Cyan
 Write-Host "  1. Browser will open automatically" -ForegroundColor White

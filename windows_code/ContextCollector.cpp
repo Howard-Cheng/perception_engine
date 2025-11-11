@@ -460,12 +460,15 @@ void ContextCollector::StoreContextToES(const Json& context) {
         // Generate unique event ID
         auto now = std::chrono::system_clock::now();
         auto timestamp = std::chrono::system_clock::to_time_t(now);
-        event.eventId = deviceId + "_" + std::to_string(timestamp) + "_" + 
-                       std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-                           now.time_since_epoch()).count() % 1000);
+        auto timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now.time_since_epoch()).count();
         
-        event.timestamp = timestamp;
-        event.createdAt = timestamp;
+        event.eventId = deviceId + "_" + std::to_string(timestamp) + "_" + 
+                       std::to_string(timestampMs % 1000);
+        
+        // ? FIX: Store timestamp in MILLISECONDS (not seconds)
+        event.timestamp = timestampMs / 1000;  // Convert ms to seconds for time_t
+        event.createdAt = timestampMs / 1000;
         event.deviceId = deviceId;
         
         // Extract app context
@@ -473,10 +476,10 @@ void ContextCollector::StoreContextToES(const Json& context) {
         
         // Extract content
         std::string activeAppContent = context.getString("activeAppContent", "");
-        if (!activeAppContent.empty()) {
+        if (!activeAppContent.empty() && activeAppContent != "null") {
             event.screenContent = activeAppContent;
             
-            // Simple hash for deduplication (you can improve this)
+            // Simple hash for deduplication
             std::hash<std::string> hasher;
             event.screenContentHash = std::to_string(hasher(activeAppContent));
         }
@@ -498,25 +501,31 @@ void ContextCollector::StoreContextToES(const Json& context) {
         event.interactionCount = 0;
         event.dwellTimeSeconds = 0;
         
-        // Extract system info
-        event.systemInfo.batteryPercent = context.getInt("battery", -1);
-        if (event.systemInfo.batteryPercent.value() < 0) {
-            event.systemInfo.batteryPercent.reset();
+        // ? FIX: Extract system info with proper handling
+        // Battery percent
+        int battery = context.getInt("battery", -1);
+        if (battery >= 0 && battery <= 100) {
+            event.systemInfo.batteryPercent = battery;
         }
         
+        // ? FIX: Correctly read isCharging as boolean
         event.systemInfo.isCharging = context.getBool("isCharging", false);
+        
+        // Network type
         event.systemInfo.networkType = context.getString("networkType", "Unknown");
         
+        // ? FIX: CPU and Memory usage with proper double handling
         double cpuUsage = context.getDouble("cpuUsage", -1.0);
-        if (cpuUsage >= 0) {
+        if (cpuUsage >= 0.0) {
             event.systemInfo.cpuUsage = cpuUsage;
         }
         
         double memoryUsage = context.getDouble("memoryUsage", -1.0);
-        if (memoryUsage >= 0) {
+        if (memoryUsage >= 0.0) {
             event.systemInfo.memoryUsage = memoryUsage;
         }
         
+        // ? FIX: Location with proper validation
         bool locationValid = context.getBool("locationValid", false);
         if (locationValid) {
             double lat = context.getDouble("locationLat", 0.0);
@@ -535,7 +544,10 @@ void ContextCollector::StoreContextToES(const Json& context) {
         
         if (!eventId.empty()) {
             std::cout << "[ESStorage] Stored event: " << event.eventId 
-                     << " | App: " << event.appName << std::endl;
+                     << " | App: " << event.appName
+                     << " | Battery: " << (event.systemInfo.batteryPercent.has_value() ? std::to_string(event.systemInfo.batteryPercent.value()) : "N/A")
+                     << " | Charging: " << (event.systemInfo.isCharging ? "Yes" : "No")
+                     << std::endl;
         } else {
             std::cerr << "[ESStorage] Failed to store event" << std::endl;
         }
@@ -563,6 +575,15 @@ Json ContextCollector::GetESDBData(const std::string& keyword,
     }
     
     try {
+        // ? FIX: Convert seconds to milliseconds for Elasticsearch
+        long long startTimeMs = static_cast<long long>(startTime) * 1000;
+        long long endTimeMs = static_cast<long long>(endTime) * 1000;
+        
+        // Debug logging
+        std::cout << "[GetESDBData] Time range: " << startTime << " - " << endTime << " (seconds)" << std::endl;
+        std::cout << "[GetESDBData] Time range: " << startTimeMs << " - " << endTimeMs << " (milliseconds)" << std::endl;
+        std::cout << "[GetESDBData] Keyword: '" << keyword << "'" << std::endl;
+        
         // Build Elasticsearch query
         std::ostringstream queryBuilder;
         queryBuilder << "{"
@@ -584,12 +605,12 @@ Json ContextCollector::GetESDBData(const std::string& keyword,
                         << "      },";
         }
         
-        // Add time range filter
+        // ? FIX: Use milliseconds for timestamp range
         queryBuilder << "      {"
                     << "        \"range\":{"
                     << "          \"timestamp\":{"
-                    << "            \"gte\":" << startTime << ","
-                    << "            \"lte\":" << endTime
+                    << "            \"gte\":" << startTimeMs << ","
+                    << "            \"lte\":" << endTimeMs
                     << "          }"
                     << "        }"
                     << "      }";

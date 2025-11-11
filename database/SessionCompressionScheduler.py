@@ -147,9 +147,42 @@ def init_duckdb_schema(conn):
             interaction_count INTEGER,
             total_dwell_time INTEGER,
             
+            -- Strong features (for project/topic detection)
+            window_title TEXT,
+            url TEXT,
+            url_host TEXT,
+            strong_keys_json TEXT,
+            title_fingerprint TEXT,
+            
+            -- Interaction
+            input_events INTEGER,
+            copy_select_count INTEGER,
+            idle_seconds INTEGER,
+            
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    
+    # Add missing columns if table already exists (migration)
+    # Try to add columns directly (will fail if they exist, but that's ok)
+    columns_to_add = [
+        ('window_title', 'TEXT'),
+        ('url', 'TEXT'),
+        ('url_host', 'TEXT'),
+        ('strong_keys_json', 'TEXT'),
+        ('title_fingerprint', 'TEXT'),
+        ('input_events', 'INTEGER'),
+        ('copy_select_count', 'INTEGER'),
+        ('idle_seconds', 'INTEGER'),
+    ]
+    
+    for col_name, col_type in columns_to_add:
+        try:
+            conn.execute(f"ALTER TABLE sessions ADD COLUMN {col_name} {col_type}")
+            logger.info(f"Added missing column: {col_name}")
+        except Exception:
+            # Column already exists, ignore
+            pass
     
     # Compressed content table
     conn.execute("""
@@ -167,6 +200,9 @@ def init_duckdb_schema(conn):
             summary TEXT,
             key_points TEXT,
             
+            -- Entities
+            extracted_entities VARCHAR,  -- JSON
+            
             -- Engagement
             engagement_score DOUBLE,
             
@@ -175,6 +211,19 @@ def init_duckdb_schema(conn):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    
+    # Add missing columns to compressed_content table if it already exists (migration)
+    columns_to_add_compressed = [
+        ('extracted_entities', 'VARCHAR'),
+    ]
+    
+    for col_name, col_type in columns_to_add_compressed:
+        try:
+            conn.execute(f"ALTER TABLE compressed_content ADD COLUMN {col_name} {col_type}")
+            logger.info(f"Added missing column to compressed_content: {col_name}")
+        except Exception:
+            # Column already exists, ignore
+            pass
 
 
 # ============================================================================
@@ -321,6 +370,251 @@ def detect_sessions(raw_events: List[Dict]) -> List[List[Dict]]:
     return filtered_sessions
 
 
+def extract_high_attention_content(session_events: List[Dict]) -> Dict:
+    """
+    Extract high-attention content from session events.
+    
+    Returns:
+        Dictionary with copied_content, selected_text, clicked_elements
+    """
+    copied_content = []
+    selected_text = []
+    clicked_elements = []
+    
+    for event in session_events:
+        mouse_events_str = event.get('mouse_events', '[]')
+        if not mouse_events_str:
+            continue
+        
+        try:
+            mouse_events = json.loads(mouse_events_str) if isinstance(mouse_events_str, str) else mouse_events_str
+            for me in mouse_events:
+                event_type = me.get('eventType', '')
+                content = me.get('content', '') or me.get('text', '') or me.get('value', '')
+                
+                if not content:
+                    continue
+                
+                if 'Copy' in event_type or 'copy' in event_type.lower():
+                    copied_content.append(content)
+                elif 'Selection' in event_type or 'TextSelection' in event_type or 'select' in event_type.lower():
+                    selected_text.append(content)
+                elif 'Click' in event_type or 'click' in event_type.lower():
+                    clicked_elements.append(content)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    
+    # Deduplicate while preserving order
+    def dedupe(items):
+        seen = set()
+        result = []
+        for item in items:
+            if item and item not in seen:
+                seen.add(item)
+                result.append(item)
+        return result
+    
+    return {
+        'copied_content': dedupe(copied_content),
+        'selected_text': dedupe(selected_text),
+        'clicked_elements': dedupe(clicked_elements)
+    }
+
+
+def extract_entities(session_events: List[Dict], high_attention: Dict) -> Dict:
+    """
+    Extract key entities: numbers, dates, URLs, emails from session content.
+    
+    Priority: High-attention content > full screen content
+    
+    Args:
+        session_events: List of session event dictionaries
+        high_attention: Dictionary with copied_content, selected_text, etc.
+        
+    Returns:
+        Dictionary with entities: numbers, dates, urls, emails
+    """
+    # Combine all text, prioritizing high-attention content
+    priority_text = " ".join(
+        high_attention.get('copied_content', []) + 
+        high_attention.get('selected_text', [])
+    )
+    
+    # Get screen content from events
+    all_screen_content = " ".join([
+        e.get('screen_content', '') or '' 
+        for e in session_events
+    ])
+    
+    # Search priority text first, then full content (limit to avoid regex timeout)
+    combined_text = priority_text + " " + all_screen_content[:10000]
+    
+    # Extract entities using regex patterns
+    entities = {
+        'numbers': re.findall(r'\$?\d{1,3}(?:,\d{3})*(?:\.\d+)?[MKB%]?', combined_text),
+        'dates': re.findall(
+            r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|'
+            r'\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{1,2},? \d{4}\b|'
+            r'\bQ[1-4] \d{4}\b',
+            combined_text
+        ),
+        'urls': re.findall(r'https?://[^\s<>"{}|\\^`\[\]]+', combined_text),
+        'emails': re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', combined_text),
+    }
+    
+    # Deduplicate and limit to top 15 per type
+    entities = {k: list(set(v))[:15] for k, v in entities.items()}
+    
+    return entities
+
+
+def extract_url_host(url: Optional[str]) -> Optional[str]:
+    """
+    Extract host from URL.
+    
+    Args:
+        url: URL string
+        
+    Returns:
+        Host string or None
+    """
+    if not url:
+        return None
+    
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        host = parsed.netloc
+        # Remove www. prefix
+        if host.startswith('www.'):
+            host = host[4:]
+        return host if host else None
+    except Exception:
+        return None
+
+
+def extract_strong_keys(session_events: List[Dict]) -> Dict:
+    """
+    Extract strong keys for project/topic detection from URL and window title.
+    
+    Returns:
+        Dictionary with repo, issue, doc_id, meeting_id, etc.
+    """
+    strong_keys = {}
+    
+    if not session_events:
+        return strong_keys
+    
+    first_event = session_events[0]
+    url = first_event.get('url', '')
+    window_title = first_event.get('window_title', '') or ''
+    
+    # Extract from URL
+    if url:
+        url_lower = url.lower()
+        
+        # GitHub repo: github.com/user/repo
+        github_repo_match = re.search(r'github\.com/([^/]+)/([^/?]+)', url_lower)
+        if github_repo_match:
+            strong_keys['repo'] = f"github.com/{github_repo_match.group(1)}/{github_repo_match.group(2)}"
+            
+            # GitHub issue: github.com/user/repo/issues/123
+            issue_match = re.search(r'/issues/(\d+)', url_lower)
+            if issue_match:
+                strong_keys['issue'] = issue_match.group(1)
+            
+            # GitHub PR: github.com/user/repo/pull/123
+            pr_match = re.search(r'/pull/(\d+)', url_lower)
+            if pr_match:
+                strong_keys['pr'] = pr_match.group(1)
+        
+        # GitLab repo: gitlab.com/user/repo
+        gitlab_repo_match = re.search(r'gitlab\.com/([^/]+)/([^/?]+)', url_lower)
+        if gitlab_repo_match:
+            strong_keys['repo'] = f"gitlab.com/{gitlab_repo_match.group(1)}/{gitlab_repo_match.group(2)}"
+        
+        # Google Docs: docs.google.com/document/d/DOC_ID
+        docs_match = re.search(r'docs\.google\.com/document/d/([a-zA-Z0-9_-]+)', url_lower)
+        if docs_match:
+            strong_keys['doc_id'] = docs_match.group(1)
+        
+        # Google Sheets: docs.google.com/spreadsheets/d/SHEET_ID
+        sheets_match = re.search(r'docs\.google\.com/spreadsheets/d/([a-zA-Z0-9_-]+)', url_lower)
+        if sheets_match:
+            strong_keys['sheet_id'] = sheets_match.group(1)
+    
+    # Extract from window title
+    if window_title:
+        # Meeting IDs from common meeting apps
+        # Zoom: "Meeting Title - Zoom Meeting"
+        if 'zoom' in window_title.lower():
+            # Try to extract meeting ID if present
+            zoom_id_match = re.search(r'(\d{3}[\s-]?\d{3}[\s-]?\d{4})', window_title)
+            if zoom_id_match:
+                strong_keys['meeting_id'] = zoom_id_match.group(1).replace(' ', '').replace('-', '')
+        
+        # Teams meeting
+        if 'teams' in window_title.lower() and 'meeting' in window_title.lower():
+            strong_keys['meeting_type'] = 'teams'
+    
+    return strong_keys
+
+
+def generate_title_fingerprint(window_title: Optional[str]) -> Optional[str]:
+    """
+    Generate a fingerprint for window title using hash.
+    Simple implementation using MD5 hash (can be upgraded to SimHash later).
+    
+    Args:
+        window_title: Window title string
+        
+    Returns:
+        Hash fingerprint string or None
+    """
+    if not window_title:
+        return None
+    
+    # Normalize: remove common suffixes, lowercase
+    normalized = window_title.lower()
+    # Remove common browser/app suffixes
+    normalized = re.sub(r'\s*-\s*(google chrome|microsoft edge|firefox|mozilla firefox)$', '', normalized)
+    normalized = re.sub(r'\s*-\s*(visual studio code|code)$', '', normalized)
+    normalized = re.sub(r'\s*-\s*(outlook|word|excel|powerpoint)$', '', normalized)
+    
+    # Generate hash (first 16 chars of MD5 for shorter fingerprint)
+    hash_obj = hashlib.md5(normalized.encode('utf-8'))
+    return hash_obj.hexdigest()[:16]
+
+
+def calculate_idle_seconds(session_events: List[Dict], idle_threshold: int = 300) -> int:
+    """
+    Calculate total idle time within a session.
+    Idle time is defined as gaps between events >= idle_threshold seconds.
+    
+    Args:
+        session_events: List of session event dictionaries
+        idle_threshold: Threshold in seconds for considering a gap as idle
+        
+    Returns:
+        Total idle seconds
+    """
+    if len(session_events) < 2:
+        return 0
+    
+    total_idle = 0
+    
+    for i in range(1, len(session_events)):
+        prev_time = datetime.fromisoformat(session_events[i-1]['timestamp'])
+        curr_time = datetime.fromisoformat(session_events[i]['timestamp'])
+        gap_seconds = (curr_time - prev_time).total_seconds()
+        
+        # Only count gaps >= threshold as idle
+        if gap_seconds >= idle_threshold:
+            total_idle += int(gap_seconds)
+    
+    return total_idle
+
+
 def calculate_engagement(session_events: List[Dict]) -> Dict:
     """
     Calculate engagement metrics for a session.
@@ -378,7 +672,8 @@ def calculate_engagement(session_events: List[Dict]) -> Dict:
         'has_copied': has_copied,
         'has_selected': has_selected,
         'copied_count': copied_count,
-        'selection_count': selection_count
+        'selection_count': selection_count,
+        'copy_select_count': copied_count + selection_count  # Total copy/select operations
     }
 
 
@@ -562,6 +857,12 @@ class SessionCompressionScheduler:
                     # Calculate engagement
                     engagement = calculate_engagement(session_events)
                     
+                    # Extract high-attention content
+                    high_attention = extract_high_attention_content(session_events)
+                    
+                    # Extract entities
+                    entities = extract_entities(session_events, high_attention)
+                    
                     # Generate summary
                     summary, key_points = generate_summary(session_events, engagement)
                     
@@ -576,16 +877,38 @@ class SessionCompressionScheduler:
                     domain = session_events[0]['domain']
                     app_name = session_events[0]['app_name']
                     
-                    # Store session metadata
-                    # sessions table has 12 columns: session_id, device_id, start_time, end_time, 
-                    # duration_seconds, app_name, content_type, domain, engagement_score, 
-                    # interaction_count, total_dwell_time, created_at (with DEFAULT)
+                    # Extract new fields
+                    window_title_raw = session_events[0].get('window_title') or ''
+                    # Truncate window_title to 1-2KB (use 2048 chars as max)
+                    window_title = window_title_raw[:2048] if window_title_raw else None
+                    
+                    url = session_events[0].get('url') or None
+                    url_host = extract_url_host(url)
+                    
+                    strong_keys = extract_strong_keys(session_events)
+                    strong_keys_json = json.dumps(strong_keys) if strong_keys else None
+                    
+                    title_fingerprint = generate_title_fingerprint(window_title_raw)
+                    
+                    # Calculate input_events (total mouse/keyboard events)
+                    input_events = engagement['interaction_count']
+                    
+                    # Get copy_select_count from engagement
+                    copy_select_count = engagement.get('copy_select_count', 0)
+                    
+                    # Calculate idle_seconds
+                    idle_seconds = calculate_idle_seconds(session_events, IDLE_THRESHOLD_SECONDS)
+                    
+                    # Store session metadata with all new fields
+                    # For existing records, new fields will remain NULL (not updated)
                     self.duckdb_conn.execute("""
                         INSERT INTO sessions 
                         (session_id, device_id, start_time, end_time, duration_seconds, 
                          app_name, content_type, domain, engagement_score, 
-                         interaction_count, total_dwell_time) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         interaction_count, total_dwell_time,
+                         window_title, url, url_host, strong_keys_json, title_fingerprint,
+                         input_events, copy_select_count, idle_seconds) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT (session_id) DO UPDATE SET
                             device_id = EXCLUDED.device_id,
                             start_time = EXCLUDED.start_time,
@@ -597,6 +920,7 @@ class SessionCompressionScheduler:
                             engagement_score = EXCLUDED.engagement_score,
                             interaction_count = EXCLUDED.interaction_count,
                             total_dwell_time = EXCLUDED.total_dwell_time
+                            -- New fields are not updated for existing records (remain NULL)
                     """, [
                         session_id,
                         self.device_id,
@@ -608,24 +932,33 @@ class SessionCompressionScheduler:
                         domain,
                         engagement['engagement_score'],
                         engagement['interaction_count'],
-                        engagement['total_dwell_time']
+                        engagement['total_dwell_time'],
+                        window_title,
+                        url,
+                        url_host,
+                        strong_keys_json,
+                        title_fingerprint,
+                        input_events,
+                        copy_select_count,
+                        idle_seconds
                     ])
                     
                     # Store compressed content
-                    # compressed_content table has 11 columns: content_id, session_id, device_id,
-                    # content_type, title, url, summary, key_points, engagement_score,
-                    # timestamp, created_at (with DEFAULT)
+                    # compressed_content table has 12 columns: content_id, session_id, device_id,
+                    # content_type, title, url, summary, key_points, extracted_entities,
+                    # engagement_score, timestamp, created_at (with DEFAULT)
                     content_id = f"content_{session_id}"
                     window_title = session_events[0].get('window_title') or ''
                     title = window_title[:200] if window_title else ''
                     url = session_events[0].get('url') or ''
                     key_points_str = json.dumps(key_points)
+                    entities_str = json.dumps(entities) if entities else None
                     
                     self.duckdb_conn.execute("""
                         INSERT INTO compressed_content 
                         (content_id, session_id, device_id, content_type, title, url, 
-                         summary, key_points, engagement_score, timestamp) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         summary, key_points, extracted_entities, engagement_score, timestamp) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT (content_id) DO UPDATE SET
                             session_id = EXCLUDED.session_id,
                             device_id = EXCLUDED.device_id,
@@ -634,6 +967,7 @@ class SessionCompressionScheduler:
                             url = EXCLUDED.url,
                             summary = EXCLUDED.summary,
                             key_points = EXCLUDED.key_points,
+                            extracted_entities = EXCLUDED.extracted_entities,
                             engagement_score = EXCLUDED.engagement_score,
                             timestamp = EXCLUDED.timestamp
                     """, [
@@ -645,6 +979,7 @@ class SessionCompressionScheduler:
                         url,
                         summary,
                         key_points_str,
+                        entities_str,
                         engagement['engagement_score'],
                         start_time_str
                     ])

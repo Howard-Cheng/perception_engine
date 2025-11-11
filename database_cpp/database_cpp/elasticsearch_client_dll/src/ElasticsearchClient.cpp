@@ -194,7 +194,7 @@ public:
                 event.createdAt = iso8601ToTimestamp(j["created_at"].get<std::string>());
             }
             
-            // Optional fields
+            // Optional string fields
             if (j.contains("window_title") && !j["window_title"].is_null()) {
                 event.windowTitle = j["window_title"].get<std::string>();
             }
@@ -204,8 +204,97 @@ public:
             if (j.contains("screen_content") && !j["screen_content"].is_null()) {
                 event.screenContent = j["screen_content"].get<std::string>();
             }
+            if (j.contains("screen_content_hash") && !j["screen_content_hash"].is_null()) {
+                event.screenContentHash = j["screen_content_hash"].get<std::string>();
+            }
+            if (j.contains("voice_transcription") && !j["voice_transcription"].is_null()) {
+                event.voiceTranscription = j["voice_transcription"].get<std::string>();
+            }
+            if (j.contains("camera_description") && !j["camera_description"].is_null()) {
+                event.cameraDescription = j["camera_description"].get<std::string>();
+            }
+            if (j.contains("session_id") && !j["session_id"].is_null()) {
+                event.sessionId = j["session_id"].get<std::string>();
+            }
             
-            // Mouse events, system info, etc. can be added similarly
+            // Content type
+            if (j.contains("content_type") && !j["content_type"].is_null()) {
+                std::string ctStr = j["content_type"].get<std::string>();
+                if (ctStr == "TEXT") event.contentType = ContentType::TEXT;
+                else if (ctStr == "IMAGE") event.contentType = ContentType::IMAGE;
+                else if (ctStr == "VIDEO") event.contentType = ContentType::VIDEO;
+                else if (ctStr == "AUDIO") event.contentType = ContentType::AUDIO;
+                else if (ctStr == "CODE") event.contentType = ContentType::CODE;
+                else if (ctStr == "DOCUMENT") event.contentType = ContentType::DOCUMENT;
+                else event.contentType = ContentType::UNKNOWN;
+            }
+            
+            // Domain
+            if (j.contains("domain") && !j["domain"].is_null()) {
+                std::string domainStr = j["domain"].get<std::string>();
+                if (domainStr == "WORK") event.domain = Domain::WORK;
+                else if (domainStr == "ENTERTAINMENT") event.domain = Domain::ENTERTAINMENT;
+                else if (domainStr == "SOCIAL") event.domain = Domain::SOCIAL;
+                else if (domainStr == "SHOPPING") event.domain = Domain::SHOPPING;
+                else if (domainStr == "NEWS") event.domain = Domain::NEWS;
+                else if (domainStr == "EDUCATION") event.domain = Domain::EDUCATION;
+                else if (domainStr == "HEALTH") event.domain = Domain::HEALTH;
+                else if (domainStr == "OTHER") event.domain = Domain::OTHER;
+                else event.domain = Domain::UNKNOWN;
+            }
+            
+            // Mouse events
+            if (j.contains("mouse_events") && j["mouse_events"].is_array()) {
+                for (const auto& meJson : j["mouse_events"]) {
+                    MouseEvent me;
+                    if (meJson.contains("timestamp") && !meJson["timestamp"].is_null()) {
+                        me.timestamp = iso8601ToTimestamp(meJson["timestamp"].get<std::string>());
+                    }
+                    if (meJson.contains("event_type") && !meJson["event_type"].is_null()) {
+                        me.eventType = meJson["event_type"].get<std::string>();
+                    }
+                    if (meJson.contains("content") && !meJson["content"].is_null()) {
+                        me.content = meJson["content"].get<std::string>();
+                    }
+                    if (meJson.contains("pos_x") && !meJson["pos_x"].is_null()) {
+                        me.posX = meJson["pos_x"].get<int>();
+                    }
+                    if (meJson.contains("pos_y") && !meJson["pos_y"].is_null()) {
+                        me.posY = meJson["pos_y"].get<int>();
+                    }
+                    if (meJson.contains("element_type") && !meJson["element_type"].is_null()) {
+                        me.elementType = meJson["element_type"].get<std::string>();
+                    }
+                    event.mouseEvents.push_back(me);
+                }
+            }
+            
+            // System info
+            if (j.contains("system_info") && j["system_info"].is_object()) {
+                const auto& sysInfo = j["system_info"];
+                
+                if (sysInfo.contains("battery_percent") && !sysInfo["battery_percent"].is_null()) {
+                    event.systemInfo.batteryPercent = sysInfo["battery_percent"].get<int>();
+                }
+                if (sysInfo.contains("is_charging") && !sysInfo["is_charging"].is_null()) {
+                    event.systemInfo.isCharging = sysInfo["is_charging"].get<bool>();
+                }
+                if (sysInfo.contains("network_type") && !sysInfo["network_type"].is_null()) {
+                    event.systemInfo.networkType = sysInfo["network_type"].get<std::string>();
+                }
+                if (sysInfo.contains("location_lat") && !sysInfo["location_lat"].is_null()) {
+                    event.systemInfo.locationLat = sysInfo["location_lat"].get<double>();
+                }
+                if (sysInfo.contains("location_lon") && !sysInfo["location_lon"].is_null()) {
+                    event.systemInfo.locationLon = sysInfo["location_lon"].get<double>();
+                }
+                if (sysInfo.contains("cpu_usage") && !sysInfo["cpu_usage"].is_null()) {
+                    event.systemInfo.cpuUsage = sysInfo["cpu_usage"].get<double>();
+                }
+                if (sysInfo.contains("memory_usage") && !sysInfo["memory_usage"].is_null()) {
+                    event.systemInfo.memoryUsage = sysInfo["memory_usage"].get<double>();
+                }
+            }
         } catch (...) {
             // Return empty event on error
         }
@@ -497,6 +586,32 @@ std::string ElasticsearchClient::getClusterInfo() {
         return response;
     }
     return "{}";
+}
+
+RawEvent ElasticsearchClient::getDocumentByAppName(const std::string& indexName, 
+                                                    const std::string& appName) {
+    std::string endpoint = "/" + indexName + "/_doc/" + appName;
+    std::string response;
+    
+    if (pImpl_->httpRequest("GET", endpoint, "", response)) {
+        try {
+            auto j = json::parse(response);
+            if (j.contains("_source") && !j["_source"].is_null()) {
+                return pImpl_->jsonToEvent(j["_source"].dump());
+            }
+        } catch (...) {
+            // Return empty event on error
+        }
+    }
+    
+    return RawEvent();
+}
+
+bool ElasticsearchClient::deleteDocumentByAppName(const std::string& indexName, 
+                                                   const std::string& appName) {
+    std::string endpoint = "/" + indexName + "/_doc/" + appName;
+    std::string response;
+    return pImpl_->httpRequest("DELETE", endpoint, "", response);
 }
 
 } // namespace elasticsearch

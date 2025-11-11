@@ -178,6 +178,24 @@ public:
      */
     std::string getClusterInfo();
     
+    /**
+     * @brief Get document by app_name (since app_name is used as document ID)
+     * 
+     * @param indexName Index name
+     * @param appName Application name to query
+     * @return RawEvent if found, empty event otherwise
+     */
+    RawEvent getDocumentByAppName(const std::string& indexName, const std::string& appName);
+    
+    /**
+     * @brief Delete document by app_name
+     * 
+     * @param indexName Index name
+     * @param appName Application name to delete
+     * @return true if successful
+     */
+    bool deleteDocumentByAppName(const std::string& indexName, const std::string& appName);
+    
 private:
     class Impl;
     std::unique_ptr<Impl> pImpl_;

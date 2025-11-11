@@ -454,14 +454,32 @@ void ContextCollector::StoreContextToES(const Json& context) {
     }
     
     try {
+        // Extract app context first for deduplication check
+        std::string currentAppName = context.getString("activeApp", "Unknown");
+        
+        // ? NEW: Deduplication - Check if latest record has same appName
+        static std::string lastStoredAppName = "";
+        static auto lastStoredTime = std::chrono::steady_clock::now();
+        
+        auto now = std::chrono::steady_clock::now();
+        auto timeSinceLastStore = std::chrono::duration_cast<std::chrono::seconds>(now - lastStoredTime).count();
+        
+        // Skip storage if:
+        // 1. Same appName as last stored record
+        // 2. Within 30 seconds of last storage (avoid too frequent checks)
+        if (currentAppName == lastStoredAppName && timeSinceLastStore < 30) {
+            std::cout << "[ESStorage] Skipped (duplicate): App already stored - " << currentAppName << std::endl;
+            return;
+        }
+        
         // Create RawEvent from Json context
         elasticsearch::RawEvent event;
         
         // Generate unique event ID
-        auto now = std::chrono::system_clock::now();
-        auto timestamp = std::chrono::system_clock::to_time_t(now);
+        auto nowTime = std::chrono::system_clock::now();
+        auto timestamp = std::chrono::system_clock::to_time_t(nowTime);
         auto timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-            now.time_since_epoch()).count();
+            nowTime.time_since_epoch()).count();
         
         event.eventId = deviceId + "_" + std::to_string(timestamp) + "_" + 
                        std::to_string(timestampMs % 1000);
@@ -472,7 +490,7 @@ void ContextCollector::StoreContextToES(const Json& context) {
         event.deviceId = deviceId;
         
         // Extract app context
-        event.appName = context.getString("activeApp", "Unknown");
+        event.appName = currentAppName;
         
         // Extract content
         std::string activeAppContent = context.getString("activeAppContent", "");
@@ -543,6 +561,10 @@ void ContextCollector::StoreContextToES(const Json& context) {
         std::string eventId = esClient->indexDocument(esIndexName, event);
         
         if (!eventId.empty()) {
+            // ? Update deduplication tracking
+            lastStoredAppName = currentAppName;
+            lastStoredTime = now;
+            
             std::cout << "[ESStorage] Stored event: " << event.eventId 
                      << " | App: " << event.appName
                      << " | Battery: " << (event.systemInfo.batteryPercent.has_value() ? std::to_string(event.systemInfo.batteryPercent.value()) : "N/A")

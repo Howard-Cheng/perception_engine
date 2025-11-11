@@ -30,8 +30,12 @@ BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
 void RunServiceLoop() {
     while (g_running) {
         try {
-            // Check for meeting apps
-            bool meetingDetected = MicrophoneMonitor_IsMeetingAppUsingMicrophone(g_monitor) != 0;
+            // 改进的会议检测 - 同时检查麦克风和扬声器
+            bool micDetected = MicrophoneMonitor_IsMeetingAppUsingMicrophone(g_monitor) != 0;
+            bool speakerDetected = MicrophoneMonitor_IsMeetingAppUsingSpeakers(g_monitor) != 0;
+            
+            // 任一检测到即认为会议进行中
+            bool meetingDetected = micDetected || speakerDetected;
             std::optional<MeetingInfo> meetingInfo;
             MeetingInfo info;
             info.appName = "empty";

@@ -67,6 +67,29 @@ DLL_EXPORT int MicrophoneMonitor_IsMeetingAppUsingMicrophone(MicrophoneMonitorHa
     return 0;
 }
 
+DLL_EXPORT int MicrophoneMonitor_IsMeetingAppUsingSpeakers(MicrophoneMonitorHandle handle) {
+    if (!handle) return 0;
+
+    auto* wrapper = static_cast<MicrophoneMonitorWrapper*>(handle);
+
+    // Get all active speaker sessions
+    auto sessions = wrapper->monitor->GetActiveSpeakerSessions();
+
+    // Check if any session is a meeting app
+    for (const auto& session : sessions) {
+        if (MicrophoneMonitor::IsMeetingApp(session.processName)) {
+            // Cache the detected app info (if not already cached from mic check)
+            if (wrapper->lastDetectedApp.empty()) {
+                wrapper->lastDetectedApp = session.processName;
+                wrapper->lastDetectedPID = session.processId;
+            }
+            return 1;  // Meeting app detected
+        }
+    }
+
+    return 0;  // No meeting app detected on speakers
+}
+
 DLL_EXPORT int MicrophoneMonitor_GetMeetingAppName(MicrophoneMonitorHandle handle, char* buffer, int bufferSize) {
     if (!handle || !buffer || bufferSize <= 0) return 0;
 

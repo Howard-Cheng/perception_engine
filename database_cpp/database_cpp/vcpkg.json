@@ -1,0 +1,14 @@
+{
+  "name": "perception-engine-database",
+  "version": "1.0.0",
+  "description": "Layered database architecture for cross-device context collection",
+  "dependencies": [
+    "sqlite3",
+    "nlohmann-json",
+    "openssl",
+    "curl",
+    "duckdb"
+  ],
+  "builtin-baseline": "b27f6bfad367d64f8f0f3296351c5d246e182bb4",
+  "overrides": []
+}

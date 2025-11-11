@@ -145,10 +145,12 @@ int main() {
         
         // Debug: Check if documents are actually indexed
         LOG_INFO("Debug: Checking indexed documents...");
-        json allDocsQuery = {
-            {"query", {{"match_all", {}}}},
-            {"size", 20}
-        };
+        json allDocsQuery = json::parse(R"({
+            "query": {
+                "match_all": {}
+            },
+            "size": 20
+        })");
         auto allDocs = esClient.search(indexName, allDocsQuery.dump(), 0, 20);
         std::cout << "  Total documents in index: " << allDocs.size() << std::endl;
         if (!allDocs.empty()) {
@@ -211,14 +213,14 @@ int main() {
         // Example 6: Search functionality (demonstration)
         LOG_INFO("Example 6: Full-text search");
         
-        json searchQuery = {
-            {"query", {
-                {"match", {
-                    {"screen_content", "Elasticsearch"}
-                }}
-            }},
-            {"size", 5}
-        };
+        json searchQuery = json::parse(R"({
+            "query": {
+                "match": {
+                    "screen_content": "Elasticsearch"
+                }
+            },
+            "size": 5
+        })");
         
         std::cout << "Searching for events containing 'Elasticsearch'..." << std::endl;
         std::cout << "  Search query: " << searchQuery.dump(2) << std::endl;
@@ -244,32 +246,36 @@ int main() {
         LOG_INFO("Example 7: Advanced search examples");
         
         // Search by app name
-        json appSearchQuery = {
-            {"query", {
-                {"term", {
-                    {"app_name", "chrome.exe"}
-                }}
-            }},
-            {"size", 10}
-        };
+        json appSearchQuery = json::parse(R"({
+            "query": {
+                "term": {
+                    "app_name": "chrome.exe"
+                }
+            },
+            "size": 10
+        })");
         
         auto chromeEvents = esClient.search(indexName, appSearchQuery.dump(), 0, 10);
         std::cout << "Events from chrome.exe: " << chromeEvents.size() << std::endl;
         
         // Range query - events with high interaction
-        json interactionQuery = {
-            {"query", {
-                {"range", {
-                    {"interaction_count", {
-                        {"gte", 3}
-                    }}
-                }}
-            }},
-            {"sort", {
-                {{"interaction_count", {{"order", "desc"}}}}
-            }},
-            {"size", 10}
-        };
+        json interactionQuery = json::parse(R"({
+            "query": {
+                "range": {
+                    "interaction_count": {
+                        "gte": 3
+                    }
+                }
+            },
+            "sort": [
+                {
+                    "interaction_count": {
+                        "order": "desc"
+                    }
+                }
+            ],
+            "size": 10
+        })");
         
         auto highInteractionEvents = esClient.search(indexName, interactionQuery.dump(), 0, 10);
         std::cout << "High interaction events (¡Ý3): " << highInteractionEvents.size() << std::endl;

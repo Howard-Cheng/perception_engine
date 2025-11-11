@@ -125,7 +125,7 @@ std::string ElasticsearchClient::indexDocument(
     
     std::string eventJson = eventToJson(event);
     LOG_INFO("Indexing document with ID: " + event.eventId);
-    LOG_DEBUG("Document JSON: " + eventJson);
+    //LOG_DEBUG("Document JSON: " + eventJson);
     
     std::string endpoint = "/" + indexName + "/_doc/" + event.eventId;
     
@@ -350,7 +350,7 @@ std::vector<RawEvent> ElasticsearchClient::search(
         return {};
     }
     
-    LOG_DEBUG("Search response: " + response);
+    //LOG_DEBUG("Search response: " + response);
     
     try {
         auto j = json::parse(response);
@@ -406,10 +406,10 @@ bool ElasticsearchClient::httpRequest(
     
     std::string url = esUrl_ + endpoint;
     
-    LOG_DEBUG("HTTP " + method + " " + url);
-    if (!body.empty()) {
-        LOG_DEBUG("Request body: " + body);
-    }
+    //LOG_DEBUG("HTTP " + method + " " + url);
+    //if (!body.empty()) {
+    //    LOG_DEBUG("Request body: " + body);
+    //}
     
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     
@@ -452,10 +452,10 @@ bool ElasticsearchClient::httpRequest(
         LOG_ERROR("HTTP request failed: " + std::string(curl_easy_strerror(res)));
     } else {
         LOG_DEBUG("HTTP response code: " + std::to_string(http_code));
-        if (!response.empty()) {
-            size_t maxLen = response.length() < 500 ? response.length() : 500;
-            LOG_DEBUG("HTTP response: " + response.substr(0, maxLen)); 
-        }
+        //if (!response.empty()) {
+        //    size_t maxLen = response.length() < 500 ? response.length() : 500;
+        //    LOG_DEBUG("HTTP response: " + response.substr(0, maxLen)); 
+        //}
     }
     
     curl_slist_free_all(headers);

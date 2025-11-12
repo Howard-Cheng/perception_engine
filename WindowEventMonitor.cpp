@@ -7,7 +7,7 @@
 #pragma comment(lib, "kernel32.lib")
 #pragma comment(lib, "psapi.lib")
 
-// 静态成员初始化
+// Static member initialization
 WindowEventMonitor* WindowEventMonitor::s_instance = nullptr;
 
 WindowEventMonitor::WindowEventMonitor() 
@@ -28,10 +28,10 @@ bool WindowEventMonitor::Start() {
 
     m_isRunning = true;
 
-    // 启动消息循环线程
+    // Start message loop thread
     m_messageThread = std::thread(&WindowEventMonitor::MessageLoopThread, this);
     
-    // 等待线程初始化完成
+    // Wait for thread initialization to complete
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     return true;
@@ -44,17 +44,17 @@ void WindowEventMonitor::Stop() {
 
     m_isRunning = false;
 
-    // 发送退出消息到消息窗口
+    // Send quit message to message window
     if (m_messageWindow) {
         PostMessage(m_messageWindow, WM_QUIT, 0, 0);
     }
 
-    // 等待消息循环线程结束
+    // Wait for message loop thread to exit
     if (m_messageThread.joinable()) {
         m_messageThread.join();
     }
 
-    // 清理Hook
+    // Cleanup hooks
     if (m_hook) {
         UnhookWinEvent(m_hook);
         m_hook = nullptr;
@@ -67,15 +67,15 @@ void WindowEventMonitor::Stop() {
 }
 
 void WindowEventMonitor::MessageLoopThread() {
-    // 创建一个隐藏的消息窗口
+    // Create a hidden message window
     const wchar_t* className = L"WindowEventMonitorClass";
-    WNDCLASSEXW wc = { 0 }; // 使用Unicode版本
+    WNDCLASSEXW wc = { 0 }; // Use Unicode version
     wc.cbSize = sizeof(WNDCLASSEXW);
-    wc.lpfnWndProc = DefWindowProcW; // Unicode版本
+    wc.lpfnWndProc = DefWindowProcW; // Unicode version
     wc.hInstance = GetModuleHandle(nullptr);
     wc.lpszClassName = className;
 
-    if (!RegisterClassExW(&wc)) { // Unicode版本
+    if (!RegisterClassExW(&wc)) { // Unicode version
         DWORD error = ::GetLastError();
         if (error != ERROR_CLASS_ALREADY_EXISTS) {
             m_lastError = L"Failed to register window class";
@@ -83,43 +83,43 @@ void WindowEventMonitor::MessageLoopThread() {
         }
     }
 
-    m_messageWindow = CreateWindowExW(0, className, L"", 0, 0, 0, 0, 0, // Unicode版本
+    m_messageWindow = CreateWindowExW(0, className, L"", 0, 0, 0, 0, 0, // Unicode version
                                      HWND_MESSAGE, nullptr, GetModuleHandle(nullptr), nullptr);
 
     if (!m_messageWindow) {
         m_lastError = L"Failed to create message window";
-        UnregisterClassW(className, GetModuleHandle(nullptr)); // Unicode版本
+        UnregisterClassW(className, GetModuleHandle(nullptr)); // Unicode version
         return;
     }
 
-    // 设置Windows事件Hook - 监控窗口激活和名称变化事件（用于检测Chrome标签页切换）
+    // Set Windows event hook - Monitor window activation and name change events (for detecting Chrome tab switches)
     m_hook = SetWinEventHook(
-        EVENT_SYSTEM_FOREGROUND,      // 最小事件
-        EVENT_OBJECT_NAMECHANGE,      // 最大事件（包含窗口标题变化）
-        nullptr,                       // DLL句柄（nullptr表示在调用进程中）
-        WinEventProc,                  // 回调函数
-        0,                            // 进程ID（0表示所有进程）
-        0,                            // 线程ID（0表示所有线程）
-        WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS // 标志，跳过自身进程
+        EVENT_SYSTEM_FOREGROUND,      // Minimum event
+        EVENT_OBJECT_NAMECHANGE,      // Maximum event (includes window title changes)
+        nullptr,                       // DLL handle (nullptr means in calling process)
+        WinEventProc,                  // Callback function
+        0,                            // Process ID (0 means all processes)
+        0,                            // Thread ID (0 means all threads)
+        WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS // Flags, skip own process
     );
 
     if (!m_hook) {
         m_lastError = L"Failed to set Windows event hook";
         DestroyWindow(m_messageWindow);
-        UnregisterClassW(className, GetModuleHandle(nullptr)); // Unicode版本
+        UnregisterClassW(className, GetModuleHandle(nullptr)); // Unicode version
         return;
     }
 
-    // 消息循环
+    // Message loop
     MSG msg;
     while (m_isRunning && GetMessage(&msg, nullptr, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
 
-    // 清理窗口
+    // Cleanup window
     DestroyWindow(m_messageWindow);
-    UnregisterClassW(className, GetModuleHandle(nullptr)); // Unicode版本
+    UnregisterClassW(className, GetModuleHandle(nullptr)); // Unicode version
     m_messageWindow = nullptr;
 }
 
@@ -130,26 +130,26 @@ void CALLBACK WindowEventMonitor::WinEventProc(HWINEVENTHOOK hWinEventHook, DWOR
         return;
     }
 
-    // 过滤非窗口对象事件
+    // Filter out non-window object events
     if (idObject != OBJID_WINDOW || idChild != CHILDID_SELF) {
         return;
     }
 
-    // 过滤无效窗口
+    // Filter out invalid windows
     if (!hwnd || !IsWindow(hwnd)) {
         return;
     }
 
     WindowInfo info = GetWindowInfo(hwnd);
     
-    // 根据事件类型设置事件类型
+    // Set event type based on event type
     switch (event) {
         case EVENT_SYSTEM_FOREGROUND:
         case EVENT_OBJECT_FOCUS:
             info.eventType = WindowEventType::WINDOW_ACTIVATED;
             break;
         case EVENT_OBJECT_NAMECHANGE:
-            // 检查是否是Chrome/Edge等浏览器窗口的标题变化（可能是标签页切换）
+            // Check if it's a Chrome/Edge browser window title change (may indicate tab switch)
             if (s_instance->IsChromeWindow(hwnd)) {
                 std::wstring tabTitle;
                 if (s_instance->TryGetChromeTabInfo(hwnd, tabTitle)) {
@@ -157,15 +157,15 @@ void CALLBACK WindowEventMonitor::WinEventProc(HWINEVENTHOOK hWinEventHook, DWOR
                     info.eventType = WindowEventType::TAB_ACTIVATED;
                 }
             } else {
-                // 其他程序的窗口标题变化也触发事件
+                // Window title changes of other programs also trigger events
                 info.eventType = WindowEventType::WINDOW_ACTIVATED;
             }
             break;
         default:
-            return;  // 忽略其他事件
+            return;  // Ignore other events
     }
 
-    // 触发回调
+    // Trigger callbacks
     s_instance->TriggerCallbacks(info);
 }
 
@@ -174,20 +174,20 @@ WindowInfo WindowEventMonitor::GetWindowInfo(HWND hwnd) {
     info.hwnd = hwnd;
     info.timestamp = std::chrono::system_clock::now();
 
-    // 获取窗口标题 - 使用Unicode版本
+    // Get window title - Use Unicode version
     wchar_t windowTitle[256] = { 0 };
     GetWindowTextW(hwnd, windowTitle, sizeof(windowTitle) / sizeof(wchar_t));
     info.windowTitle = windowTitle;
 
-    // 获取窗口类名 - 使用Unicode版本
+    // Get window class name - Use Unicode version
     wchar_t className[256] = { 0 };
     GetClassNameW(hwnd, className, sizeof(className) / sizeof(wchar_t));
     info.className = className;
 
-    // 获取进程和线程ID
+    // Get process and thread ID
     info.threadId = GetWindowThreadProcessId(hwnd, &info.processId);
 
-    // 获取进程名称和路径
+    // Get process name and path
     if (info.processId != 0) {
         info.processName = GetProcessName(info.processId);
         info.processPath = GetProcessPath(info.processId);
@@ -201,8 +201,8 @@ std::wstring WindowEventMonitor::GetProcessName(DWORD processId) {
     
     HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processId);
     if (hProcess) {
-        wchar_t buffer[MAX_PATH]; // Unicode缓冲区
-        if (GetModuleBaseNameW(hProcess, nullptr, buffer, MAX_PATH)) { // Unicode版本
+        wchar_t buffer[MAX_PATH]; // Unicode buffer
+        if (GetModuleBaseNameW(hProcess, nullptr, buffer, MAX_PATH)) { // Unicode version
             processName = buffer;
         }
         CloseHandle(hProcess);
@@ -216,9 +216,9 @@ std::wstring WindowEventMonitor::GetProcessPath(DWORD processId) {
     
     HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processId);
     if (hProcess) {
-        wchar_t buffer[MAX_PATH]; // Unicode缓冲区
+        wchar_t buffer[MAX_PATH]; // Unicode buffer
         DWORD size = MAX_PATH;
-        if (QueryFullProcessImageNameW(hProcess, 0, buffer, &size)) { // Unicode版本
+        if (QueryFullProcessImageNameW(hProcess, 0, buffer, &size)) { // Unicode version
             processPath = buffer;
         }
         CloseHandle(hProcess);
@@ -261,14 +261,14 @@ std::vector<WindowInfo> WindowEventMonitor::GetAllWindows() {
 
 BOOL CALLBACK WindowEventMonitor::EnumWindowsProc(HWND hwnd, LPARAM lParam) {
     if (!IsWindowVisible(hwnd)) {
-        return TRUE;  // 跳过不可见窗口
+        return TRUE;  // Skip invisible windows
     }
 
-    // 获取窗口标题 - 使用Unicode版本
+    // Get window title - Use Unicode version
     wchar_t windowTitle[256];
     GetWindowTextW(hwnd, windowTitle, sizeof(windowTitle) / sizeof(wchar_t));
     
-    // 跳过没有标题的窗口
+    // Skip windows without titles
     if (wcslen(windowTitle) == 0) {
         return TRUE;
     }
@@ -280,35 +280,35 @@ BOOL CALLBACK WindowEventMonitor::EnumWindowsProc(HWND hwnd, LPARAM lParam) {
     return TRUE;
 }
 
-// Chrome窗口检测
+// Chrome window detection
 bool WindowEventMonitor::IsChromeWindow(HWND hwnd) {
     if (!hwnd || !IsWindow(hwnd)) return false;
     
-    // 获取进程ID
+    // Get process ID
     DWORD pid = 0;
     GetWindowThreadProcessId(hwnd, &pid);
     if (pid == 0) return false;
 
-    // 获取进程名称
+    // Get process name
     std::wstring processName = GetProcessName(pid);
     
-    // 转换为小写进行比较
+    // Convert to lowercase for comparison
     for (auto &ch : processName) {
         ch = towlower(ch);
     }
     
-    // 检查是否是Chrome、Edge等浏览器
+    // Check if it's Chrome, Edge or other browsers
     return (processName.find(L"chrome.exe") != std::wstring::npos) ||
            (processName.find(L"msedge.exe") != std::wstring::npos) ||
            (processName.find(L"firefox.exe") != std::wstring::npos) ||
            (processName.find(L"opera.exe") != std::wstring::npos);
 }
 
-// 尝试获取Chrome标签页信息
+// Try to get Chrome tab information
 bool WindowEventMonitor::TryGetChromeTabInfo(HWND hwnd, std::wstring& tabTitle) {
-    // Chrome会在窗口标题中显示当前活动标签页的标题
+    // Chrome displays the current active tab's title in the window title
     wchar_t title[1024] = {0};
-    if (GetWindowTextW(hwnd, title, 1023) > 0) { // 使用Unicode版本
+    if (GetWindowTextW(hwnd, title, 1023) > 0) { // Use Unicode version
         tabTitle = title;
         return true;
     }
@@ -316,6 +316,6 @@ bool WindowEventMonitor::TryGetChromeTabInfo(HWND hwnd, std::wstring& tabTitle) 
 }
 
 LRESULT CALLBACK WindowEventMonitor::WindowEventProc(int nCode, WPARAM wParam, LPARAM lParam) {
-    // Shell Hook处理（如果需要的话）
+    // Shell Hook processing (if needed)
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
 }

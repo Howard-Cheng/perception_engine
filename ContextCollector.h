@@ -38,7 +38,7 @@ private:
     std::unique_ptr<MouseTracker> mouseTracker;
     mutable std::mutex mouseTrackerMutex;
 
-    // ? NEW: Elasticsearch integration
+    // Elasticsearch integration
     std::unique_ptr<elasticsearch::ElasticsearchClient> esClient;
     std::atomic<bool> esStorageRunning{false};
     std::thread esStorageThread;
@@ -49,11 +49,13 @@ private:
     void UpdateCache();
     bool ShouldUpdateCache();
     
-    // ? NEW: Elasticsearch background storage thread
+    // Elasticsearch background storage thread
     void ESStorageThreadFunc();
     
-    // ? NEW: Convert Json context to Elasticsearch RawEvent
+    // Convert Json context to Elasticsearch RawEvent
     void StoreContextToES(const Json& context);
+
+
 
 public:
     ContextCollector();
@@ -69,6 +71,19 @@ public:
 
     // Camera vision update
     void UpdateCameraContext(const std::string& description, float latencyMs);
+
+    // Window switch callback - Called when user switches window/tab
+    /**
+     * @brief Called when user switches to a different window or browser tab
+     * 
+     * This function will be called by WindowsAPIsManager when:
+     * - User switches applications (e.g., Chrome -> VSCode)
+     * - User switches browser tabs
+     * - Any window activation event occurs
+     * 
+     * @param record ActiveAppRecord containing info about the new active app
+     */
+    void OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& record);
 
     // Generate fused context summary
     std::string GenerateFusedContext() const;

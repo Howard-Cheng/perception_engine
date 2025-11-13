@@ -42,7 +42,6 @@ public:
 
             // Initialize context collector
             contextCollector = std::make_unique<ContextCollector>();
-            contextCollector->StartPeriodicUpdate();
             LOG_INFO("Context collector started");
 
             // ⚡ NEW: Initialize Elasticsearch (optional feature)

@@ -187,7 +187,7 @@ internal sealed class PerceptionTools
         ReadOnly = true)]
     public async Task<CallToolResult> QueryPerceptionHistoryAsync(
         [Description("Keyword to search for in screen content and application names")] string keyword,
-        [Description("Number of hours to look back in history (e.g., 24 for last 24 hours)")] int hours,
+        [Description("Number of hours to look back in history (e.g., 24 for last 24 hours), default=24")] int hours,
         [Description("Maximum number of results to return")] int maxcount,
         CancellationToken cancellationToken)
     {

@@ -1,7 +1,6 @@
 ﻿#include "ContextCollector.h"
 #include "MouseTracker.h"  // Include here instead of in header
 #include "third-party/elasticsearch/include/ElasticsearchClient.h"
-#include "third-party/elasticsearch/include/ElasticsearchTypes.h"
 #include <thread>
 #include <atomic>
 #include <iomanip>
@@ -45,6 +44,25 @@ ContextCollector::ContextCollector()
             this->OnUserSwitchWindow(record);
         }
     );
+
+    // Asynchronously initialize MouseTracker (don't block startup)
+    std::thread([this]() {
+        try {
+            std::lock_guard<std::mutex> lock(mouseTrackerMutex);
+            mouseTracker = std::make_unique<MouseTracker>();
+            if (mouseTracker->Initialize()) {
+                mouseTracker->Start();
+                std::cout << "[ContextCollector] MouseTracker initialized (async)" << std::endl;
+            }
+            else {
+                std::cerr << "[ContextCollector] Failed to initialize MouseTracker" << std::endl;
+                mouseTracker.reset();
+            }
+        }
+        catch (...) {
+            std::cerr << "[ContextCollector] Exception in MouseTracker async init" << std::endl;
+        }
+        }).detach();
 }
 
 bool ContextCollector::ShouldUpdateCache() {
@@ -56,8 +74,6 @@ bool ContextCollector::ShouldUpdateCache() {
 void ContextCollector::UpdateCache() {
     auto startTime = std::chrono::high_resolution_clock::now();
 
-    // Collect all context data (BEFORE locking cacheMutex to avoid deadlock)
-    //auto activeApp = WindowsAPIs::GetForegroundAppName();
     auto battery = WindowsAPIs::GetBatteryPercentage();
     auto isCharging = WindowsAPIs::IsCharging();
 
@@ -71,12 +87,6 @@ void ContextCollector::UpdateCache() {
     auto networkType = WindowsAPIs::GetNetworkType();
     auto location = WindowsAPIsManager::GetInstance().GetLocation();
     auto timestamp = WindowsAPIs::GetCurrentTimestamp();
-
-    // Get recent active apps list
-    auto recentApps = WindowsAPIs::GetRecentPeriodActiveAppList();
-
-    // NEW: Get current active app content using UIA
-    auto activeAppContent = WindowsAPIs::GetCurrentActiveAppContent();
 
     // Lock cacheMutex for the entire JSON building process
     std::lock_guard<std::mutex> lock(cacheMutex);
@@ -148,14 +158,6 @@ void ContextCollector::UpdateCache() {
         cachedContext.setRaw("locationLon", "null");
         cachedContext.setRaw("locationValid", "false");
     }
-
-    //// NEW: Add active app content to JSON
-    //if (!activeAppContent.empty()) {
-    //    cachedContext.set("c", activeAppContent);
-    //}
-    //else {
-    //    cachedContext.setRaw("activeAppContent", "null");
-    //}
 
     cachedContext.set("timestamp", timestamp);
 
@@ -296,9 +298,6 @@ void ContextCollector::OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& re
             record.appContent.substr(0, 100) + "..." : record.appContent)
         << std::endl;
 
-    // Force an immediate cache update to capture the new window state
-    UpdateCache();
-
     auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(
         record.timestamp.time_since_epoch()).count();
     try {
@@ -309,8 +308,10 @@ void ContextCollector::OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& re
         context.set("windowTitle", record.windowTitle);
         context.set("duration", record.durationSeconds);
         context.set("startTime", timestamp);
+        context.set("interactionCount", mouseTracker->GetClickedCount());
         // Store to Elasticsearch
         StoreContextToES(context);
+        mouseTracker->ResetMouseRecords();
 
     }
     catch (const std::exception& e) {
@@ -404,7 +405,7 @@ ContextCollector::~ContextCollector() {
     // Shutdown Elasticsearch before other cleanup
     ShutdownElasticsearch();
 
-    // ⚡ NEW: Clear window switch callback
+    // Clear window switch callback
     WindowsAPIs::WindowsAPIsManager::GetInstance().ClearWindowSwitchCallback();
 
     // Cleanup active app monitoring when the collector is destroyed
@@ -490,34 +491,6 @@ void ContextCollector::ShutdownElasticsearch() {
     }
 }
 
-void ContextCollector::ESStorageThreadFunc() {
-    std::cout << "[ESStorageThread] Started" << std::endl;
-
-    while (esStorageRunning.load()) {
-        try {
-            // Collect current context
-            Json context = CollectCurrentContext();
-
-            // Store to Elasticsearch
-            StoreContextToES(context);
-
-            // Sleep for 5 seconds
-            std::this_thread::sleep_for(std::chrono::seconds(5));
-
-        }
-        catch (const std::exception& e) {
-            std::cerr << "[ESStorageThread] Exception: " << e.what() << std::endl;
-            std::this_thread::sleep_for(std::chrono::seconds(5));
-        }
-        catch (...) {
-            std::cerr << "[ESStorageThread] Unknown exception" << std::endl;
-            std::this_thread::sleep_for(std::chrono::seconds(5));
-        }
-    }
-
-    std::cout << "[ESStorageThread] Stopped" << std::endl;
-}
-
 void ContextCollector::StoreContextToES(const Json& context) {
     std::lock_guard<std::mutex> lock(esClientMutex);
 
@@ -574,14 +547,13 @@ void ContextCollector::StoreContextToES(const Json& context) {
         }
 
         // Extract mouse events from recentMouseTrack
-        // TODO: Parse recentMouseTrack JSON and populate event.mouseEvents
-        // For now, set interaction count based on presence of data
-        event.interactionCount = 0;
+        event.mouseEvents = mouseTracker->GetMouseEvents();
+        event.interactionCount = context.getInt("interactionCount", 0);
         event.dwellTimeSeconds = duration;
 
         // ? FIX: Extract system info with proper handling
         // Battery percent
-        int battery = context.getInt("battery", -1);
+        int battery = context.getInt("battery", 0);
         if (battery >= 0 && battery <= 100) {
             event.systemInfo.batteryPercent = battery;
         }

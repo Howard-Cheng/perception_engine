@@ -49,9 +49,6 @@ private:
     void UpdateCache();
     bool ShouldUpdateCache();
     
-    // Elasticsearch background storage thread
-    void ESStorageThreadFunc();
-    
     // Convert Json context to Elasticsearch RawEvent
     void StoreContextToES(const Json& context);
 

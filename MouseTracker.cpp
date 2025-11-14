@@ -84,14 +84,14 @@ void MouseTracker::Start() {
     // 启动消息循环线程，并在该线程中安装钩子
     m_messageLoopThread = std::thread([this]() {
         std::wcout << L"[MouseTracker] Message loop thread starting...\n" << std::flush;
-        m_logFile << L"Message loop thread starting.\n" << std::flush;
+        m_logFile << "Message loop thread starting.\n" << std::flush;
         
         // ✅ 在消息循环线程中安装钩子（关键！）
         m_mouseHook = SetWindowsHookEx(WH_MOUSE_LL, MouseHookProc, GetModuleHandle(nullptr), 0);
         
         if (m_mouseHook) {
             std::wcout << L"[MouseTracker] Mouse hook installed successfully in message loop thread.\n" << std::flush;
-            m_logFile << L"Mouse hook installed successfully in message loop thread.\n" << std::flush;
+            m_logFile << "Mouse hook installed successfully in message loop thread.\n" << std::flush;
             
             // 开始消息循环
             MSG msg;
@@ -103,7 +103,7 @@ void MouseTracker::Start() {
             }
             
             std::wcout << L"[MouseTracker] Message loop ended.\n" << std::flush;
-            m_logFile << L"Message loop ended.\n" << std::flush;
+            m_logFile << "Message loop ended.\n" << std::flush;
             
             // 清理钩子
             if (m_mouseHook) {
@@ -115,7 +115,7 @@ void MouseTracker::Start() {
             // 钩子安装失败
             DWORD error = GetLastError();
             std::wcerr << L"[MouseTracker] Mouse hook installation FAILED! Error code: " << error << L"\n" << std::flush;
-            m_logFile << L"Mouse hook installation FAILED! Error code: " << error << L"\n" << std::flush;
+            m_logFile << "Mouse hook installation FAILED! Error code: " << error << L"\n" << std::flush;
             m_isRunning = false;
         }
     });
@@ -399,7 +399,7 @@ void MouseTracker::RecordMouseOperation(MouseEventType eventType, POINT position
             m_clickedCount++;
         }
     } catch (...) {
-       std::cout << L"[Error getting content]" << std::endl;
+       std::wcout << L"[Error getting content]" << std::endl;
     }
     
     // 调试输出：对比坐标窗口和前台窗口

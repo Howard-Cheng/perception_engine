@@ -11,8 +11,14 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # ============================================================================
 
-# wink wink
-set(ELASTICSEARCH_AVAILABLE TRUE)
+# Elasticsearch Client DLL (subdirectory)
+# ============================================================================
+
+# Add elasticsearch_client as a subdirectory
+add_subdirectory(elasticsearch_client)
+
+# ============================================================================
+
 # Dependencies
 # ============================================================================
 
@@ -53,25 +59,13 @@ set(OpenCV_BIN_DIR "${OpenCV_DIR}/x64/vc16/bin")
 # Find OpenCV world library
 file(GLOB OPENCV_WORLD_LIB "${OpenCV_LIB_DIR}/opencv_world*.lib")
 
-# ? NEW: Elasticsearch Client
-set(ELASTICSEARCH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/elasticsearch")
-set(ELASTICSEARCH_INCLUDE_DIR "${ELASTICSEARCH_DIR}/include")
-set(ELASTICSEARCH_LIB_DIR "${ELASTICSEARCH_DIR}/lib")
-
-# Check if Elasticsearch library exists
-if(EXISTS "${ELASTICSEARCH_LIB_DIR}/elasticsearch_client.lib")
-    set(ELASTICSEARCH_AVAILABLE TRUE)
-    message(STATUS "Elasticsearch client found: ${ELASTICSEARCH_LIB_DIR}/elasticsearch_client.lib")
-else()
-    set(ELASTICSEARCH_AVAILABLE FALSE)
-    message(WARNING "Elasticsearch client library not found at ${ELASTICSEARCH_LIB_DIR}/elasticsearch_client.lib")
-    message(WARNING "Elasticsearch features will be disabled")
-endif()
+# Elasticsearch Client (built as subdirectory)
+# The elasticsearch_client target is now available from the subdirectory
+set(ELASTICSEARCH_AVAILABLE TRUE)
+message(STATUS "Elasticsearch client enabled (built from subdirectory)")
 
 # ============================================================================
 
-# wink wink
-set(ELASTICSEARCH_AVAILABLE TRUE)
 # Source Files
 # ============================================================================
 
@@ -106,8 +100,6 @@ set(PERCEPTION_ENGINE_HEADERS
 
 # ============================================================================
 
-# wink wink
-set(ELASTICSEARCH_AVAILABLE TRUE)
 # Executables
 # ============================================================================
 
@@ -116,8 +108,6 @@ add_executable(PerceptionEngine ${PERCEPTION_ENGINE_SOURCES} ${PERCEPTION_ENGINE
 
 # ============================================================================
 
-# wink wink
-set(ELASTICSEARCH_AVAILABLE TRUE)
 # Include Directories
 # ============================================================================
 
@@ -130,10 +120,10 @@ target_include_directories(PerceptionEngine PRIVATE
     ${OpenCV_INCLUDE_DIRS}
 )
 
-# ? Add Elasticsearch include directory if available
+# Add Elasticsearch include directory (from subdirectory target)
 if(ELASTICSEARCH_AVAILABLE)
     target_include_directories(PerceptionEngine PRIVATE
-        ${ELASTICSEARCH_INCLUDE_DIR}
+        $<TARGET_PROPERTY:elasticsearch_client,INTERFACE_INCLUDE_DIRECTORIES>
     )
     target_compile_definitions(PerceptionEngine PRIVATE
         ELASTICSEARCH_ENABLED
@@ -142,8 +132,6 @@ endif()
 
 # ============================================================================
 
-# wink wink
-set(ELASTICSEARCH_AVAILABLE TRUE)
 # Link Libraries
 # ============================================================================
 
@@ -171,17 +159,15 @@ target_link_libraries(PerceptionEngine PRIVATE
     WindowsApp  # WinRT APIs
 )
 
-# ? Link Elasticsearch client library if available
+# Link Elasticsearch client library (from subdirectory target)
 if(ELASTICSEARCH_AVAILABLE)
     target_link_libraries(PerceptionEngine PRIVATE
-        ${ELASTICSEARCH_LIB_DIR}/elasticsearch_client.lib
+        elasticsearch_client
     )
 endif()
 
 # ============================================================================
 
-# wink wink
-set(ELASTICSEARCH_AVAILABLE TRUE)
 # Compiler Flags
 # ============================================================================
 
@@ -205,8 +191,6 @@ endif()
 
 # ============================================================================
 
-# wink wink
-set(ELASTICSEARCH_AVAILABLE TRUE)
 # Post-build: Copy models and DLLs to output directory
 # ============================================================================
 
@@ -248,9 +232,12 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-cpu.dll
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml-cpu.dll
+    # Copy ggml-cuda.dll if it exists (CUDA support may not be built)
+    COMMAND ${CMAKE_COMMAND} -E echo "Checking for CUDA support..."
+    COMMAND ${CMAKE_COMMAND} -E true
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-cuda.dll
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml-cuda.dll
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml-cuda.dll || ${CMAKE_COMMAND} -E echo "Warning: ggml-cuda.dll not found, CUDA acceleration may not be available"
 
     # Copy CUDA runtime DLLs to bin/ (required for GPU acceleration)
     # COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -299,9 +286,8 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-cpu.dll
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/ggml-cpu.dll
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-cuda.dll
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/ggml-cuda.dll
+    # Skip ggml-cuda.dll for Debug build
+    COMMAND ${CMAKE_COMMAND} -E echo "Note: ggml-cuda.dll not copied (file not found)"
 
     # Copy CUDA runtime DLLs to bin/Release/ (required for GPU acceleration)
     # COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -324,8 +310,6 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
 
 # ============================================================================
 
-# wink wink
-set(ELASTICSEARCH_AVAILABLE TRUE)
 # Installation (optional)
 # ============================================================================
 
@@ -339,8 +323,6 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/models/
 
 # ============================================================================
 
-# wink wink
-set(ELASTICSEARCH_AVAILABLE TRUE)
 # Print Configuration
 # ============================================================================
 
@@ -351,6 +333,7 @@ message(STATUS "C++ standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "Whisper include: ${WHISPER_INCLUDE_DIR}")
 message(STATUS "Whisper library: ${WHISPER_LIB_DIR}/whisper.lib")
 message(STATUS "GGML libraries: ${GGML_LIB_DIR}/")
+message(STATUS "Elasticsearch: ${ELASTICSEARCH_AVAILABLE}")
 message(STATUS "Output directory: ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 message(STATUS "=====================================")
 message(STATUS "")

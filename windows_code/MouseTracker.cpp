@@ -6,6 +6,7 @@
 #include <atlbase.h>
 #include <UIAutomationClient.h>
 #include <ShellScalingApi.h>
+#include <WindowsAPIs.h>
 
 #pragma comment(lib, "psapi.lib")
 #pragma comment(lib, "Shcore.lib")
@@ -66,7 +67,7 @@ bool MouseTracker::Initialize() {
         return false;
     }
 
-    m_logFile << L"\n========== Mouse Tracker Started at " << GetCurrentTimeString() << L" ==========\n" << std::flush;
+    m_logFile << "\n========== Mouse Tracker Started at " << GetCurrentTimeString() << " ==========\n" << std::flush;
 
     return true;
 }
@@ -83,14 +84,14 @@ void MouseTracker::Start() {
     // 启动消息循环线程，并在该线程中安装钩子
     m_messageLoopThread = std::thread([this]() {
         std::wcout << L"[MouseTracker] Message loop thread starting...\n" << std::flush;
-        m_logFile << L"Message loop thread starting.\n" << std::flush;
+        m_logFile << "Message loop thread starting.\n" << std::flush;
         
         // ✅ 在消息循环线程中安装钩子（关键！）
         m_mouseHook = SetWindowsHookEx(WH_MOUSE_LL, MouseHookProc, GetModuleHandle(nullptr), 0);
         
         if (m_mouseHook) {
             std::wcout << L"[MouseTracker] Mouse hook installed successfully in message loop thread.\n" << std::flush;
-            m_logFile << L"Mouse hook installed successfully in message loop thread.\n" << std::flush;
+            m_logFile << "Mouse hook installed successfully in message loop thread.\n" << std::flush;
             
             // 开始消息循环
             MSG msg;
@@ -102,7 +103,7 @@ void MouseTracker::Start() {
             }
             
             std::wcout << L"[MouseTracker] Message loop ended.\n" << std::flush;
-            m_logFile << L"Message loop ended.\n" << std::flush;
+            m_logFile << "Message loop ended.\n" << std::flush;
             
             // 清理钩子
             if (m_mouseHook) {
@@ -114,7 +115,7 @@ void MouseTracker::Start() {
             // 钩子安装失败
             DWORD error = GetLastError();
             std::wcerr << L"[MouseTracker] Mouse hook installation FAILED! Error code: " << error << L"\n" << std::flush;
-            m_logFile << L"Mouse hook installation FAILED! Error code: " << error << L"\n" << std::flush;
+            m_logFile << "Mouse hook installation FAILED! Error code: " << error << L"\n" << std::flush;
             m_isRunning = false;
         }
     });
@@ -151,12 +152,11 @@ void MouseTracker::Stop() {
     // 注意：钩子已经在消息循环线程中清理了
 
     if (m_logFile.is_open()) {
-        m_logFile << L"========== Mouse Tracker Stopped at " << GetCurrentTimeString() << L" ==========\n" << std::flush;
+        m_logFile << "========== Mouse Tracker Stopped at " << GetCurrentTimeString() << " ==========\n" << std::flush;
     }
 }
 
 LRESULT CALLBACK MouseTracker::MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
-    // ✨ 添加调试输出
     static int callCount = 0;
     if (callCount < 5) {  // 只输出前5次，避免刷屏
         std::wcout << L"[HOOK] MouseHookProc called! nCode=" << nCode 
@@ -327,7 +327,7 @@ void MouseTracker::ProcessMouseEvent(WPARAM wParam, const MSLLHOOKSTRUCT* mouseI
                        << L") - (" << topRect.right << L", " << topRect.bottom << L")\n";
             
             bool isInside = (mouseInfo->pt.x >= topRect.left && mouseInfo->pt.x < topRect.right &&
-                           mouseInfo->pt.y >= topRect.top && pt.y < topRect.bottom);
+                           mouseInfo->pt.y >= topRect.top && mouseInfo->pt.y < topRect.bottom);
             std::wcout << L"  Click is " << (isInside ? L"INSIDE" : L"OUTSIDE") 
                        << L" target window bounds\n";
         }
@@ -345,7 +345,7 @@ void MouseTracker::ProcessMouseEvent(WPARAM wParam, const MSLLHOOKSTRUCT* mouseI
 
 void MouseTracker::ProcessRecordQueue() {
     // 在工作线程中初始化 COM（每个线程需要单独初始化）
-    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    auto result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
     while (m_isRunning) {
         PendingMouseEvent event;
@@ -383,85 +383,28 @@ void MouseTracker::RecordMouseOperation(MouseEventType eventType, POINT position
     record.position = position;
 
     // ✅ 关键改进：先立即获取元素内容（在UI状态改变之前）
-    // 不要延迟，否则UI可能已经更新，元素内容会改变
-    ElementInfo contentInfo;
+    MouseEvent dbMouseEvent;
     try {
         if (eventType == MouseEventType::TEXT_SELECTION) {
             // 对于文本选择，使用特殊方法获取选中的文本
-            contentInfo.content = GetSelectedText(pointWindow);
-            contentInfo.elementType = L"SelectedText";
+            dbMouseEvent.timestamp = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            dbMouseEvent.eventType = "TextSelection";
+            dbMouseEvent.posX = position.x;
+            dbMouseEvent.posY = position.y;
+            dbMouseEvent.content = WindowsAPIs::WideStringToUtf8(GetSelectedText(pointWindow));
+            m_mouseEvents.push_back(dbMouseEvent);
         }
         else {
             // 对于点击事件，获取元素内容
-            contentInfo = GetElementContentAtPoint(position, pointWindow);
+            m_clickedCount++;
         }
     } catch (...) {
-        contentInfo.content = L"[Error getting content]";
-        contentInfo.elementType = L"Unknown";
+       std::wcout << L"[Error getting content]" << std::endl;
     }
-
-    // 然后延迟获取前台窗口（用于应用名称和窗口标题）
-    // 这个延迟只影响窗口识别，不影响内容获取
-    //Sleep(50);  // 50ms 延迟足够窗口切换完成
-
-    // 现在获取前台窗口，此时应该已经切换到新窗口了
-    HWND foregroundWindow = GetForegroundWindow();
-    
-    // 调试输出：对比坐标窗口和前台窗口
-    #ifdef _DEBUG
-    if (pointWindow && IsWindow(pointWindow)) {
-        HWND pointRoot = GetRootOwnerWindow(pointWindow);
-        std::wstring pointApp = GetApplicationName(pointRoot);
-        std::wstring foreApp = GetApplicationName(GetRootOwnerWindow(foregroundWindow));
-        std::wcout << L"[DEBUG] PointWindow: " << pointApp 
-                   << L", ForegroundWindow: " << foreApp << L"\n";
-    }
-    #endif
-
-    // 使用前台活动窗口来确定应用程序（更准确）
-    if (foregroundWindow && IsWindow(foregroundWindow)) {
-        // 获取顶层窗口（避免子窗口导致的错误）
-        HWND rootWindow = GetRootOwnerWindow(foregroundWindow);
-        
-        record.applicationName = GetApplicationName(rootWindow);
-        record.windowTitle = GetWindowTitle(rootWindow);
-        
-        // 使用之前立即获取的内容（在延迟之前获取的）
-        record.content = contentInfo.content;
-        record.elementType = contentInfo.elementType;
-    } else {
-        // 降级处理：如果前台窗口无效，使用坐标窗口
-        if (pointWindow && IsWindow(pointWindow)) {
-            HWND rootWindow = GetRootOwnerWindow(pointWindow);
-            record.applicationName = GetApplicationName(rootWindow);
-            record.windowTitle = GetWindowTitle(rootWindow);
-            
-            // 使用之前立即获取的内容
-            record.content = contentInfo.content;
-            record.elementType = contentInfo.elementType;
-        }
-    }
-
-    // 添加到记录列表
-    {
-        std::lock_guard<std::mutex> lock(m_recordsMutex);
-        m_records.push_back(record);
-        CleanupOldRecords();
-    }
-
-    // 打印到控制台（异步，不会阻塞钩子）
-    std::wcout << L"\n[" << GetCurrentTimeString() << L"] "
-               << L"Event: " << MouseEventTypeToString(eventType) << L"\n"
-               << L"Position: (" << position.x << L", " << position.y << L")\n"
-               << L"Application: " << record.applicationName << L"\n"
-               << L"Window: " << record.windowTitle << L"\n"
-               << L"Content: " << record.content << L"\n"
-               << L"Element Type: " << record.elementType << L"\n"
-               << std::flush;
 
     // 写入日志文件（异步）
     if (m_logFile.is_open()) {
-        m_logFile << record.toJson() << L"\n" << std::flush;
+        m_logFile << dbMouseEvent.content << "\n" << std::flush;
     }
 }
 
@@ -1182,7 +1125,7 @@ std::wstring MouseEventTypeToString(MouseEventType type) {
     }
 }
 
-std::wstring GetCurrentTimeString() {
+std::string GetCurrentTimeString() {
     auto now = std::chrono::system_clock::now();
     auto time_t_val = std::chrono::system_clock::to_time_t(now);
     std::tm tm_val;
@@ -1190,7 +1133,7 @@ std::wstring GetCurrentTimeString() {
     
     wchar_t buffer[100];
     wcsftime(buffer, 100, L"%Y-%m-%d %H:%M:%S", &tm_val);
-    return std::wstring(buffer);
+    return WindowsAPIs::WideStringToUtf8(buffer);
 }
 
 // 修 trimmed首尾空白字符（空格、制表符、换行符等）

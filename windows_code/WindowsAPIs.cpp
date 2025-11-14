@@ -170,6 +170,7 @@ namespace WindowsAPIs {
                 auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - m_lastAppStartTime);
 
                 // Only record if the app was active for more than 10 seconds
+                //TODO: adjust threshold as needed
                 if (duration.count() > 2) {
                     int durationSecs = static_cast<int>(duration.count());
 

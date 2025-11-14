@@ -91,9 +91,6 @@ void ContextCollector::UpdateCache() {
     // Lock cacheMutex for the entire JSON building process
     std::lock_guard<std::mutex> lock(cacheMutex);
 
-    // Clear and rebuild the context
-    cachedContext = Json();
-
     // Build JSON response
     //cachedContext.set("activeApp", activeApp);
     cachedContext.set("battery", battery);
@@ -302,15 +299,15 @@ void ContextCollector::OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& re
         record.timestamp.time_since_epoch()).count();
     try {
         // Collect current context
-        Json context = CollectCurrentContext();
-        context.set("activeApp", record.appName);
-        context.set("activeAppContent", record.appContent);
-        context.set("windowTitle", record.windowTitle);
-        context.set("duration", record.durationSeconds);
-        context.set("startTime", timestamp);
-        context.set("interactionCount", mouseTracker->GetClickedCount());
+        CollectCurrentContext();
+        cachedContext.set("activeApp", record.appName);
+        cachedContext.set("activeAppContent", record.appContent);
+        cachedContext.set("windowTitle", record.windowTitle);
+        cachedContext.set("duration", record.durationSeconds);
+        cachedContext.set("startTime", timestamp);
+        cachedContext.set("interactionCount", mouseTracker->GetClickedCount());
         // Store to Elasticsearch
-        StoreContextToES(context);
+        StoreContextToES(cachedContext);
         mouseTracker->ResetMouseRecords();
 
     }

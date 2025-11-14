@@ -1,6 +1,6 @@
 ﻿#include "ContextCollector.h"
 #include "MouseTracker.h"  // Include here instead of in header
-#include "third-party/elasticsearch/include/ElasticsearchClient.h"
+#include "ElasticsearchClient.h"
 #include <thread>
 #include <atomic>
 #include <iomanip>

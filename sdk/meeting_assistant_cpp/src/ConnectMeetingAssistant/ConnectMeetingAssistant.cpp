@@ -11,6 +11,20 @@ static OnMeetingStatusChangedCallback g_callback = nullptr;
 static std::atomic<bool> g_running(false);
 static std::thread g_listenerThread;
 
+// DLL entry point - ensure cleanup on unload
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
+    switch (fdwReason) {
+    case DLL_PROCESS_DETACH:
+        // Force cleanup before DLL unloads to prevent std::thread destructor crash
+        if (g_running || g_listenerThread.joinable()) {
+            std::cout << "[ConnectMA] DLL unloading - forcing cleanup\n";
+            DisconnectMeetingAssistant();
+        }
+        break;
+    }
+    return TRUE;
+}
+
 // Pipe name (must match server)
 static constexpr const wchar_t* PIPE_NAME = L"\\\\.\\pipe\\MeetingAssistantPipe";
 
@@ -136,19 +150,22 @@ CONNECT_API int ConnectMeetingAssistant(OnMeetingStatusChangedCallback callback)
 }
 
 CONNECT_API int DisconnectMeetingAssistant() {
-    if (g_hPipe == INVALID_HANDLE_VALUE) {
+    if (g_hPipe == INVALID_HANDLE_VALUE && !g_listenerThread.joinable()) {
         return 0; // Not connected
     }
 
     std::cout << "[ConnectMA] Disconnecting...\n";
 
+    // Signal thread to stop
     g_running = false;
 
+    // Close pipe handle first - this will unblock ReadFile in the thread
     if (g_hPipe != INVALID_HANDLE_VALUE) {
         CloseHandle(g_hPipe);
         g_hPipe = INVALID_HANDLE_VALUE;
     }
 
+    // Wait for thread to finish
     if (g_listenerThread.joinable()) {
         g_listenerThread.join();
     }

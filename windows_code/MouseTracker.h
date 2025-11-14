@@ -13,9 +13,11 @@
 #include <thread>
 #include <condition_variable>
 #include <atomic>
+#include "ElasticsearchTypes.h"
 
 #pragma comment(lib, "oleacc.lib")
 
+using namespace elasticsearch;
 // 鼠标事件类型
 enum class MouseEventType {
     LEFT_CLICK,
@@ -56,6 +58,17 @@ public:
     void Stop();
     void SaveToFile(const std::wstring& filename);
     std::wstring GetAllRecordsAsJson();
+    inline void ResetMouseRecords() {
+        m_clickedCount = 0;
+        m_mouseEvents.clear();
+    }
+    inline int GetClickedCount() const {
+        return m_clickedCount;
+    }
+
+    inline std::vector<MouseEvent> GetMouseEvents() const {
+        return m_mouseEvents;
+    }
 
 private:
     static LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam);
@@ -114,10 +127,13 @@ private:
     POINT m_dragStartPos;
     HWND m_dragWindow;
 
-    std::wofstream m_logFile;
+    std::ofstream m_logFile;
+
+    UINT64 m_clickedCount;
+    std::vector<MouseEvent> m_mouseEvents;
 };
 
 // 辅助函数
 std::wstring MouseEventTypeToString(MouseEventType type);
-std::wstring GetCurrentTimeString();
+std::string GetCurrentTimeString();
 std::wstring TrimWhitespace(const std::wstring& str);  // 修剪首尾空白字符

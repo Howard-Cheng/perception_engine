@@ -1,7 +1,6 @@
-#include "ContextCollector.h"
+﻿#include "ContextCollector.h"
 #include "MouseTracker.h"  // Include here instead of in header
-#include "third-party/elasticsearch/include/ElasticsearchClient.h"
-#include "third-party/elasticsearch/include/ElasticsearchTypes.h"
+#include "ElasticsearchClient.h"
 #include <thread>
 #include <atomic>
 #include <iomanip>
@@ -13,9 +12,11 @@
 #include <random>
 #include <ctime>
 
-static std::atomic<bool> updateThreadRunning{false};
+static std::atomic<bool> updateThreadRunning{ false };
 static std::thread updateThread;
-static std::atomic<bool> activeAppMonitoringInitialized{false};
+static std::atomic<bool> activeAppMonitoringInitialized{ false };
+
+using namespace WindowsAPIs;
 
 ContextCollector::ContextCollector()
     : latestCameraLatency(0.0f)
@@ -23,12 +24,45 @@ ContextCollector::ContextCollector()
     , latestContextUpdateLatency(0.0f)
 {
     lastUpdate = std::chrono::steady_clock::now() - std::chrono::seconds(2);
-    
+
     // Generate unique device ID
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> dis(100000, 999999);
     deviceId = "device_" + std::to_string(dis(gen));
+
+    // Initialize active app monitoring
+    if (!activeAppMonitoringInitialized.load()) {
+        if (WindowsAPIs::InitializeActiveAppMonitoring()) {
+            activeAppMonitoringInitialized.store(true);
+        }
+    }
+
+    // Register window switch callback with WindowsAPIsManager
+    WindowsAPIsManager::GetInstance().RegisterWindowSwitchCallback(
+        [this](const WindowsAPIs::ActiveAppRecord& record) {
+            this->OnUserSwitchWindow(record);
+        }
+    );
+
+    // Asynchronously initialize MouseTracker (don't block startup)
+    std::thread([this]() {
+        try {
+            std::lock_guard<std::mutex> lock(mouseTrackerMutex);
+            mouseTracker = std::make_unique<MouseTracker>();
+            if (mouseTracker->Initialize()) {
+                mouseTracker->Start();
+                std::cout << "[ContextCollector] MouseTracker initialized (async)" << std::endl;
+            }
+            else {
+                std::cerr << "[ContextCollector] Failed to initialize MouseTracker" << std::endl;
+                mouseTracker.reset();
+            }
+        }
+        catch (...) {
+            std::cerr << "[ContextCollector] Exception in MouseTracker async init" << std::endl;
+        }
+        }).detach();
 }
 
 bool ContextCollector::ShouldUpdateCache() {
@@ -40,78 +74,71 @@ bool ContextCollector::ShouldUpdateCache() {
 void ContextCollector::UpdateCache() {
     auto startTime = std::chrono::high_resolution_clock::now();
 
-    // Collect all context data (BEFORE locking cacheMutex to avoid deadlock)
-    auto activeApp = WindowsAPIs::GetForegroundAppName();
     auto battery = WindowsAPIs::GetBatteryPercentage();
     auto isCharging = WindowsAPIs::IsCharging();
-    
+
     // Collect system performance data
     auto cpuUsage = WindowsAPIs::GetCPUUsage();
     auto memoryUsage = WindowsAPIs::GetMemoryUsage();
     auto memoryUsed = WindowsAPIs::GetMemoryUsed();
     auto totalMemory = WindowsAPIs::GetTotalMemory();
-    
+
     auto networkConnected = WindowsAPIs::IsNetworkConnected();
     auto networkType = WindowsAPIs::GetNetworkType();
-    auto location = WindowsAPIs::GetLocation();
+    auto location = WindowsAPIsManager::GetInstance().GetLocation();
     auto timestamp = WindowsAPIs::GetCurrentTimestamp();
-    
-    // Get recent active apps list
-    //auto recentApps = WindowsAPIs::GetRecentPeriodActiveAppList();
-    
-    // NEW: Get current active app content using UIA
-    auto activeAppContent = WindowsAPIs::GetCurrentActiveAppContent();
 
     // Lock cacheMutex for the entire JSON building process
     std::lock_guard<std::mutex> lock(cacheMutex);
 
-    // Clear and rebuild the context
-    cachedContext = Json();
-
     // Build JSON response
-    cachedContext.set("activeApp", activeApp);
+    //cachedContext.set("activeApp", activeApp);
     cachedContext.set("battery", battery);
     cachedContext.set("isCharging", isCharging);
-    
+
     // Add system performance data with proper formatting
     if (cpuUsage >= 0) {
         std::ostringstream cpuStream;
         cpuStream << std::fixed << std::setprecision(2) << cpuUsage;
         cachedContext.setRaw("cpuUsage", cpuStream.str());
-    } else {
+    }
+    else {
         cachedContext.setRaw("cpuUsage", "null");
     }
-    
+
     // memoryUsage: Memory usage percentage
     if (memoryUsage >= 0) {
         std::ostringstream memPercentStream;
         memPercentStream << std::fixed << std::setprecision(2) << memoryUsage;
         cachedContext.setRaw("memoryUsage", memPercentStream.str());
-    } else {
+    }
+    else {
         cachedContext.setRaw("memoryUsage", "null");
     }
-    
+
     // memoryUsed: Used memory in GB
     if (memoryUsed >= 0) {
         std::ostringstream memUsedStream;
         memUsedStream << std::fixed << std::setprecision(2) << memoryUsed;
         cachedContext.setRaw("memoryUsedGB", memUsedStream.str());
-    } else {
+    }
+    else {
         cachedContext.setRaw("memoryUsedGB", "null");
     }
-    
+
     // totalMemory: Total memory in GB
     if (totalMemory >= 0) {
         std::ostringstream totalMemStream;
         totalMemStream << std::fixed << std::setprecision(2) << totalMemory;
         cachedContext.setRaw("totalMemoryGB", totalMemStream.str());
-    } else {
+    }
+    else {
         cachedContext.setRaw("totalMemoryGB", "null");
     }
-    
+
     cachedContext.set("networkConnected", networkConnected);
     cachedContext.set("networkType", networkType);
-    
+
     // Handle WinRT location result properly
     if (location.valid && location.latitude != 0.0 && location.longitude != 0.0) {
         // Valid GPS coordinates
@@ -121,20 +148,14 @@ void ContextCollector::UpdateCache() {
         cachedContext.setRaw("locationLat", latStream.str());
         cachedContext.setRaw("locationLon", lonStream.str());
         cachedContext.setRaw("locationValid", "true");
-    } else {
+    }
+    else {
         // Invalid or unable to get location
         cachedContext.setRaw("locationLat", "null");
         cachedContext.setRaw("locationLon", "null");
         cachedContext.setRaw("locationValid", "false");
     }
-    
-    // NEW: Add active app content to JSON
-    if (!activeAppContent.empty()) {
-        cachedContext.set("activeAppContent", activeAppContent);
-    } else {
-        cachedContext.setRaw("activeAppContent", "null");
-    }
-    
+
     cachedContext.set("timestamp", timestamp);
 
     // cacheMutex is released here automatically
@@ -152,9 +173,7 @@ void ContextCollector::UpdateCache() {
 }
 
 Json ContextCollector::CollectCurrentContext() {
-    if (ShouldUpdateCache()) {
-        UpdateCache();
-    }
+    UpdateCache();
 
     std::lock_guard<std::mutex> lock(cacheMutex);
 
@@ -165,7 +184,8 @@ Json ContextCollector::CollectCurrentContext() {
         voiceText = latestVoiceTranscription;
         if (!latestVoiceTranscription.empty()) {
             cachedContext.set("voiceTranscription", latestVoiceTranscription);
-        } else {
+        }
+        else {
             cachedContext.setRaw("voiceTranscription", "null");
         }
     }
@@ -176,7 +196,8 @@ Json ContextCollector::CollectCurrentContext() {
         if (!latestCameraDescription.empty()) {
             cachedContext.set("cameraDescription", latestCameraDescription);
             cachedContext.set("cameraLatency", static_cast<int>(latestCameraLatency));
-        } else {
+        }
+        else {
             cachedContext.setRaw("cameraDescription", "null");
             cachedContext.set("cameraLatency", 0);
         }
@@ -231,7 +252,8 @@ void ContextCollector::UpdateVoiceContext(const std::string& transcription) {
     size_t end = cleaned.find_last_not_of(" \t\n\r");
     if (start != std::string::npos && end != std::string::npos) {
         cleaned = cleaned.substr(start, end - start + 1);
-    } else {
+    }
+    else {
         cleaned = "";
     }
 
@@ -255,6 +277,46 @@ void ContextCollector::UpdateCameraContext(const std::string& description, float
     // Store camera vision data in member variables (persists across cache rebuilds)
     latestCameraDescription = description;
     latestCameraLatency = latencyMs;
+}
+
+// Window switch callback - Simple notification when user switches window/tab
+void ContextCollector::OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& record) {
+    // Log the window switch event with app info
+    std::cout << "[ContextCollector] User switched window/tab" << std::endl;
+    std::cout << "  -> New App: " << record.appName << std::endl;
+    std::cout << "  -> Window: " << record.windowTitle << std::endl;
+    std::cout << "  -> Timestamp: "
+        << std::chrono::duration_cast<std::chrono::seconds>(
+            record.timestamp.time_since_epoch()).count()
+        << "s" << std::endl;
+    std::cout << "  -> Duration: " << record.durationSeconds << "s" << std::endl;
+    std::cout << "  -> Content Snippet: "
+        << (record.appContent.length() > 100 ?
+            record.appContent.substr(0, 100) + "..." : record.appContent)
+        << std::endl;
+
+    auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(
+        record.timestamp.time_since_epoch()).count();
+    try {
+        // Collect current context
+        CollectCurrentContext();
+        cachedContext.set("activeApp", record.appName);
+        cachedContext.set("activeAppContent", record.appContent);
+        cachedContext.set("windowTitle", record.windowTitle);
+        cachedContext.set("duration", record.durationSeconds);
+        cachedContext.set("startTime", timestamp);
+        cachedContext.set("interactionCount", mouseTracker->GetClickedCount());
+        // Store to Elasticsearch
+        StoreContextToES(cachedContext);
+        mouseTracker->ResetMouseRecords();
+
+    }
+    catch (const std::exception& e) {
+        std::cerr << "[ESStorageThread] Exception: " << e.what() << std::endl;
+    }
+    catch (...) {
+        std::cerr << "[ESStorageThread] Unknown exception" << std::endl;
+    }
 }
 
 // Overload that fetches voice text itself (may cause deadlock if voiceMutex already locked)
@@ -315,7 +377,7 @@ void ContextCollector::StartPeriodicUpdate() {
     if (updateThreadRunning.load()) {
         return; // Already running
     }
-    
+
     updateThreadRunning.store(true);
     updateThread = std::thread([this]() {
         while (updateThreadRunning.load()) {
@@ -324,7 +386,7 @@ void ContextCollector::StartPeriodicUpdate() {
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
-    });
+        });
 }
 
 void ContextCollector::StopPeriodicUpdate() {
@@ -336,10 +398,13 @@ void ContextCollector::StopPeriodicUpdate() {
 
 ContextCollector::~ContextCollector() {
     StopPeriodicUpdate();
-    
-    // ? Shutdown Elasticsearch before other cleanup
+
+    // Shutdown Elasticsearch before other cleanup
     ShutdownElasticsearch();
-    
+
+    // Clear window switch callback
+    WindowsAPIs::WindowsAPIsManager::GetInstance().ClearWindowSwitchCallback();
+
     // Cleanup active app monitoring when the collector is destroyed
     if (activeAppMonitoringInitialized.load()) {
         WindowsAPIs::CleanupActiveAppMonitoring();
@@ -353,7 +418,8 @@ ContextCollector::~ContextCollector() {
             mouseTracker->Stop();
             mouseTracker.reset();
             std::cout << "[ContextCollector] MouseTracker stopped and cleaned up" << std::endl;
-        } catch (...) {
+        }
+        catch (...) {
             // Ignore cleanup errors in destructor
         }
     }
@@ -364,20 +430,20 @@ ContextCollector::~ContextCollector() {
 bool ContextCollector::InitializeElasticsearch(const std::string& esHost, const std::string& indexName) {
     try {
         std::lock_guard<std::mutex> lock(esClientMutex);
-        
+
         // Create Elasticsearch client
         esClient = std::make_unique<elasticsearch::ElasticsearchClient>(esHost);
         esIndexName = indexName;
-        
+
         // Test connection
         if (!esClient->testConnection()) {
             std::cerr << "[ContextCollector] Failed to connect to Elasticsearch at " << esHost << std::endl;
             esClient.reset();
             return false;
         }
-        
+
         std::cout << "[ContextCollector] Connected to Elasticsearch at " << esHost << std::endl;
-        
+
         // Initialize index with proper mapping
         if (!esClient->initializeIndex(indexName)) {
             std::cerr << "[ContextCollector] Failed to initialize index: " << indexName << std::endl;
@@ -385,20 +451,22 @@ bool ContextCollector::InitializeElasticsearch(const std::string& esHost, const 
             return false;
         }
         std::cout << "[ContextCollector] Elasticsearch index initialized: " << indexName << std::endl;
-        
+
         // Start background storage thread
         esStorageRunning.store(true);
-        esStorageThread = std::thread(&ContextCollector::ESStorageThreadFunc, this);
-        
+        /*esStorageThread = std::thread(&ContextCollector::ESStorageThreadFunc, this);*/
+
         std::cout << "[ContextCollector] Elasticsearch storage thread started (5-second interval)" << std::endl;
-        
+
         return true;
-        
-    } catch (const std::exception& e) {
+
+    }
+    catch (const std::exception& e) {
         std::cerr << "[ContextCollector] Exception initializing Elasticsearch: " << e.what() << std::endl;
         esClient.reset();
         return false;
-    } catch (...) {
+    }
+    catch (...) {
         std::cerr << "[ContextCollector] Unknown exception initializing Elasticsearch" << std::endl;
         esClient.reset();
         return false;
@@ -408,11 +476,11 @@ bool ContextCollector::InitializeElasticsearch(const std::string& esHost, const 
 void ContextCollector::ShutdownElasticsearch() {
     // Stop storage thread
     esStorageRunning.store(false);
-    if (esStorageThread.joinable()) {
+    /*if (esStorageThread.joinable()) {
         esStorageThread.join();
         std::cout << "[ContextCollector] Elasticsearch storage thread stopped" << std::endl;
-    }
-    
+    }*/
+
     // Cleanup client
     {
         std::lock_guard<std::mutex> lock(esClientMutex);
@@ -420,130 +488,91 @@ void ContextCollector::ShutdownElasticsearch() {
     }
 }
 
-void ContextCollector::ESStorageThreadFunc() {
-    std::cout << "[ESStorageThread] Started" << std::endl;
-    
-    while (esStorageRunning.load()) {
-        try {
-            // Collect current context
-            Json context = CollectCurrentContext();
-            
-            // Store to Elasticsearch
-            StoreContextToES(context);
-            
-            // Sleep for 5 seconds
-            std::this_thread::sleep_for(std::chrono::seconds(5));
-            
-        } catch (const std::exception& e) {
-            std::cerr << "[ESStorageThread] Exception: " << e.what() << std::endl;
-            std::this_thread::sleep_for(std::chrono::seconds(5));
-        } catch (...) {
-            std::cerr << "[ESStorageThread] Unknown exception" << std::endl;
-            std::this_thread::sleep_for(std::chrono::seconds(5));
-        }
-    }
-    
-    std::cout << "[ESStorageThread] Stopped" << std::endl;
-}
-
 void ContextCollector::StoreContextToES(const Json& context) {
     std::lock_guard<std::mutex> lock(esClientMutex);
-    
+
     if (!esClient) {
         return;  // ES not initialized
     }
-    
+
     try {
         // Extract app context first for deduplication check
         std::string currentAppName = context.getString("activeApp", "Unknown");
-        
-        // ? NEW: Deduplication - Check if latest record has same appName
-        static std::string lastStoredAppName = "";
-        static auto lastStoredTime = std::chrono::steady_clock::now();
-        
-        auto now = std::chrono::steady_clock::now();
-        auto timeSinceLastStore = std::chrono::duration_cast<std::chrono::seconds>(now - lastStoredTime).count();
-        
-        // Skip storage if:
-        // 1. Same appName as last stored record
-        // 2. Within 30 seconds of last storage (avoid too frequent checks)
-        if (currentAppName == lastStoredAppName && timeSinceLastStore < 30) {
-            std::cout << "[ESStorage] Skipped (duplicate): App already stored - " << currentAppName << std::endl;
-            return;
-        }
-        
+        std::string windowTitle = context.getString("windowTitle", "");
+        int duration = context.getInt("duration", 0);
+
         // Create RawEvent from Json context
         elasticsearch::RawEvent event;
-        
+
         // Generate unique event ID
         auto nowTime = std::chrono::system_clock::now();
         auto timestamp = std::chrono::system_clock::to_time_t(nowTime);
         auto timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
             nowTime.time_since_epoch()).count();
-        
-        event.eventId = deviceId + "_" + std::to_string(timestamp) + "_" + 
-                       std::to_string(timestampMs % 1000);
-        
+
+        event.eventId = deviceId + "_" + std::to_string(timestamp) + "_" +
+            std::to_string(timestampMs % 1000);
+
         // ? FIX: Store timestamp in MILLISECONDS (not seconds)
         event.timestamp = timestampMs / 1000;  // Convert ms to seconds for time_t
         event.createdAt = timestampMs / 1000;
         event.deviceId = deviceId;
-        
+
         // Extract app context
         event.appName = currentAppName;
-        
+        event.windowTitle = windowTitle;
+
         // Extract content
         std::string activeAppContent = context.getString("activeAppContent", "");
         if (!activeAppContent.empty() && activeAppContent != "null") {
             event.screenContent = activeAppContent;
-            
+
             // Simple hash for deduplication
             std::hash<std::string> hasher;
             event.screenContentHash = std::to_string(hasher(activeAppContent));
         }
-        
+
         // Extract multimodal data
         std::string voiceText = context.getString("voiceTranscription", "");
         if (!voiceText.empty() && voiceText != "null") {
             event.voiceTranscription = voiceText;
         }
-        
+
         std::string cameraDesc = context.getString("cameraDescription", "");
         if (!cameraDesc.empty() && cameraDesc != "null") {
             event.cameraDescription = cameraDesc;
         }
-        
+
         // Extract mouse events from recentMouseTrack
-        // TODO: Parse recentMouseTrack JSON and populate event.mouseEvents
-        // For now, set interaction count based on presence of data
-        event.interactionCount = 0;
-        event.dwellTimeSeconds = 0;
-        
+        event.mouseEvents = mouseTracker->GetMouseEvents();
+        event.interactionCount = context.getInt("interactionCount", 0);
+        event.dwellTimeSeconds = duration;
+
         // ? FIX: Extract system info with proper handling
         // Battery percent
-        int battery = context.getInt("battery", -1);
+        int battery = context.getInt("battery", 0);
         if (battery >= 0 && battery <= 100) {
             event.systemInfo.batteryPercent = battery;
         }
-        
+
         // ? FIX: Correctly read isCharging as boolean
         event.systemInfo.isCharging = context.getBool("isCharging", false);
-        
+
         // Network type
         event.systemInfo.networkType = context.getString("networkType", "Unknown");
-        
+
         // ? FIX: CPU and Memory usage with proper double handling
         double cpuUsage = context.getDouble("cpuUsage", -1.0);
         if (cpuUsage >= 0.0) {
             event.systemInfo.cpuUsage = cpuUsage;
         }
-        
+
         double memoryUsage = context.getDouble("memoryUsage", -1.0);
         if (memoryUsage >= 0.0) {
             event.systemInfo.memoryUsage = memoryUsage;
         }
-        
-        // ? FIX: Location with proper validation
+
+        // FIX: Location with proper validation
         bool locationValid = context.getBool("locationValid", false);
         if (locationValid) {
             double lat = context.getDouble("locationLat", 0.0);
@@ -553,147 +582,147 @@ void ContextCollector::StoreContextToES(const Json& context) {
                 event.systemInfo.locationLon = lon;
             }
         }
-        
+
         // Status
         event.compressed = false;
-        
+
         // Index document
         std::string eventId = esClient->indexDocument(esIndexName, event);
-        
+
         if (!eventId.empty()) {
-            // ? Update deduplication tracking
-            lastStoredAppName = currentAppName;
-            lastStoredTime = now;
-            
-            std::cout << "[ESStorage] Stored event: " << event.eventId 
-                     << " | App: " << event.appName
-                     << " | Battery: " << (event.systemInfo.batteryPercent.has_value() ? std::to_string(event.systemInfo.batteryPercent.value()) : "N/A")
-                     << " | Charging: " << (event.systemInfo.isCharging ? "Yes" : "No")
-                     << std::endl;
-        } else {
+            // Update deduplication tracking
+            std::cout << "[ESStorage] Stored event: " << event.eventId
+                << " | App: " << event.appName
+                << " | Battery: " << (event.systemInfo.batteryPercent.has_value() ? std::to_string(event.systemInfo.batteryPercent.value()) : "N/A")
+                << " | Charging: " << (event.systemInfo.isCharging ? "Yes" : "No")
+                << std::endl;
+        }
+        else {
             std::cerr << "[ESStorage] Failed to store event" << std::endl;
         }
-        
-    } catch (const std::exception& e) {
+
+    }
+    catch (const std::exception& e) {
         std::cerr << "[ESStorage] Exception storing context: " << e.what() << std::endl;
-    } catch (...) {
+    }
+    catch (...) {
         std::cerr << "[ESStorage] Unknown exception storing context" << std::endl;
     }
 }
 
 Json ContextCollector::GetESDBData(const std::string& keyword,
-                                   std::time_t startTime,
-                                   std::time_t endTime,
-                                   int maxResults) {
+    std::time_t startTime,
+    std::time_t endTime,
+    int maxResults) {
     Json result;
-    
+
     std::lock_guard<std::mutex> lock(esClientMutex);
-    
+
     if (!esClient) {
         std::cerr << "[GetESDBData] Elasticsearch client not initialized" << std::endl;
         result.setRaw("error", "\"Elasticsearch not initialized\"");
         result.setRaw("results", "[]");
         return result;
     }
-    
+
     try {
         // ? FIX: Convert seconds to milliseconds for Elasticsearch
         long long startTimeMs = static_cast<long long>(startTime) * 1000;
         long long endTimeMs = static_cast<long long>(endTime) * 1000;
-        
+
         // Debug logging
         std::cout << "[GetESDBData] Time range: " << startTime << " - " << endTime << " (seconds)" << std::endl;
         std::cout << "[GetESDBData] Time range: " << startTimeMs << " - " << endTimeMs << " (milliseconds)" << std::endl;
         std::cout << "[GetESDBData] Keyword: '" << keyword << "'" << std::endl;
-        
+
         // Build Elasticsearch query
         std::ostringstream queryBuilder;
         queryBuilder << "{"
-                    << "\"query\":{"
-                    << "  \"bool\":{"
-                    << "    \"must\":[";
-        
+            << "\"query\":{"
+            << "  \"bool\":{"
+            << "    \"must\":[";
+
         // Add keyword filter (search in multiple fields)
         if (!keyword.empty()) {
             queryBuilder << "      {"
-                        << "        \"multi_match\":{"
-                        << "          \"query\":\"" << Json::escapeJsonString(keyword) << "\","
-                        << "          \"fields\":[\"screen_content\",\"voice_transcription\","
-                        << "                     \"camera_description\",\"app_name\","
-                        << "                     \"window_title\"],"
-                        << "          \"type\":\"best_fields\","
-                        << "          \"fuzziness\":\"AUTO\""
-                        << "        }"
-                        << "      },";
+                << "        \"multi_match\":{"
+                << "          \"query\":\"" << Json::escapeJsonString(keyword) << "\","
+                << "          \"fields\":[\"screen_content\",\"voice_transcription\","
+                << "                     \"camera_description\",\"app_name\","
+                << "                     \"window_title\"],"
+                << "          \"type\":\"best_fields\","
+                << "          \"fuzziness\":\"AUTO\""
+                << "        }"
+                << "      },";
         }
-        
+
         // ? FIX: Use milliseconds for timestamp range
         queryBuilder << "      {"
-                    << "        \"range\":{"
-                    << "          \"timestamp\":{"
-                    << "            \"gte\":" << startTimeMs << ","
-                    << "            \"lte\":" << endTimeMs
-                    << "          }"
-                    << "        }"
-                    << "      }";
-        
+            << "        \"range\":{"
+            << "          \"timestamp\":{"
+            << "            \"gte\":" << startTimeMs << ","
+            << "            \"lte\":" << endTimeMs
+            << "          }"
+            << "        }"
+            << "      }";
+
         queryBuilder << "    ]"
-                    << "  }"
-                    << "},"
-                    << "\"sort\":[{\"timestamp\":{\"order\":\"desc\"}}],"
-                    << "\"size\":" << maxResults
-                    << "}";
-        
+            << "  }"
+            << "},"
+            << "\"sort\":[{\"timestamp\":{\"order\":\"desc\"}}],"
+            << "\"size\":" << maxResults
+            << "}";
+
         std::string query = queryBuilder.str();
-        
+
         std::cout << "[GetESDBData] Query: " << query << std::endl;
-        
+
         // Execute search
         elasticsearch::SearchResult searchResult = esClient->search(esIndexName, query, 0, maxResults);
-        
-        std::cout << "[GetESDBData] Found " << searchResult.totalHits << " matches in " 
-                 << searchResult.searchTimeMs << " ms" << std::endl;
-        
+
+        std::cout << "[GetESDBData] Found " << searchResult.totalHits << " matches in "
+            << searchResult.searchTimeMs << " ms" << std::endl;
+
         // Convert results to Json array
         std::ostringstream resultsArray;
         resultsArray << "[";
-        
+
         bool first = true;
         for (const auto& event : searchResult.events) {
             if (!first) {
                 resultsArray << ",";
             }
             first = false;
-            
+
             resultsArray << "{"
-                        << "\"eventId\":\"" << Json::escapeJsonString(event.eventId) << "\","
-                        << "\"timestamp\":" << event.timestamp << ","
-                        << "\"deviceId\":\"" << Json::escapeJsonString(event.deviceId) << "\","
-                        << "\"appName\":\"" << Json::escapeJsonString(event.appName) << "\"";
-            
+                << "\"eventId\":\"" << Json::escapeJsonString(event.eventId) << "\","
+                << "\"timestamp\":" << event.timestamp << ","
+                << "\"deviceId\":\"" << Json::escapeJsonString(event.deviceId) << "\","
+                << "\"appName\":\"" << Json::escapeJsonString(event.appName) << "\"";
+
             if (event.windowTitle.has_value()) {
                 resultsArray << ",\"windowTitle\":\"" << Json::escapeJsonString(event.windowTitle.value()) << "\"";
             }
-            
+
             if (event.screenContent.has_value()) {
                 resultsArray << ",\"screenContent\":\"" << Json::escapeJsonString(event.screenContent.value()) << "\"";
             }
-            
+
             if (event.voiceTranscription.has_value()) {
                 resultsArray << ",\"voiceTranscription\":\"" << Json::escapeJsonString(event.voiceTranscription.value()) << "\"";
             }
-            
+
             if (event.cameraDescription.has_value()) {
                 resultsArray << ",\"cameraDescription\":\"" << Json::escapeJsonString(event.cameraDescription.value()) << "\"";
             }
-            
+
             // Add system info
             resultsArray << ",\"systemInfo\":{";
             if (event.systemInfo.batteryPercent.has_value()) {
                 resultsArray << "\"batteryPercent\":" << event.systemInfo.batteryPercent.value() << ",";
             }
             resultsArray << "\"isCharging\":" << (event.systemInfo.isCharging ? "true" : "false")
-                        << ",\"networkType\":\"" << Json::escapeJsonString(event.systemInfo.networkType) << "\"";
+                << ",\"networkType\":\"" << Json::escapeJsonString(event.systemInfo.networkType) << "\"";
             if (event.systemInfo.cpuUsage.has_value()) {
                 resultsArray << ",\"cpuUsage\":" << std::fixed << std::setprecision(2) << event.systemInfo.cpuUsage.value();
             }
@@ -702,27 +731,29 @@ Json ContextCollector::GetESDBData(const std::string& keyword,
             }
             if (event.systemInfo.locationLat.has_value() && event.systemInfo.locationLon.has_value()) {
                 resultsArray << ",\"locationLat\":" << std::fixed << std::setprecision(8) << event.systemInfo.locationLat.value()
-                           << ",\"locationLon\":" << std::fixed << std::setprecision(8) << event.systemInfo.locationLon.value();
+                    << ",\"locationLon\":" << std::fixed << std::setprecision(8) << event.systemInfo.locationLon.value();
             }
             resultsArray << "}";
-            
+
             resultsArray << "}";
         }
-        
+
         resultsArray << "]";
-        
+
         result.set("totalHits", searchResult.totalHits);
         result.set("searchTimeMs", static_cast<int>(searchResult.searchTimeMs));
         result.setRaw("results", resultsArray.str());
-        
+
         return result;
-        
-    } catch (const std::exception& e) {
+
+    }
+    catch (const std::exception& e) {
         std::cerr << "[GetESDBData] Exception: " << e.what() << std::endl;
         result.setRaw("error", "\"" + Json::escapeJsonString(e.what()) + "\"");
         result.setRaw("results", "[]");
         return result;
-    } catch (...) {
+    }
+    catch (...) {
         std::cerr << "[GetESDBData] Unknown exception" << std::endl;
         result.setRaw("error", "\"Unknown error\"");
         result.setRaw("results", "[]");

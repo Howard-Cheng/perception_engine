@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <cstring>
 #include <ctime>
+#include <iostream>
 
 using json = nlohmann::json;
 
@@ -113,7 +114,25 @@ public:
         curl_slist_free_all(headers);
         curl_easy_cleanup(curl);
         
-        return (res == CURLE_OK) && (http_code >= 200 && http_code < 300);
+        if ((res == CURLE_OK) && (http_code >= 200 && http_code < 300)) {
+            return true;
+        }
+        else {
+            // Enhanced error logging
+            std::cerr << "Elasticsearch request failed:" << std::endl;
+            std::cerr << "  Method: " << method << std::endl;
+            std::cerr << "  URL: " << url << std::endl;
+            std::cerr << "  HTTP Code: " << http_code << std::endl;
+            std::cerr << "  CURL Code: " << res << std::endl;
+            if (!body.empty()) {
+                std::cerr << "  Request Body (first 500 chars): " 
+                         << body.substr(0, 500) << std::endl;
+            }
+            if (!response.empty()) {
+                std::cerr << "  Response: " << response << std::endl;
+            }
+            return false;
+        }
     }
     
     std::string eventToJson(const RawEvent& event) {
@@ -155,16 +174,21 @@ public:
             j["mouse_events"] = mouseEventsArray;
         }
         
-        // System info
+        // System info - FIXED: Proper geo_point format for Elasticsearch
         json sysInfo;
         if (event.systemInfo.batteryPercent) 
             sysInfo["battery_percent"] = *event.systemInfo.batteryPercent;
         sysInfo["is_charging"] = event.systemInfo.isCharging;
         sysInfo["network_type"] = event.systemInfo.networkType;
-        if (event.systemInfo.locationLat) 
-            sysInfo["location_lat"] = *event.systemInfo.locationLat;
-        if (event.systemInfo.locationLon) 
-            sysInfo["location_lon"] = *event.systemInfo.locationLon;
+        
+        // FIX: Elasticsearch geo_point must be a single object with lat/lon, not separate fields
+        if (event.systemInfo.locationLat && event.systemInfo.locationLon) {
+            sysInfo["location"] = {
+                {"lat", *event.systemInfo.locationLat},
+                {"lon", *event.systemInfo.locationLon}
+            };
+        }
+        
         if (event.systemInfo.cpuUsage) 
             sysInfo["cpu_usage"] = *event.systemInfo.cpuUsage;
         if (event.systemInfo.memoryUsage) 
@@ -282,12 +306,27 @@ public:
                 if (sysInfo.contains("network_type") && !sysInfo["network_type"].is_null()) {
                     event.systemInfo.networkType = sysInfo["network_type"].get<std::string>();
                 }
-                if (sysInfo.contains("location_lat") && !sysInfo["location_lat"].is_null()) {
-                    event.systemInfo.locationLat = sysInfo["location_lat"].get<double>();
+                
+                // FIX: Parse geo_point location object
+                if (sysInfo.contains("location") && sysInfo["location"].is_object()) {
+                    const auto& location = sysInfo["location"];
+                    if (location.contains("lat") && !location["lat"].is_null()) {
+                        event.systemInfo.locationLat = location["lat"].get<double>();
+                    }
+                    if (location.contains("lon") && !location["lon"].is_null()) {
+                        event.systemInfo.locationLon = location["lon"].get<double>();
+                    }
                 }
-                if (sysInfo.contains("location_lon") && !sysInfo["location_lon"].is_null()) {
-                    event.systemInfo.locationLon = sysInfo["location_lon"].get<double>();
+                // Support legacy format (separate lat/lon fields)
+                else {
+                    if (sysInfo.contains("location_lat") && !sysInfo["location_lat"].is_null()) {
+                        event.systemInfo.locationLat = sysInfo["location_lat"].get<double>();
+                    }
+                    if (sysInfo.contains("location_lon") && !sysInfo["location_lon"].is_null()) {
+                        event.systemInfo.locationLon = sysInfo["location_lon"].get<double>();
+                    }
                 }
+                
                 if (sysInfo.contains("cpu_usage") && !sysInfo["cpu_usage"].is_null()) {
                     event.systemInfo.cpuUsage = sysInfo["cpu_usage"].get<double>();
                 }
@@ -357,8 +396,7 @@ bool ElasticsearchClient::initializeIndex(const std::string& indexName) {
                         "battery_percent": {"type": "integer"},
                         "is_charging": {"type": "boolean"},
                         "network_type": {"type": "keyword"},
-                        "location_lat": {"type": "geo_point"},
-                        "location_lon": {"type": "geo_point"},
+                        "location": {"type": "geo_point"},
                         "cpu_usage": {"type": "float"},
                         "memory_usage": {"type": "float"}
                     }

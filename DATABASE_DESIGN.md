@@ -2,431 +2,545 @@
 
 ## Overview
 
-The Nova Perception Engine uses a **multi-layered database architecture** designed for efficient capture, compression, and analysis of cross-device context data. The system balances high-frequency writes (real-time perception events) with analytical queries (session analysis, engagement tracking) through a three-tier storage hierarchy.
+The Nova Perception Engine uses a **three-layer database architecture** optimized for real-time context capture, full-text search, and semantic retrieval. The system is designed to handle high-frequency perception events while enabling powerful search capabilities across both structured metadata and natural language queries.
+
+**Current Architecture:**
+- **Layer 0**: Raw event storage with full-text search (Elasticsearch primary, SQLite+FTS5 alternative)
+- **Layer 1**: Session compression and LLM summarization
+- **Layer 2**: Vector database for semantic search (Qdrant)
 
 **Design Philosophy:**
-- **Layer 0**: High-speed write buffer for raw events (SQLite/Elasticsearch)
-- **Layer 1**: Compressed analytical storage (DuckDB)
-- **Layer 2**: Long-term aggregated summaries (DuckDB) - Planned
+- Elasticsearch provides distributed, scalable full-text search for production deployments
+- SQLite + FTS5 offers a lightweight, embedded alternative for single-device or development scenarios
+- Qdrant enables semantic search across LLM-generated session summaries
+- All layers support cross-device context correlation
 
 ---
 
 ## Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Perception Engine (C++)                       │
-│                  Real-time Context Capture                       │
-│         (Screen + Audio + Camera + System Metrics)               │
-└────────────────────────────┬────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                    Perception Engine (C++)                        │
+│                  Real-time Context Capture                        │
+│         (Screen + Audio + Camera + System Metrics)                │
+└────────────────────────────┬─────────────────────────────────────┘
                              │ HTTP API (Port 8777)
                              │ GET /context (500ms polling)
                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      Data Collector                              │
-│               (perception_data_collector)                        │
-│         Polls API → Parses JSON → Ingests Events                │
-└────────────────────────────┬────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                      Data Collector                               │
+│               (perception_data_collector)                         │
+│         Polls API → Parses JSON → Ingests Events                 │
+└────────────────────────────┬─────────────────────────────────────┘
                              │
                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                         LAYER 0                                  │
-│                   Raw Event Storage                              │
-│                                                                  │
-│  ┌──────────────────┐              ┌──────────────────┐        │
-│  │     SQLite       │      OR      │  Elasticsearch   │        │
-│  │  (Embedded DB)   │              │ (Distributed)    │        │
-│  │  raw_events.db   │              │ Port 9200        │        │
-│  └──────────────────┘              └──────────────────┘        │
-│                                                                  │
-│  Retention: 24 hours                                            │
-│  Volume: 2-5 GB/day/device                                      │
-│  Write: ~200 events/hour                                        │
-└────────────────────────────┬────────────────────────────────────┘
-                             │ Compression Pipeline
-                             │ (Processes uncompressed events)
+┌──────────────────────────────────────────────────────────────────┐
+│                         LAYER 0                                   │
+│                   Raw Event Storage                               │
+│                  + Full-Text Search                               │
+│                                                                   │
+│  ┌──────────────────────┐          ┌──────────────────────┐     │
+│  │   Elasticsearch      │   OR     │  SQLite + FTS5       │     │
+│  │   (PRIMARY)          │          │  (ALTERNATIVE)       │     │
+│  │   Port 9200          │          │  .db file            │     │
+│  │                      │          │                      │     │
+│  │ ✓ Distributed        │          │ ✓ Embedded           │     │
+│  │ ✓ Production-ready   │          │ ✓ Zero config        │     │
+│  │ ✓ Multi-device       │          │ ✓ Single-device      │     │
+│  │ ✓ REST API           │          │ ✓ Lightweight        │     │
+│  └──────────────────────┘          └──────────────────────┘     │
+│                                                                   │
+│  Features: Full-text search, aggregations, time-series queries   │
+│  Retention: 24 hours (configurable)                              │
+│  Volume: 2-5 GB/day/device                                       │
+│  Write throughput: ~200 events/hour                              │
+└────────────────────────────┬─────────────────────────────────────┘
+                             │ Session Detection
+                             │ (Idle threshold + context switches)
                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                         LAYER 1                                  │
-│                  Compressed Sessions                             │
-│                                                                  │
-│                    ┌──────────────────┐                         │
-│                    │     DuckDB       │                         │
-│                    │  (OLAP/Analytics)│                         │
-│                    │compressed_sessions│                        │
-│                    └──────────────────┘                         │
-│                                                                  │
-│  Retention: 7 days                                              │
-│  Volume: 200-500 MB/day (90% compression)                       │
-│  Features: Session detection, engagement scoring, LLM summaries │
-└────────────────────────────┬────────────────────────────────────┘
-                             │ Aggregation Pipeline (Planned)
+┌──────────────────────────────────────────────────────────────────┐
+│                         LAYER 1                                   │
+│                 Session Compression                               │
+│                   + LLM Summarization                             │
+│                                                                   │
+│  1. Session Detection                                            │
+│     • Group events by idle threshold (5 min)                     │
+│     • Detect context switches (app/domain changes)               │
+│                                                                   │
+│  2. Engagement Calculation                                       │
+│     • Interaction count, dwell time                              │
+│     • Copy/selection events (high attention)                     │
+│                                                                   │
+│  3. Content Classification                                       │
+│     • ContentType: EMAIL, CHAT, CODE, DOCUMENT, etc.             │
+│     • Domain: WORK, ENTERTAINMENT, LIFE                          │
+│                                                                   │
+│  4. LLM Compression (PLANNED)                                    │
+│     • Input: Full event content from session                     │
+│     • Process: LLM summarization (10-20% of original)            │
+│     • Output: Compressed summary + key points                    │
+│                                                                   │
+│  Storage: Back to Layer 0 (Elasticsearch/SQLite)                 │
+│  Field: compressed_session_summary, session_id, embeddings       │
+└────────────────────────────┬─────────────────────────────────────┘
+                             │ Embedding Generation
+                             │ (sentence-transformers, OpenAI, etc.)
                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                         LAYER 2                                  │
-│                    Aggregated Sessions                           │
-│                                                                  │
-│                    ┌──────────────────┐                         │
-│                    │     DuckDB       │                         │
-│                    │ work_sessions/   │                         │
-│                    │  day_sessions    │                         │
-│                    └──────────────────┘                         │
-│                                                                  │
-│  Retention: 30 days                                             │
-│  Volume: Aggregated data                                        │
-│  Features: Project tracking, daily summaries, entity linking    │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                         LAYER 2                                   │
+│                    Vector Database                                │
+│                   Semantic Search                                 │
+│                                                                   │
+│                    ┌──────────────────┐                          │
+│                    │     Qdrant       │                          │
+│                    │   Port 6333      │                          │
+│                    │                  │                          │
+│                    │ ✓ Fast vector    │                          │
+│                    │   similarity     │                          │
+│                    │ ✓ Payload        │                          │
+│                    │   filtering      │                          │
+│                    │ ✓ Distributed    │                          │
+│                    └──────────────────┘                          │
+│                                                                   │
+│  Storage: Session embeddings (384-1536 dims)                     │
+│  Index: HNSW (Hierarchical Navigable Small World)                │
+│  Distance: Cosine similarity                                     │
+│  Retention: 30 days (configurable)                               │
+│                                                                   │
+│  Queries:                                                         │
+│   • "Find sessions about machine learning projects"              │
+│   • "When did I last discuss budget with Alice?"                 │
+│   • "Show work sessions related to database design"              │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Layer 0: Raw Event Storage
+## Layer 0: Raw Event Storage + Full-Text Search
 
 ### Purpose
-Layer 0 serves as a **high-frequency write buffer** that captures every perception event in real-time. It prioritizes write performance and complete data retention before compression.
+Layer 0 serves as the **primary data store** for all perception events, with built-in full-text search capabilities for fast retrieval by keywords, time ranges, and structured filters.
 
 ### Storage Options
 
-#### Option A: SQLite (Default)
-**When to use:** Single-device deployment, embedded systems, development/testing
+#### Option A: Elasticsearch (PRIMARY - Production)
+
+**When to use:**
+- Multi-device deployments
+- Production environments
+- Distributed systems requiring high availability
+- Teams needing REST API access
 
 **Advantages:**
-- Zero configuration (embedded database)
-- ACID transactions
-- Low memory footprint (~50MB)
-- File-based (easy backup/restore)
+- ✅ Distributed architecture (horizontal scaling)
+- ✅ Built-in full-text search (BM25 ranking)
+- ✅ Powerful aggregations (analytics, time-series)
+- ✅ REST API (language-agnostic)
+- ✅ Production-ready with replication/failover
+- ✅ Real-time search (near-instant indexing)
+- ✅ Rich query DSL (filters, boosting, highlighting)
 
 **Disadvantages:**
-- Single-writer limitation
-- Limited to ~200 concurrent writes/sec
-- Not suitable for multi-device deployments
+- ❌ Requires separate server deployment (Docker)
+- ❌ Higher memory requirements (~2GB minimum)
+- ❌ More complex setup and maintenance
+- ❌ Overkill for single-device use cases
 
-#### Option B: Elasticsearch
-**When to use:** Multi-device deployment, distributed systems, production at scale
+**Performance:**
+- Write throughput: ~5,000 events/sec (bulk indexing)
+- Search latency: <50ms (p99)
+- Storage overhead: ~3KB/event (with full indexing)
+- Memory: ~2-4GB for typical workload
+
+#### Option B: SQLite + FTS5 Extension (ALTERNATIVE - Evaluation)
+
+**When to use:**
+- Single-device deployment
+- Development/testing environments
+- Embedded systems with limited resources
+- Privacy-focused local-only scenarios
 
 **Advantages:**
-- Distributed architecture (horizontal scaling)
-- Full-text search capabilities
-- Built-in replication and failover
-- REST API (language-agnostic)
+- ✅ Zero configuration (single .db file)
+- ✅ Embedded (no separate server)
+- ✅ ACID transactions
+- ✅ Low memory footprint (~50-100MB)
+- ✅ FTS5 provides full-text search capabilities
+- ✅ Portable (backup = copy file)
+- ✅ Battle-tested reliability
 
 **Disadvantages:**
-- Requires separate server deployment
-- Higher memory requirements (~2GB minimum)
-- More complex setup and maintenance
+- ❌ Single-writer limitation (sequential writes)
+- ❌ FTS5 performance degrades with large datasets (>10M rows)
+- ❌ Limited to ~200 concurrent writes/sec
+- ❌ Not suitable for multi-device synchronization
+- ❌ Basic ranking compared to Elasticsearch
 
-### Schema: `raw_events` Table
+**Performance (needs measurement):**
+- Write throughput: ~200-500 events/sec (with FTS5 indexing)
+- Search latency: <100ms for typical queries (needs benchmarking)
+- Storage overhead: ~2-3KB/event (with FTS5 index)
+- Memory: ~50-100MB
 
+**FTS5 Configuration:**
 ```sql
+-- Create FTS5 virtual table for full-text search
+CREATE VIRTUAL TABLE raw_events_fts USING fts5(
+    event_id UNINDEXED,
+    screen_content,
+    window_title,
+    voice_transcription,
+    camera_description,
+    content='raw_events',
+    content_rowid='rowid'
+);
+
+-- Triggers to keep FTS5 index synchronized
+CREATE TRIGGER raw_events_ai AFTER INSERT ON raw_events BEGIN
+  INSERT INTO raw_events_fts(rowid, screen_content, window_title, voice_transcription, camera_description)
+  VALUES (new.rowid, new.screen_content, new.window_title, new.voice_transcription, new.camera_description);
+END;
+
+-- Full-text search query example
+SELECT * FROM raw_events
+WHERE rowid IN (
+  SELECT rowid FROM raw_events_fts
+  WHERE raw_events_fts MATCH 'machine learning database design'
+  ORDER BY rank
+);
+```
+
+**Evaluation Criteria:**
+- [ ] Benchmark write performance with FTS5 indexing enabled
+- [ ] Measure search latency for typical queries (10K, 100K, 1M events)
+- [ ] Compare relevance ranking: FTS5 BM25 vs Elasticsearch BM25
+- [ ] Test memory usage under load
+- [ ] Evaluate FTS5 phrase search and proximity operators
+
+### Recommendation: When to Use Each
+
+| Factor | Elasticsearch | SQLite + FTS5 |
+|--------|---------------|---------------|
+| **Deployment** | Multi-device, distributed | Single device, embedded |
+| **Scale** | >100K events/day | <50K events/day |
+| **Team size** | Multiple developers | Solo developer |
+| **Infrastructure** | Cloud, containers | Desktop app, edge device |
+| **Search complexity** | Complex queries, aggregations | Basic full-text search |
+| **Budget** | Have infra budget | Minimize costs |
+
+---
+
+### Schema: `raw_events` Index/Table
+
+**Elasticsearch Mapping:**
+```json
+{
+  "mappings": {
+    "properties": {
+      "event_id": { "type": "keyword" },
+      "timestamp": { "type": "date" },
+      "device_id": { "type": "keyword" },
+
+      "app_name": { "type": "keyword" },
+      "window_title": {
+        "type": "text",
+        "fields": { "keyword": { "type": "keyword" } }
+      },
+      "url": { "type": "text" },
+
+      "screen_content": {
+        "type": "text",
+        "analyzer": "english"
+      },
+      "screen_content_hash": { "type": "keyword" },
+
+      "mouse_events": { "type": "nested" },
+      "interaction_count": { "type": "integer" },
+      "dwell_time_seconds": { "type": "integer" },
+
+      "voice_transcription": { "type": "text" },
+      "camera_description": { "type": "text" },
+
+      "battery_percent": { "type": "integer" },
+      "is_charging": { "type": "boolean" },
+      "network_type": { "type": "keyword" },
+      "location": { "type": "geo_point" },
+      "cpu_usage": { "type": "float" },
+      "memory_usage": { "type": "float" },
+
+      "content_type": { "type": "keyword" },
+      "domain": { "type": "keyword" },
+
+      "session_id": { "type": "keyword" },
+      "compressed": { "type": "boolean" },
+
+      "compressed_session_summary": { "type": "text" },
+      "session_key_points": { "type": "text" },
+      "engagement_score": { "type": "float" },
+
+      "created_at": { "type": "date" }
+    }
+  },
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "refresh_interval": "5s",
+    "analysis": {
+      "analyzer": {
+        "english": {
+          "type": "standard",
+          "stopwords": "_english_"
+        }
+      }
+    }
+  }
+}
+```
+
+**SQLite Schema (with FTS5):**
+```sql
+-- Main events table
 CREATE TABLE raw_events (
-    -- Primary identification
-    event_id TEXT PRIMARY KEY,           -- SHA-256 hash of (timestamp + device_id + app_name)
-    timestamp TIMESTAMP NOT NULL,        -- Event capture time (ISO 8601)
-    device_id TEXT NOT NULL,             -- Unique device identifier
+    event_id TEXT PRIMARY KEY,
+    timestamp TIMESTAMP NOT NULL,
+    device_id TEXT NOT NULL,
 
-    -- Application context
-    app_name TEXT NOT NULL,              -- Active application (e.g., "chrome.exe", "code.exe")
-    window_title TEXT,                   -- Window title text
-    url TEXT,                            -- Browser URL (if applicable)
+    -- App context
+    app_name TEXT NOT NULL,
+    window_title TEXT,
+    url TEXT,
 
-    -- Content capture
-    screen_content TEXT,                 -- Full screen text/OCR result
-    screen_content_hash TEXT,            -- SHA-256 hash for deduplication
+    -- Content
+    screen_content TEXT,
+    screen_content_hash TEXT,
 
     -- Interaction signals
-    mouse_events TEXT,                   -- JSON array of mouse events
-    interaction_count INTEGER DEFAULT 0, -- Number of clicks/keypresses
-    dwell_time_seconds INTEGER DEFAULT 0,-- Time spent in this window
+    mouse_events TEXT,              -- JSON array
+    interaction_count INTEGER DEFAULT 0,
+    dwell_time_seconds INTEGER DEFAULT 0,
 
     -- Multimodal inputs
-    voice_transcription TEXT,            -- Whisper.cpp transcription
-    camera_description TEXT,             -- FastVLM scene description
+    voice_transcription TEXT,
+    camera_description TEXT,
 
-    -- System information
-    battery_percent INTEGER,             -- 0-100
-    is_charging BOOLEAN DEFAULT 0,       -- Charging state
-    network_type TEXT,                   -- "WiFi", "Ethernet", "Cellular", "Offline"
-    location_lat REAL,                   -- GPS latitude (optional)
-    location_lon REAL,                   -- GPS longitude (optional)
-    cpu_usage REAL,                      -- Percentage (0-100)
-    memory_usage REAL,                   -- Percentage (0-100)
+    -- System info
+    battery_percent INTEGER,
+    is_charging BOOLEAN DEFAULT 0,
+    network_type TEXT,
+    location_lat REAL,
+    location_lon REAL,
+    cpu_usage REAL,
+    memory_usage REAL,
 
-    -- Classification (populated during compression)
-    content_type TEXT,                   -- "EMAIL", "CHAT", "CODE", "DOCUMENT", etc.
-    domain TEXT,                         -- "WORK", "ENTERTAINMENT", "LIFE", etc.
+    -- Classification
+    content_type TEXT,
+    domain TEXT,
 
     -- Session linking
-    session_id TEXT,                     -- Assigned during compression
+    session_id TEXT,
+    compressed BOOLEAN DEFAULT 0,
 
-    -- Processing status
-    compressed BOOLEAN DEFAULT 0,        -- Has this been processed by Layer 1?
+    -- Compressed session data (added after Layer 1 processing)
+    compressed_session_summary TEXT,
+    session_key_points TEXT,        -- JSON array
+    engagement_score REAL,
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Indexes for performance
+-- FTS5 virtual table for full-text search
+CREATE VIRTUAL TABLE raw_events_fts USING fts5(
+    screen_content,
+    window_title,
+    voice_transcription,
+    camera_description,
+    compressed_session_summary,
+    content='raw_events',
+    content_rowid='rowid',
+    tokenize='porter unicode61'
+);
+
+-- Standard indexes
 CREATE INDEX idx_timestamp ON raw_events(timestamp);
+CREATE INDEX idx_device_session ON raw_events(device_id, session_id);
 CREATE INDEX idx_compressed ON raw_events(compressed);
-CREATE INDEX idx_session ON raw_events(session_id);
-CREATE INDEX idx_device ON raw_events(device_id);
-CREATE INDEX idx_app_name ON raw_events(app_name);
+CREATE INDEX idx_content_type ON raw_events(content_type);
 CREATE INDEX idx_content_hash ON raw_events(screen_content_hash);
+
+-- FTS5 sync triggers
+CREATE TRIGGER raw_events_ai AFTER INSERT ON raw_events BEGIN
+  INSERT INTO raw_events_fts(rowid, screen_content, window_title, voice_transcription, camera_description, compressed_session_summary)
+  VALUES (new.rowid, new.screen_content, new.window_title, new.voice_transcription, new.camera_description, new.compressed_session_summary);
+END;
+
+CREATE TRIGGER raw_events_au AFTER UPDATE ON raw_events BEGIN
+  UPDATE raw_events_fts SET
+    screen_content = new.screen_content,
+    window_title = new.window_title,
+    voice_transcription = new.voice_transcription,
+    camera_description = new.camera_description,
+    compressed_session_summary = new.compressed_session_summary
+  WHERE rowid = new.rowid;
+END;
+
+CREATE TRIGGER raw_events_ad AFTER DELETE ON raw_events BEGIN
+  DELETE FROM raw_events_fts WHERE rowid = old.rowid;
+END;
 ```
 
-### Data Types
+### Full-Text Search Examples
 
-**RawEvent Structure (C++):**
-```cpp
-class RawEvent {
-public:
-    EventId eventId;                        // std::string (SHA-256 hash)
-    Timestamp timestamp;                    // std::chrono::system_clock::time_point
-    DeviceId deviceId;                      // std::string
-
-    // App context
-    std::string appName;
-    std::optional<std::string> windowTitle;
-    std::optional<std::string> url;
-
-    // Content
-    std::optional<std::string> screenContent;
-    std::optional<std::string> screenContentHash;
-
-    // Interaction signals
-    std::vector<MouseEvent> mouseEvents;    // Array of mouse/keyboard events
-    int interactionCount;
-    int dwellTimeSeconds;
-
-    // Audio/Camera
-    std::optional<std::string> voiceTranscription;
-    std::optional<std::string> cameraDescription;
-
-    // System info
-    SystemInfo systemInfo;
-
-    // Classification (optional until compression)
-    std::optional<ContentType> contentType;
-    std::optional<Domain> domain;
-
-    // Session linking
-    std::optional<SessionId> sessionId;
-
-    // Status
-    bool compressed;
-    Timestamp createdAt;
-};
+**Elasticsearch Query DSL:**
+```json
+{
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "multi_match": {
+            "query": "machine learning database design",
+            "fields": ["screen_content^2", "window_title^1.5", "voice_transcription", "compressed_session_summary^3"],
+            "type": "best_fields",
+            "operator": "and"
+          }
+        }
+      ],
+      "filter": [
+        { "term": { "device_id": "laptop_001" } },
+        { "range": { "timestamp": { "gte": "2024-01-01", "lte": "2024-01-31" } } },
+        { "term": { "content_type": "CODE" } }
+      ]
+    }
+  },
+  "highlight": {
+    "fields": {
+      "screen_content": {},
+      "compressed_session_summary": {}
+    }
+  },
+  "sort": [
+    { "_score": "desc" },
+    { "engagement_score": "desc" }
+  ]
+}
 ```
 
-**MouseEvent Structure:**
-```cpp
-struct MouseEvent {
-    Timestamp timestamp;
-    std::string eventType;      // "LeftClick", "RightClick", "Copy", "TextSelection", "Scroll"
-    int posX;
-    int posY;
-    std::string content;        // Selected/copied text content
-    std::string elementType;    // "Button", "Text", "Link", "Input", etc.
-};
+**SQLite + FTS5 Query:**
+```sql
+-- Basic full-text search
+SELECT
+    e.*,
+    fts.rank
+FROM raw_events e
+JOIN raw_events_fts fts ON e.rowid = fts.rowid
+WHERE fts MATCH 'machine learning database design'
+  AND e.device_id = 'laptop_001'
+  AND e.timestamp BETWEEN '2024-01-01' AND '2024-01-31'
+  AND e.content_type = 'CODE'
+ORDER BY fts.rank, e.engagement_score DESC;
+
+-- Phrase search with proximity
+SELECT * FROM raw_events
+WHERE rowid IN (
+  SELECT rowid FROM raw_events_fts
+  WHERE raw_events_fts MATCH '"machine learning" NEAR/5 database'
+);
+
+-- Boolean operators
+SELECT * FROM raw_events
+WHERE rowid IN (
+  SELECT rowid FROM raw_events_fts
+  WHERE raw_events_fts MATCH '(python OR javascript) AND (async OR concurrent) NOT deprecated'
+);
 ```
-
-**SystemInfo Structure:**
-```cpp
-struct SystemInfo {
-    std::optional<int> batteryPercent;
-    bool isCharging;
-    std::string networkType;
-    std::optional<double> locationLat;
-    std::optional<double> locationLon;
-    std::optional<double> cpuUsage;
-    std::optional<double> memoryUsage;
-};
-```
-
-### Data Ingestion Flow
-
-1. **Perception Engine** captures real-time context (screen, audio, camera, system)
-2. **HTTP API** serves context at `http://localhost:8777/context` (500ms poll interval)
-3. **Data Collector** polls API, parses JSON response
-4. **Event Creation** transforms JSON → RawEvent object
-5. **Ingestion** stores event in Layer 0 (SQLite or Elasticsearch)
-
-**Code Location:**
-- `database_cpp/database_cpp/src/layer0/DataIngestion.cpp` - SQLite ingestion
-- `database_cpp/database_cpp/src/layer0/ElasticsearchClient.cpp` - Elasticsearch ingestion
-- `database_cpp/database_cpp/src/collector/DataCollector.cpp` - API polling and ingestion loop
-
-### Performance Characteristics
-
-| Metric | SQLite | Elasticsearch |
-|--------|--------|---------------|
-| Write throughput | ~200 events/sec | ~5,000 events/sec (bulk) |
-| Latency (p99) | <10ms | <50ms |
-| Storage overhead | ~2KB/event | ~3KB/event (with indexing) |
-| Memory usage | ~50MB | ~2GB (minimum) |
-| Concurrent writers | 1 | Unlimited (sharded) |
 
 ### Data Retention
 
 **Automatic cleanup policy:**
-- Events older than 24 hours are **automatically deleted** after Layer 1 compression completes
-- Compressed events (where `compressed = 1`) are retained for an additional 6 hours for debugging
-- Manual cleanup: `DELETE FROM raw_events WHERE timestamp < datetime('now', '-24 hours')`
+- Raw events: 24 hours (default, configurable)
+- Compressed sessions: Kept in same table with `session_id` field populated
+- Cleanup runs hourly via scheduled task
 
-**Implementation:** Scheduled cleanup job runs every hour (`database_cpp/database_cpp/src/layer0/DataIngestion.cpp:cleanupOldEvents()`)
+**Elasticsearch:**
+```json
+// Delete old events using Delete By Query API
+POST /perception_raw_events/_delete_by_query
+{
+  "query": {
+    "range": {
+      "timestamp": {
+        "lt": "now-24h"
+      }
+    }
+  }
+}
+```
+
+**SQLite:**
+```sql
+-- Delete old events
+DELETE FROM raw_events
+WHERE timestamp < datetime('now', '-24 hours')
+  AND compressed = 1;  -- Only delete if already compressed
+
+-- Vacuum to reclaim space
+VACUUM;
+```
 
 ---
 
-## Layer 1: Compressed Sessions
+## Layer 1: Session Compression + LLM Summarization
 
 ### Purpose
-Layer 1 performs **intelligent compression** of raw events into meaningful sessions with engagement metrics, content summaries, and high-attention extracts. This reduces storage by ~90% while preserving critical information for retrieval and analysis.
-
-### Storage Technology: DuckDB
-
-**Why DuckDB?**
-- Optimized for **analytical queries** (OLAP workload)
-- Columnar storage (efficient compression)
-- Embedded like SQLite but with PostgreSQL-compatible SQL
-- Excellent performance for aggregations and time-series queries
-- Native support for complex types (arrays, structs, JSON)
-
-### Schema: `compressed_sessions` Table
-
-```sql
-CREATE TABLE compressed_sessions (
-    -- Identification
-    session_id VARCHAR PRIMARY KEY,      -- UUID v4
-    device_id VARCHAR NOT NULL,
-
-    -- Time boundaries
-    start_time TIMESTAMP NOT NULL,
-    end_time TIMESTAMP NOT NULL,
-    duration_seconds INTEGER,            -- Computed: end_time - start_time
-
-    -- Classification
-    content_type VARCHAR,                -- "EMAIL", "CHAT", "CODE", "DOCUMENT", "WEB_ARTICLE", etc.
-    domain VARCHAR,                      -- "WORK", "ENTERTAINMENT", "LIFE", "INTERACTION"
-
-    -- Application context
-    app_name VARCHAR NOT NULL,
-    window_title VARCHAR,
-    url VARCHAR,
-
-    -- Engagement metrics
-    engagement_score DOUBLE,             -- 0.0 to 1.0 (weighted calculation)
-    interaction_count INTEGER,           -- Total clicks/keypresses in session
-    total_dwell_time INTEGER,            -- Total time (seconds)
-    has_copied BOOLEAN,                  -- User copied text?
-    has_selected BOOLEAN,                -- User selected text?
-
-    -- Compressed content (LLM-generated)
-    compressed_summary VARCHAR,          -- LLM summary (target: 100-200 tokens)
-    key_points VARCHAR,                  -- JSON array of key points
-    summary_token_count INTEGER,         -- Token count for compression ratio tracking
-
-    -- High-attention content (preserved for retrieval)
-    copied_content VARCHAR,              -- JSON array of copied text
-    selected_text VARCHAR,               -- JSON array of selected text
-    numbers VARCHAR,                     -- JSON array of important numbers
-    dates VARCHAR,                       -- JSON array of dates
-    urls VARCHAR,                        -- JSON array of URLs
-    emails VARCHAR,                      -- JSON array of email addresses
-
-    -- Metadata
-    metadata_json VARCHAR,               -- Content-type-specific metadata (JSON)
-
-    -- Averaged system metrics
-    avg_cpu_usage DOUBLE,
-    avg_memory_usage DOUBLE,
-    avg_battery_percent INTEGER,
-
-    -- Timestamps
-    created_at TIMESTAMP,                -- Session start time
-    compressed_at TIMESTAMP              -- When compression occurred
-);
-
--- Indexes for analytical queries
-CREATE INDEX idx_device_time ON compressed_sessions(device_id, start_time);
-CREATE INDEX idx_content_type ON compressed_sessions(content_type);
-CREATE INDEX idx_engagement ON compressed_sessions(engagement_score);
-CREATE INDEX idx_domain ON compressed_sessions(domain);
-```
-
-### Compression Pipeline
-
-**Pipeline Stages:**
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│              1. Session Detection                                │
-│  Input: Uncompressed raw events (compressed = 0)                │
-│  Algorithm: Idle-time threshold + context switch detection      │
-│  Output: Groups of events belonging to same session              │
-└─────────────────────────────┬───────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│              2. Engagement Calculation                           │
-│  Metrics:                                                        │
-│   - Interaction count (clicks, keypresses)                      │
-│   - Dwell time                                                  │
-│   - Copy/selection events (high attention)                      │
-│  Formula: engagement_score = weighted_sum([metrics...])         │
-└─────────────────────────────┬───────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│              3. Content Classification                           │
-│  Classifiers:                                                    │
-│   - ContentType: EMAIL, CHAT, CODE, DOCUMENT, etc.              │
-│   - Domain: WORK, ENTERTAINMENT, LIFE, INTERACTION              │
-│  Method: Heuristic rules + pattern matching                     │
-└─────────────────────────────┬───────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│              4. Content Extraction                               │
-│  Extractors:                                                     │
-│   - High-attention content (copied/selected text)               │
-│   - Entities (numbers, dates, URLs, emails)                     │
-│   - Metadata (sender, subject, file path, etc.)                 │
-└─────────────────────────────┬───────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│              5. LLM Compression (TODO)                           │
-│  Input: Full screen content from session events                 │
-│  Process: LLM summarization (target: 10% of original)           │
-│  Output: compressed_summary + key_points                        │
-└─────────────────────────────┬───────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│              6. DuckDB Storage                                   │
-│  Action: INSERT compressed_session row                          │
-│  Update: Mark raw events as compressed (compressed = 1)         │
-└─────────────────────────────────────────────────────────────────┘
-```
+Layer 1 transforms raw event streams into meaningful sessions with:
+1. **Session boundaries** detected via idle thresholds and context switches
+2. **Engagement metrics** calculated from interaction patterns
+3. **Content classification** (type, domain)
+4. **LLM-generated summaries** (10-20% of original content)
+5. **Preparation for vector embedding** (Layer 2)
 
 ### Session Detection Algorithm
 
 **Triggers for session boundary:**
 
-1. **Idle threshold exceeded:** Gap between events > 5 minutes (configurable)
-2. **Domain change:** `domain` changes (WORK → ENTERTAINMENT)
-3. **App type change:** Major app category switch (Browser → IDE)
-4. **Content type change:** `content_type` changes (EMAIL → CODE)
+1. **Idle threshold:** Gap between events > 5 minutes (configurable)
+2. **Domain change:** WORK → ENTERTAINMENT, etc.
+3. **App type change:** Browser → IDE → Video player
+4. **Content type change:** EMAIL → CHAT → CODE
 
-**Implementation:** `database_cpp/database_cpp/src/layer1/SessionDetector.cpp`
+**Implementation:**
+```cpp
+// Pseudo-code for session detection
+bool shouldBreakSession(const RawEvent& prev, const RawEvent& curr) {
+    // Idle threshold
+    auto timeDiff = curr.timestamp - prev.timestamp;
+    if (timeDiff > config.idleThresholdSeconds) return true;
 
-**Example:**
+    // Domain change
+    if (prev.domain != curr.domain && config.domainChangeTriggers) return true;
+
+    // App type change (major category)
+    if (getAppCategory(prev.appName) != getAppCategory(curr.appName)) return true;
+
+    // Content type change
+    if (prev.contentType != curr.contentType && config.contentTypeChangeTriggers) return true;
+
+    return false;
+}
 ```
-Event 1: chrome.exe, GitHub, 10:00:00 → Session A starts
-Event 2: chrome.exe, GitHub, 10:05:00 → Session A continues
-Event 3: chrome.exe, Gmail, 10:10:00  → Content change: Session B starts
-Event 4: code.exe, main.cpp, 10:20:00 → App change: Session C starts
+
+**Example session grouping:**
+```
+Event 1: chrome.exe, GitHub,    10:00:00, WORK, CODE   → Session A
+Event 2: chrome.exe, GitHub,    10:05:00, WORK, CODE   → Session A
+Event 3: chrome.exe, Gmail,     10:10:00, WORK, EMAIL  → Session B (content type change)
+Event 4: code.exe,   main.cpp,  10:20:00, WORK, CODE   → Session C (app change)
+Event 5: code.exe,   main.cpp,  10:30:00, WORK, CODE   → Session C
+Event 6: youtube.com, Video,    11:00:00, ENT,  VIDEO  → Session D (domain change + idle)
 ```
 
-### Engagement Score Calculation
+### Engagement Calculation
 
 **Formula:**
 ```cpp
@@ -437,852 +551,756 @@ engagement_score = (
     has_selected * 0.15 +
     normalized_selection_count * 0.1
 )
+
+Where:
+- normalized_interaction_count = min(1.0, interaction_count / 50)
+- normalized_dwell_time = min(1.0, dwell_time_seconds / 300)  // 5 min cap
+- normalized_selection_count = min(1.0, selection_count / 10)
 ```
 
-**Normalization:**
-- `normalized_interaction_count = min(1.0, interaction_count / 50)`
-- `normalized_dwell_time = min(1.0, dwell_time_seconds / 300)`
-- `normalized_selection_count = min(1.0, selection_count / 10)`
-
-**Implementation:** `database_cpp/database_cpp/src/layer1/EngagementCalculator.cpp`
+**Engagement categories:**
+- **0.0 - 0.3**: Low engagement (passive viewing)
+- **0.3 - 0.6**: Medium engagement (active reading)
+- **0.6 - 0.8**: High engagement (deep work)
+- **0.8 - 1.0**: Very high engagement (flow state)
 
 ### Content Classification
 
-**ContentType Enum:**
-- `EMAIL` - Email clients (Outlook, Gmail, Thunderbird)
-- `CHAT` - Messaging apps (Slack, Teams, Discord, WhatsApp)
-- `WEB_ARTICLE` - Long-form content (Medium, blogs, news articles)
-- `WEB_PAGE` - General web browsing
-- `CODE` - IDEs and code editors (VS Code, Visual Studio, IntelliJ)
-- `DOCUMENT` - Document editors (Word, Google Docs, Notion)
-- `MEETING` - Video conferencing (Zoom, Teams, Meet)
-- `VIDEO` - Video streaming (YouTube, Netflix)
-- `SOCIAL` - Social media (Twitter, Facebook, LinkedIn)
-- `RESEARCH_PAPER` - Academic papers (arXiv, Google Scholar)
-- `UNKNOWN` - Unclassified
-
-**Domain Enum:**
-- `SYSTEM` - System utilities, settings
-- `WORK` - Productivity, development, email, meetings
-- `ENTERTAINMENT` - Videos, music, gaming
-- `LIFE` - Shopping, banking, health, travel
-- `INTERACTION` - Chat, social media, communication
-
-**Classification Logic:**
+**ContentType Taxonomy:**
 ```cpp
-// Example: Email classification
-if (app_name == "outlook.exe" || url.contains("mail.google.com")) {
-    content_type = ContentType::EMAIL;
-    domain = Domain::WORK;
-}
-
-// Example: Code classification
-if (app_name == "code.exe" || window_title.contains(".cpp") || window_title.contains(".py")) {
-    content_type = ContentType::CODE;
-    domain = Domain::WORK;
-}
+enum class ContentType {
+    EMAIL,              // Outlook, Gmail, Thunderbird
+    CHAT,               // Slack, Teams, Discord, WhatsApp
+    MEETING,            // Zoom, Teams, Google Meet
+    CODE,               // VS Code, Visual Studio, IntelliJ, Vim
+    DOCUMENT,           // Word, Google Docs, Notion, Obsidian
+    WEB_ARTICLE,        // Medium, blogs, news articles (>1000 words)
+    WEB_PAGE,           // General web browsing
+    VIDEO,              // YouTube, Netflix, streaming
+    SOCIAL,             // Twitter, Facebook, LinkedIn, Reddit
+    RESEARCH_PAPER,     // arXiv, Google Scholar, PDF papers
+    SHOPPING,           // Amazon, e-commerce sites
+    UNKNOWN
+};
 ```
 
-**Implementation:** `database_cpp/database_cpp/src/layer1/ContentClassifier.cpp`
-
-### Compression Ratio
-
-**Target:** 90% reduction from Layer 0 to Layer 1
-
-**Calculation:**
-```
-compression_ratio = 1 - (compressed_size / original_size)
-
-Where:
-- original_size = sum(length(screen_content) for all events in session)
-- compressed_size = length(compressed_summary) + length(high_attention_content)
+**Domain Taxonomy:**
+```cpp
+enum class Domain {
+    WORK,               // Productivity, development, email, meetings
+    ENTERTAINMENT,      // Videos, music, gaming, streaming
+    LIFE,               // Shopping, banking, health, travel, personal
+    INTERACTION,        // Chat, social media, communication
+    SYSTEM              // Settings, utilities, OS-level
+};
 ```
 
-**Example:**
-- Session: 20 events, average screen_content = 5,000 characters
-- Original size: 20 * 5,000 = 100,000 characters
-- Compressed summary: 500 characters (LLM summary)
-- High-attention extracts: 2,000 characters (copied/selected text)
-- Compressed size: 2,500 characters
-- Compression ratio: 1 - (2,500 / 100,000) = **97.5%**
+### LLM Compression (PLANNED)
 
-### Data Retention
+**Workflow:**
+```
+1. Collect all screen_content + voice_transcription + camera_description from session events
+2. Concatenate into single context string (may be 10K-100K characters)
+3. Calculate engagement score (determines compression budget)
+4. Call LLM with dynamic prompt based on content_type and engagement
 
-**Policy:** 7-day retention for compressed sessions
+Prompt template:
+---
+Summarize the following {content_type} session (engagement: {engagement_score}).
+Focus on key actions, decisions, and outcomes.
 
-**Cleanup:** Automatic deletion of sessions older than 7 days
-- Runs daily at 2:00 AM (configurable)
-- Query: `DELETE FROM compressed_sessions WHERE start_time < current_timestamp - INTERVAL '7 days'`
+Content:
+{concatenated_content}
 
-**Implementation:** `database_cpp/database_cpp/src/layer1/DuckDBManager.cpp:deleteSessionsOlderThan()`
+Generate:
+1. A concise summary (100-200 words)
+2. 3-5 key points (bullet list)
 
+If engagement < 0.3: Ultra-brief summary (50 words max)
+If engagement > 0.7: Detailed summary (200 words) + entities extraction
 ---
 
-## Layer 2: Aggregated Sessions (Planned)
+5. Parse LLM response → compressed_session_summary + session_key_points
+6. Store back in Layer 0 (update same event row or create session record)
+```
 
-### Purpose
-Layer 2 aggregates Layer 1 sessions into higher-level abstractions for long-term analysis and cross-session intelligence.
+**Token Budget Strategy:**
+```cpp
+int calculateTokenBudget(double engagementScore, ContentType type) {
+    int baseTokens;
 
-**Status:** ⚠️ Not yet implemented (planned for future release)
+    // Base budget by content type
+    switch (type) {
+        case ContentType::CODE:
+        case ContentType::RESEARCH_PAPER:
+            baseTokens = 200;  // Technical content needs more detail
+            break;
+        case ContentType::EMAIL:
+        case ContentType::CHAT:
+            baseTokens = 100;  // Communication can be brief
+            break;
+        case ContentType::DOCUMENT:
+        case ContentType::WEB_ARTICLE:
+            baseTokens = 150;
+            break;
+        default:
+            baseTokens = 100;
+    }
 
-### Planned Features
+    // Scale by engagement
+    int scaledTokens = baseTokens * (0.5 + engagementScore);  // 0.5x to 1.5x multiplier
 
-#### Work Sessions
-Group related interaction sessions into project-level work sessions.
+    return scaledTokens;
+}
+```
 
-**Example:**
-- Multiple CODE sessions + DOCUMENT sessions + MEETING sessions → "Project X Development" work session
+**LLM Options:**
+- **Local**: llama.cpp (Llama 3.1 8B, Mistral 7B)
+- **API**: OpenAI GPT-4o-mini, Anthropic Claude Haiku
+- **Self-hosted**: Ollama, vLLM, TGI
 
-**Schema (planned):**
+**Expected compression ratio:** 85-95% reduction in storage
+
+### Storage After Compression
+
+**Option 1: Update existing events (current approach)**
 ```sql
-CREATE TABLE work_sessions (
-    work_session_id VARCHAR PRIMARY KEY,
-    device_id VARCHAR NOT NULL,
-    project_name VARCHAR,              -- Inferred project name
+-- Add session summary fields to each event in the session
+UPDATE raw_events
+SET
+    session_id = 'session_uuid_123',
+    compressed = 1,
+    compressed_session_summary = 'LLM-generated summary...',
+    session_key_points = '["Point 1", "Point 2", "Point 3"]',
+    engagement_score = 0.75
+WHERE event_id IN (SELECT event_id FROM events_in_session);
+```
+
+**Option 2: Separate sessions table (alternative)**
+```sql
+-- Create dedicated sessions table
+CREATE TABLE sessions (
+    session_id TEXT PRIMARY KEY,
+    device_id TEXT NOT NULL,
     start_time TIMESTAMP NOT NULL,
     end_time TIMESTAMP NOT NULL,
-    interaction_sessions VARCHAR[],     -- Array of session IDs
-    total_engagement DOUBLE,
-    primary_domain VARCHAR,
-    key_entities VARCHAR,              -- JSON: extracted entities across sessions
-    work_summary VARCHAR,              -- LLM-generated work session summary
+    duration_seconds INTEGER,
+
+    content_type TEXT,
+    domain TEXT,
+    app_name TEXT,
+
+    engagement_score REAL,
+    interaction_count INTEGER,
+    total_dwell_time INTEGER,
+
+    compressed_summary TEXT,
+    key_points TEXT,  -- JSON array
+
+    event_ids TEXT,   -- JSON array of event IDs in this session
+
     created_at TIMESTAMP
 );
-```
 
-#### Day Sessions
-Daily rollups of all user activity.
-
-**Schema (planned):**
-```sql
-CREATE TABLE day_sessions (
-    day_session_id VARCHAR PRIMARY KEY,
-    device_id VARCHAR NOT NULL,
-    date DATE NOT NULL,
-    work_duration_seconds INTEGER,
-    entertainment_duration_seconds INTEGER,
-    total_sessions INTEGER,
-    top_apps VARCHAR[],                -- Most used apps
-    daily_summary VARCHAR,             -- LLM-generated daily summary
-    created_at TIMESTAMP
-);
-```
-
-#### Entity Tracking
-Track entities (people, projects, URLs, documents) across sessions.
-
-**Schema (planned):**
-```sql
-CREATE TABLE entity_occurrences (
-    entity_id VARCHAR PRIMARY KEY,
-    entity_type VARCHAR,               -- "person", "project", "url", "document"
-    entity_value VARCHAR,              -- Actual value (e.g., "Alice", "github.com/foo/bar")
-    first_seen TIMESTAMP,
-    last_seen TIMESTAMP,
-    occurrence_count INTEGER,
-    session_ids VARCHAR[]              -- Sessions where entity appeared
-);
+-- Link events to sessions
+UPDATE raw_events
+SET session_id = 'session_uuid_123', compressed = 1
+WHERE event_id IN (...);
 ```
 
 ---
 
-## Integration with Perception Engine
+## Layer 2: Vector Database - Semantic Search
 
-### Data Flow: Perception Engine → Database
+### Purpose
+Layer 2 enables **semantic search** across session summaries, allowing natural language queries like:
+- "Find sessions about machine learning projects"
+- "When did I last discuss budget planning with Alice?"
+- "Show all code sessions related to database optimization"
 
+### Technology: Qdrant (Primary Choice)
+
+**Why Qdrant?**
+- ✅ **Fast vector similarity search** (HNSW index, <10ms p99 latency)
+- ✅ **Payload filtering** (filter by metadata: device_id, timestamp, content_type)
+- ✅ **Distributed** (supports clustering for high availability)
+- ✅ **gRPC + REST APIs** (high performance + easy integration)
+- ✅ **Rich query capabilities** (hybrid search: vector + filter)
+- ✅ **Snapshots & backups** (production-ready)
+- ✅ **Docker deployment** (easy setup)
+- ✅ **Active development** (Rust-based, well-maintained)
+
+**Architecture:**
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  Perception Engine (C++ Service - Port 8777)                 │
-│                                                               │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ Screen       │  │ Audio        │  │ Camera       │      │
-│  │ Monitor      │  │ Pipeline     │  │ (Python)     │      │
-│  │ (Win32 API)  │  │ (Whisper)    │  │ (FastVLM)    │      │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘      │
-│         │                 │                 │               │
-│         └─────────────────┼─────────────────┘               │
-│                           ▼                                 │
-│         ┌────────────────────────────────┐                  │
-│         │   ContextCollector             │                  │
-│         │   • Aggregates all sources     │                  │
-│         │   • Thread-safe updates        │                  │
-│         │   • Returns JSON context       │                  │
-│         └────────────────────────────────┘                  │
-└──────────────────────────┬───────────────────────────────────┘
-                           │ HTTP API
-                           │ GET /context (every 500ms)
-                           ▼
-┌──────────────────────────────────────────────────────────────┐
-│  Data Collector (perception_data_collector)                  │
-│                                                               │
-│  1. Poll API: GET http://localhost:8777/context              │
-│  2. Parse JSON response                                      │
-│  3. Create RawEvent object                                   │
-│  4. Ingest to Layer 0 (SQLite or Elasticsearch)              │
-│                                                               │
-│  Configuration:                                              │
-│   - Poll interval: 5 seconds (configurable)                  │
-│   - Retry logic: 3 attempts with exponential backoff         │
-│   - Storage backend: SQLITE or ELASTICSEARCH                 │
-└──────────────────────────────────────────────────────────────┘
-```
-
-### API Response Format
-
-**Endpoint:** `GET http://localhost:8777/context`
-
-**Response JSON:**
-```json
-{
-  "activeApp": "chrome.exe",
-  "windowTitle": "GitHub - perception_engine",
-  "url": "https://github.com/Howard-Cheng/perception_engine",
-  "cpuUsage": 25.3,
-  "memoryUsage": 65.2,
-  "battery": 85,
-  "voiceTranscription": "hello world",
-  "voiceLatency": 180.5,
-  "cameraDescription": "A person sitting at desk working on laptop",
-  "cameraLatency": 9200,
-  "contextUpdateLatency": 28.3,
-  "RecentPeriodActiveApps": [
-    {
-      "appName": "chrome.exe",
-      "lastSwitchTime": "2025-10-10T10:30:45.123+08:00",
-      "duration": 120
-    }
-  ],
-  "fusedContext": "Active: chrome.exe | Said: \"hello world\" | Scene: person at desk",
-  "timestamp": "2025-10-10T10:30:45.123+08:00"
-}
+┌─────────────────────────────────────────────────────────────┐
+│                      Qdrant Server                          │
+│                      Port 6333 (REST)                       │
+│                      Port 6334 (gRPC)                       │
+│                                                              │
+│  Collections:                                               │
+│  └─ perception_sessions                                     │
+│      ├─ Vectors: [384-dim or 1536-dim embeddings]          │
+│      └─ Payload:                                            │
+│          ├─ session_id                                      │
+│          ├─ device_id                                       │
+│          ├─ start_time / end_time                           │
+│          ├─ content_type, domain                            │
+│          ├─ engagement_score                                │
+│          ├─ compressed_summary (for display)                │
+│          └─ key_points                                      │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Mapping: API JSON → RawEvent
+### Alternative Vector Database Options
 
-```cpp
-// Pseudo-code for data collector transformation
-RawEvent event;
-event.timestamp = parseISO8601(json["timestamp"]);
-event.deviceId = config.deviceId;
-event.appName = json["activeApp"];
-event.windowTitle = json["windowTitle"];
-event.url = json["url"];
-event.voiceTranscription = json["voiceTranscription"];
-event.cameraDescription = json["cameraDescription"];
+| Database | Pros | Cons | Best For |
+|----------|------|------|----------|
+| **Qdrant** | Fast, payload filtering, distributed | Newer (less mature than some) | Production, multi-device |
+| **Weaviate** | GraphQL API, modular architecture | Higher complexity | Complex schemas, graphs |
+| **Milvus** | Highly scalable, battle-tested | Complex setup, heavy | Large-scale (>10M vectors) |
+| **Chroma** | Embedded, easy to use, Python-native | Limited filtering, single-node | Development, prototyping |
+| **Pinecone** | Managed service, zero ops | Proprietary, expensive, vendor lock-in | Quick start, SaaS preference |
+| **pgvector** | PostgreSQL extension, familiar SQL | Slower than specialized DBs | Already using PostgreSQL |
 
-// System info
-event.systemInfo.cpuUsage = json["cpuUsage"];
-event.systemInfo.memoryUsage = json["memoryUsage"];
-event.systemInfo.batteryPercent = json["battery"];
+**Recommendation:**
+- **Qdrant** for production (best balance of features, performance, ease of use)
+- **Chroma** for local development/testing (embedded, no server needed)
+- **Weaviate** if you need complex entity relationships and graph queries
 
-// Interaction signals (derived from RecentPeriodActiveApps)
-event.dwellTimeSeconds = json["RecentPeriodActiveApps"][0]["duration"];
-event.interactionCount = 0; // Not directly available from API
+### Qdrant Setup
 
-// Screen content (not available from /context endpoint)
-// Would require separate API endpoint or browser content extraction
-event.screenContent = std::nullopt;
-```
-
-**Note:** Current `/context` API does not provide full screen content or mouse events. For complete database functionality, consider:
-1. Adding `/context/full` endpoint with screen content
-2. Implementing browser content extraction (see `windows_code/BrowserContentExtractor.cpp`)
-3. Logging mouse/keyboard events at PerceptionEngine level
-
----
-
-## Code Organization
-
-### Directory Structure
-
-```
-perception_engine/
-├── database_cpp/
-│   └── database_cpp/
-│       ├── include/                     # Header files
-│       │   ├── common/                  # Common utilities
-│       │   │   ├── Types.h              # Core type definitions
-│       │   │   ├── DatabaseConfig.h     # Configuration structures
-│       │   │   ├── Logger.h             # Logging system
-│       │   │   └── Utils.h              # Helper functions
-│       │   │
-│       │   ├── layer0/                  # Layer 0 - Raw Events
-│       │   │   ├── DataIngestion.h      # SQLite event ingestion
-│       │   │   ├── SchemaManager.h      # Database schema management
-│       │   │   └── ElasticsearchClient.h # Elasticsearch ingestion
-│       │   │
-│       │   ├── layer1/                  # Layer 1 - Compression
-│       │   │   ├── DuckDBManager.h      # DuckDB interface
-│       │   │   ├── SessionDetector.h    # Session boundary detection
-│       │   │   ├── EngagementCalculator.h # Engagement metrics
-│       │   │   ├── ContentExtractor.h   # High-attention content extraction
-│       │   │   ├── ContentClassifier.h  # Content type classification
-│       │   │   └── CompressionPipeline.h # Main compression orchestrator
-│       │   │
-│       │   └── collector/               # Data Collector
-│       │       └── DataCollector.h      # API polling and ingestion
-│       │
-│       ├── src/                         # Implementation files
-│       │   ├── common/
-│       │   │   ├── Types.cpp
-│       │   │   ├── DatabaseConfig.cpp
-│       │   │   ├── Logger.cpp
-│       │   │   └── Utils.cpp
-│       │   │
-│       │   ├── layer0/
-│       │   │   ├── DataIngestion.cpp
-│       │   │   ├── SchemaManager.cpp
-│       │   │   └── ElasticsearchClient.cpp
-│       │   │
-│       │   ├── layer1/
-│       │   │   ├── DuckDBManager.cpp
-│       │   │   ├── SessionDetector.cpp
-│       │   │   ├── EngagementCalculator.cpp
-│       │   │   ├── ContentExtractor.cpp
-│       │   │   ├── ContentClassifier.cpp
-│       │   │   └── CompressionPipeline.cpp
-│       │   │
-│       │   ├── collector/
-│       │   │   ├── main.cpp             # Data collector executable
-│       │   │   └── DataCollector.cpp
-│       │   │
-│       │   └── main.cpp                 # Database service main
-│       │
-│       ├── examples/                    # Usage examples
-│       │   ├── basic_ingestion.cpp      # SQLite ingestion example
-│       │   ├── elasticsearch_ingestion.cpp # Elasticsearch example
-│       │   └── layer1_integration_test.cpp # Compression pipeline test
-│       │
-│       ├── elasticsearch_client_dll/    # Elasticsearch C++ client library
-│       │   ├── include/
-│       │   │   ├── ElasticsearchClient.h
-│       │   │   ├── ElasticsearchClientAPI.h
-│       │   │   └── ElasticsearchTypes.h
-│       │   ├── src/
-│       │   │   ├── ElasticsearchClient.cpp
-│       │   │   └── ElasticsearchClientAPI.cpp
-│       │   ├── docker/                  # Elasticsearch deployment scripts
-│       │   │   ├── docker-compose.yml
-│       │   │   ├── Deploy-Elasticsearch.ps1
-│       │   │   └── elasticsearch-manager.bat
-│       │   └── docs/                    # Elasticsearch documentation
-│       │
-│       └── CMakeLists.txt               # Build configuration
-│
-└── windows_code/                        # Perception Engine (Windows)
-    ├── PerceptionEngine.cpp             # Main entry point
-    ├── ContextCollector.cpp             # Context aggregation
-    ├── HttpServer.cpp                   # HTTP API server
-    ├── AudioCaptureEngine.cpp           # Audio pipeline
-    ├── WindowsAPIs.cpp                  # System monitoring
-    ├── win_camera_fastvlm_pytorch.py    # Camera vision (Python)
-    └── elasticsearch_client/            # Elasticsearch integration
-        ├── src/
-        │   ├── ElasticsearchClient.cpp
-        │   └── ElasticsearchClientAPI.cpp
-        └── include/
-            └── ElasticsearchClient.h
-```
-
----
-
-## Build and Deployment
-
-### Building the Database Components
-
-#### Prerequisites
-- CMake 3.15+
-- C++17 compiler (GCC 9+, Clang 10+, MSVC 2019+)
-- SQLite3 development libraries
-- DuckDB development libraries
-- libcurl (for HTTP requests)
-- nlohmann-json (header-only, included)
-
-#### Build Commands
-
-```bash
-# Navigate to database directory
-cd database_cpp/database_cpp
-
-# Configure CMake
-mkdir build && cd build
-cmake ..
-
-# Build all targets
-cmake --build . --config Release
-
-# Build specific components
-cmake --build . --target perception_data_collector  # Data collector executable
-cmake --build . --target basic_ingestion            # Example program
-```
-
-#### Build Outputs
-```
-build/
-├── perception_database_service    # Main database service
-├── perception_data_collector      # Data collector executable
-├── basic_ingestion                # Example: SQLite ingestion
-├── elasticsearch_ingestion        # Example: Elasticsearch ingestion
-└── layer1_integration_test        # Example: Compression pipeline
-```
-
-### Running the Data Collector
-
-#### SQLite Backend (Default)
-
-```bash
-# Run with default configuration
-./perception_data_collector
-
-# Custom configuration
-./perception_data_collector \
-  --api-url http://localhost:8777/context \
-  --db-path ./my_data/events.db \
-  --device-id my_laptop_001 \
-  --poll-interval 5
-```
-
-#### Elasticsearch Backend
-
-```bash
-# First, start Elasticsearch (see Elasticsearch Setup section)
-docker compose up -d elasticsearch
-
-# Run data collector with Elasticsearch backend
-./perception_data_collector \
-  --storage elasticsearch \
-  --es-url http://localhost:9200 \
-  --es-index perception_raw_events \
-  --api-url http://localhost:8777/context
-```
-
-### Configuration File
-
-**Location:** `perception_data/collector_config.json`
-
-```json
-{
-  "apiUrl": "http://localhost:8777/context",
-  "dbPath": "./perception_data/raw_events.db",
-  "deviceId": "pc_001",
-  "pollIntervalSeconds": 5,
-  "connectionTimeoutSeconds": 10,
-  "maxRetries": 3,
-  "storageBackend": "SQLITE",
-  "elasticsearchUrl": "http://localhost:9200",
-  "elasticsearchIndex": "perception_raw_events"
-}
-```
-
----
-
-## Elasticsearch Setup
-
-### Quick Start (Development)
-
-**Using Docker Compose:**
-
-```bash
-cd database_cpp/database_cpp/elasticsearch_client_dll/docker
-
-# Start Elasticsearch (single-node, no security)
-docker compose up -d
-
-# Verify it's running
-curl http://localhost:9200
-
-# Stop
-docker compose down
-```
-
-### Production Deployment
-
-**Using PowerShell script (Windows):**
-
-```powershell
-cd database_cpp\database_cpp\elasticsearch_client_dll\docker
-
-# Deploy with security enabled
-.\Deploy-Elasticsearch.ps1 -Action start -EnableSecurity $true
-
-# Check status
-.\Deploy-Elasticsearch.ps1 -Action status
-
-# Stop
-.\Deploy-Elasticsearch.ps1 -Action stop
-```
-
-### Docker Compose Configuration
-
-**File:** `elasticsearch_client_dll/docker/docker-compose.yml`
-
+**Docker Compose:**
 ```yaml
 version: '3.8'
 
 services:
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
-    container_name: elasticsearch
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
     ports:
-      - "9200:9200"
-      - "9300:9300"
+      - "6333:6333"  # REST API
+      - "6334:6334"  # gRPC API
     volumes:
-      - esdata:/usr/share/elasticsearch/data
+      - qdrant_storage:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
     restart: unless-stopped
 
 volumes:
-  esdata:
+  qdrant_storage:
 ```
 
-### Index Mapping
+**Start Qdrant:**
+```bash
+cd database_cpp/database_cpp/qdrant_deployment  # (create this directory)
+docker compose up -d
 
-**Index name:** `perception_raw_events`
+# Verify
+curl http://localhost:6333/collections
+```
 
-**Mapping:**
+### Collection Schema
+
+**Create collection:**
+```json
+PUT http://localhost:6333/collections/perception_sessions
+
+{
+  "vectors": {
+    "size": 384,  // or 1536 for OpenAI embeddings
+    "distance": "Cosine"
+  },
+  "optimizers_config": {
+    "indexing_threshold": 10000
+  },
+  "hnsw_config": {
+    "m": 16,
+    "ef_construct": 100
+  }
+}
+```
+
+**Point structure:**
 ```json
 {
-  "mappings": {
-    "properties": {
-      "event_id": { "type": "keyword" },
-      "timestamp": { "type": "date" },
-      "device_id": { "type": "keyword" },
-      "app_name": { "type": "keyword" },
-      "window_title": { "type": "text" },
-      "url": { "type": "text" },
-      "screen_content": { "type": "text" },
-      "screen_content_hash": { "type": "keyword" },
-      "voice_transcription": { "type": "text" },
-      "camera_description": { "type": "text" },
-      "content_type": { "type": "keyword" },
-      "domain": { "type": "keyword" },
-      "session_id": { "type": "keyword" },
-      "compressed": { "type": "boolean" }
+  "id": "session_uuid_123",
+  "vector": [0.1, -0.5, 0.3, ...],  // 384 or 1536 dimensions
+  "payload": {
+    "session_id": "session_uuid_123",
+    "device_id": "laptop_001",
+    "start_time": "2024-01-15T10:00:00Z",
+    "end_time": "2024-01-15T11:30:00Z",
+    "duration_seconds": 5400,
+    "content_type": "CODE",
+    "domain": "WORK",
+    "app_name": "code.exe",
+    "engagement_score": 0.85,
+    "compressed_summary": "Worked on database design for perception engine. Implemented session detection algorithm and tested with sample data. Fixed bug in engagement calculation.",
+    "key_points": [
+      "Implemented session detection using idle threshold",
+      "Added engagement score calculation",
+      "Fixed bug in scoring formula"
+    ]
+  }
+}
+```
+
+### Embedding Generation
+
+**Embedding Model Options:**
+
+| Model | Dimensions | Speed | Quality | Cost |
+|-------|------------|-------|---------|------|
+| **all-MiniLM-L6-v2** | 384 | Very fast | Good | Free (local) |
+| **all-mpnet-base-v2** | 768 | Fast | Better | Free (local) |
+| **OpenAI text-embedding-3-small** | 1536 | API latency | Excellent | $0.02 / 1M tokens |
+| **OpenAI text-embedding-3-large** | 3072 | API latency | Best | $0.13 / 1M tokens |
+
+**Recommendation:**
+- **Development**: all-MiniLM-L6-v2 (fast, good enough, free)
+- **Production**: OpenAI text-embedding-3-small (best quality/cost ratio)
+- **Privacy-focused**: all-mpnet-base-v2 (local, no API calls)
+
+**Embedding workflow:**
+```python
+# Using sentence-transformers (local)
+from sentence_transformers import SentenceTransformer
+
+model = SentenceTransformer('all-MiniLM-L6-v2')
+embedding = model.encode(session_summary)  # Returns 384-dim vector
+
+# Using OpenAI API
+import openai
+
+response = openai.embeddings.create(
+    model="text-embedding-3-small",
+    input=session_summary
+)
+embedding = response.data[0].embedding  # Returns 1536-dim vector
+```
+
+### Semantic Search Examples
+
+**Basic similarity search:**
+```json
+POST http://localhost:6333/collections/perception_sessions/points/search
+
+{
+  "vector": [0.1, -0.5, 0.3, ...],  // Query embedding
+  "limit": 10,
+  "with_payload": true
+}
+```
+
+**Hybrid search (vector + filter):**
+```json
+POST http://localhost:6333/collections/perception_sessions/points/search
+
+{
+  "vector": [0.1, -0.5, 0.3, ...],
+  "filter": {
+    "must": [
+      { "key": "device_id", "match": { "value": "laptop_001" } },
+      { "key": "content_type", "match": { "value": "CODE" } },
+      {
+        "key": "start_time",
+        "range": {
+          "gte": "2024-01-01T00:00:00Z",
+          "lte": "2024-01-31T23:59:59Z"
+        }
+      },
+      {
+        "key": "engagement_score",
+        "range": { "gte": 0.5 }
+      }
+    ]
+  },
+  "limit": 10,
+  "with_payload": true
+}
+```
+
+**Query examples (user intent → embedding → search):**
+
+```
+User query: "machine learning database sessions"
+  ↓ Embed with same model
+Embedding: [0.12, -0.43, 0.67, ...]
+  ↓ Search in Qdrant
+Results:
+  1. [Score: 0.92] "Designed database schema for ML feature store..."
+  2. [Score: 0.88] "Implemented vector similarity search for embeddings..."
+  3. [Score: 0.85] "Researched DuckDB vs ClickHouse for ML pipelines..."
+```
+
+### Qdrant C++ Client
+
+**Options:**
+1. **HTTP/REST client** using libcurl (easiest)
+2. **gRPC client** using official Qdrant C++ SDK (faster, more features)
+
+**Example (REST API with libcurl):**
+```cpp
+#include <curl/curl.h>
+#include <nlohmann/json.hpp>
+
+class QdrantClient {
+public:
+    QdrantClient(const std::string& url) : baseUrl_(url) {}
+
+    // Upsert point (insert or update)
+    bool upsertPoint(const std::string& collection,
+                     const std::string& pointId,
+                     const std::vector<float>& vector,
+                     const nlohmann::json& payload) {
+        nlohmann::json body = {
+            {"points", {{
+                {"id", pointId},
+                {"vector", vector},
+                {"payload", payload}
+            }}}
+        };
+
+        std::string response;
+        return httpRequest("PUT",
+                          "/collections/" + collection + "/points",
+                          body.dump(),
+                          response);
     }
-  }
-}
-```
 
-**Initialization:** Automatic on first use (see `ElasticsearchClient::initializeIndex()`)
+    // Search similar points
+    std::vector<SearchResult> search(const std::string& collection,
+                                     const std::vector<float>& queryVector,
+                                     int limit = 10,
+                                     const nlohmann::json& filter = {}) {
+        nlohmann::json body = {
+            {"vector", queryVector},
+            {"limit", limit},
+            {"with_payload", true}
+        };
 
----
+        if (!filter.empty()) {
+            body["filter"] = filter;
+        }
 
-## API Reference
+        std::string response;
+        httpRequest("POST",
+                   "/collections/" + collection + "/points/search",
+                   body.dump(),
+                   response);
 
-### DataIngestion Class (Layer 0 - SQLite)
+        return parseSearchResults(response);
+    }
 
-**Location:** `include/layer0/DataIngestion.h`
+private:
+    std::string baseUrl_;
 
-```cpp
-class DataIngestion {
-public:
-    // Constructor
-    explicit DataIngestion(const std::string& dbPath, const DeviceId& deviceId);
+    bool httpRequest(const std::string& method,
+                    const std::string& endpoint,
+                    const std::string& body,
+                    std::string& response);
 
-    // Ingest single event
-    EventId ingestEvent(const RawEvent& event);
-
-    // Batch ingest (more efficient)
-    std::vector<EventId> ingestEvents(const std::vector<RawEvent>& events);
-
-    // Statistics
-    int getEventCount() const;
-    int getUncompressedEventCount() const;
-    int getTodayEventCount() const;
-};
-```
-
-**Example Usage:**
-```cpp
-#include "layer0/DataIngestion.h"
-
-// Initialize
-layer0::DataIngestion ingestion("./data/raw_events.db", "device_001");
-
-// Create event
-layer0::RawEvent event;
-event.timestamp = std::chrono::system_clock::now();
-event.appName = "chrome.exe";
-event.windowTitle = "GitHub";
-event.interactionCount = 5;
-
-// Ingest
-EventId id = ingestion.ingestEvent(event);
-std::cout << "Ingested: " << id << std::endl;
-```
-
-### ElasticsearchClient Class (Layer 0 - Elasticsearch)
-
-**Location:** `include/layer0/ElasticsearchClient.h`
-
-```cpp
-class ElasticsearchClient {
-public:
-    // Constructor
-    explicit ElasticsearchClient(const std::string& esUrl = "http://localhost:9200");
-
-    // Initialize index with mapping
-    bool initializeIndex(const std::string& indexName);
-
-    // Index single document
-    std::string indexDocument(const std::string& indexName, const RawEvent& event);
-
-    // Bulk indexing (recommended for performance)
-    bool bulkIndexDocuments(const std::string& indexName,
-                           const std::vector<RawEvent>& events);
-
-    // Query uncompressed events
-    std::vector<RawEvent> getUncompressedEvents(int hours = 24);
-
-    // Mark as compressed
-    bool markEventsAsCompressed(const std::vector<std::string>& eventIds,
-                               const std::string& sessionId);
-
-    // Statistics
-    int getDocumentCount(const std::string& indexName);
-    int getUncompressedCount();
-};
-```
-
-### DuckDBManager Class (Layer 1)
-
-**Location:** `include/layer1/DuckDBManager.h`
-
-```cpp
-class DuckDBManager {
-public:
-    // Constructor
-    explicit DuckDBManager(const std::string& dbPath);
-
-    // Initialize schema
-    void initializeSchema();
-
-    // Insert compressed session
-    std::string insertCompressedSession(const CompressedSession& session);
-
-    // Query sessions
-    std::vector<CompressedSession> querySessionsByTimeRange(
-        const Timestamp& startTime,
-        const Timestamp& endTime
-    );
-
-    std::vector<CompressedSession> querySessionsByContentType(
-        const std::string& contentType,
-        int limit = 100
-    );
-
-    // Cleanup
-    int deleteSessionsOlderThan(const Timestamp& cutoffTime);
-};
-```
-
-### CompressionPipeline Class (Layer 1)
-
-**Location:** `include/layer1/CompressionPipeline.h`
-
-```cpp
-class CompressionPipeline {
-public:
-    // Constructor
-    CompressionPipeline(
-        const std::string& sqlitePath,
-        const std::string& duckdbPath,
-        const SessionConfig& config
-    );
-
-    // Main processing method
-    int processUncompressedEvents();
-
-    // Get statistics
-    CompressionStatistics getStatistics() const;
-
-    // Cleanup compressed sessions
-    int cleanupOldCompressedSessions(int retentionDays);
-};
-```
-
-**Example Usage:**
-```cpp
-#include "layer1/CompressionPipeline.h"
-
-// Initialize
-SessionConfig config;
-config.idleThresholdSeconds = 300;  // 5 minutes
-
-CompressionPipeline pipeline(
-    "./data/raw_events.db",
-    "./data/compressed_sessions.duckdb",
-    config
-);
-
-// Run compression
-int sessionsCompressed = pipeline.processUncompressedEvents();
-std::cout << "Compressed " << sessionsCompressed << " sessions" << std::endl;
-
-// Get statistics
-auto stats = pipeline.getStatistics();
-std::cout << "Compression ratio: " << stats.averageCompressionRatio << std::endl;
-```
-
-### DataCollector Class
-
-**Location:** `include/collector/DataCollector.h`
-
-```cpp
-class DataCollector {
-public:
-    // Constructor
-    explicit DataCollector(const CollectorConfig& config);
-
-    // Start data collection loop
-    void start();
-
-    // Stop collection
-    void stop();
-
-    // Statistics
-    int getTotalEventsCollected() const;
-    int getFailedRequests() const;
+    std::vector<SearchResult> parseSearchResults(const std::string& json);
 };
 ```
 
 ---
 
-## Performance Tuning
+## Integration: Complete Data Flow
 
-### SQLite Optimization
+### End-to-End Pipeline
 
-**Pragmas (automatically applied):**
-```sql
-PRAGMA journal_mode = WAL;           -- Write-Ahead Logging (better concurrency)
-PRAGMA synchronous = NORMAL;         -- Balance safety/performance
-PRAGMA cache_size = -64000;          -- 64MB cache
-PRAGMA temp_store = MEMORY;          -- Store temp tables in memory
-PRAGMA mmap_size = 268435456;        -- 256MB memory-mapped I/O
+```
+1. CAPTURE (Perception Engine)
+   └─> Screen + Audio + Camera → ContextCollector → HTTP API (port 8777)
+
+2. INGEST (Data Collector → Layer 0)
+   └─> Poll /context → Parse JSON → RawEvent → Elasticsearch/SQLite
+
+3. SESSION DETECTION (Layer 1 - Scheduled job, runs every 5 min)
+   └─> Query uncompressed events → Group by session → Calculate engagement
+
+4. LLM COMPRESSION (Layer 1 - For high-engagement sessions)
+   └─> Concatenate session content → LLM summarization → Update Layer 0
+
+5. EMBEDDING GENERATION (Layer 1 → Layer 2)
+   └─> Session summary → Embedding model → Vector (384 or 1536 dims)
+
+6. VECTOR INDEXING (Layer 2)
+   └─> Upsert to Qdrant → Index with payload
+
+7. SEMANTIC SEARCH (Query time)
+   └─> User query → Embed query → Qdrant search → Retrieve sessions
 ```
 
-**Batch inserts:**
-```cpp
-// ✅ Good: Batch insert (single transaction)
-std::vector<RawEvent> events = fetchEvents();
-ingestion.ingestEvents(events);  // ~1000x faster than individual inserts
+### Code Locations
 
-// ❌ Bad: Individual inserts (transaction per event)
-for (const auto& event : events) {
-    ingestion.ingestEvent(event);
-}
+```
+perception_engine/
+├── windows_code/                          # Perception Engine (Step 1)
+│   ├── PerceptionEngine.cpp               # Main context capture
+│   ├── ContextCollector.cpp               # Context aggregation
+│   └── HttpServer.cpp                     # /context API endpoint
+│
+├── database_cpp/database_cpp/
+│   ├── src/collector/                     # Data ingestion (Step 2)
+│   │   ├── DataCollector.cpp              # API polling
+│   │   └── main.cpp                       # Collector executable
+│   │
+│   ├── src/layer0/                        # Layer 0 storage
+│   │   ├── ElasticsearchClient.cpp        # Elasticsearch backend
+│   │   └── DataIngestion.cpp              # SQLite backend (alternative)
+│   │
+│   ├── src/layer1/                        # Session processing (Steps 3-5)
+│   │   ├── SessionDetector.cpp            # Session boundaries
+│   │   ├── EngagementCalculator.cpp       # Engagement metrics
+│   │   ├── ContentClassifier.cpp          # Content classification
+│   │   ├── CompressionPipeline.cpp        # LLM orchestration (TODO)
+│   │   └── EmbeddingGenerator.cpp         # Vector generation (TODO)
+│   │
+│   └── src/layer2/                        # Vector DB (Steps 6-7) (TODO)
+│       ├── QdrantClient.cpp               # Qdrant integration
+│       └── SemanticSearch.cpp             # Query interface
+│
+└── deployment/
+    ├── docker-compose.elasticsearch.yml   # Elasticsearch + Kibana
+    └── docker-compose.qdrant.yml          # Qdrant vector DB
 ```
 
-### Elasticsearch Optimization
+### Configuration
 
-**Bulk indexing:**
-```cpp
-// ✅ Good: Bulk insert (single HTTP request)
-std::vector<RawEvent> events = fetchEvents();
-esClient.bulkIndexDocuments("perception_raw_events", events);
+**Unified config file:** `perception_data/config.json`
 
-// ❌ Bad: Individual indexing (HTTP request per event)
-for (const auto& event : events) {
-    esClient.indexDocument("perception_raw_events", event);
-}
-```
-
-**Index settings:**
 ```json
 {
-  "settings": {
-    "number_of_shards": 1,           // Single-node: use 1 shard
-    "number_of_replicas": 0,         // No replicas for single-node
-    "refresh_interval": "30s"        // Reduce refresh frequency
+  "layer0": {
+    "backend": "elasticsearch",  // or "sqlite"
+    "elasticsearch": {
+      "url": "http://localhost:9200",
+      "index": "perception_raw_events",
+      "bulkSize": 100
+    },
+    "sqlite": {
+      "dbPath": "./perception_data/raw_events.db",
+      "enableFts5": true
+    },
+    "retentionHours": 24
+  },
+
+  "layer1": {
+    "sessionDetection": {
+      "idleThresholdSeconds": 300,
+      "domainChangeTriggers": true,
+      "contentTypeChangeTriggers": true
+    },
+    "llmCompression": {
+      "enabled": true,
+      "provider": "openai",  // or "local", "anthropic"
+      "model": "gpt-4o-mini",
+      "minEngagementForCompression": 0.3,
+      "localModelPath": "./models/llama-3.1-8b.gguf"
+    },
+    "embedding": {
+      "provider": "sentence-transformers",  // or "openai"
+      "model": "all-MiniLM-L6-v2",
+      "dimensions": 384
+    }
+  },
+
+  "layer2": {
+    "qdrant": {
+      "url": "http://localhost:6333",
+      "collection": "perception_sessions",
+      "distanceMetric": "Cosine"
+    },
+    "retentionDays": 30
+  },
+
+  "collector": {
+    "apiUrl": "http://localhost:8777/context",
+    "pollIntervalSeconds": 5,
+    "deviceId": "laptop_001"
   }
 }
 ```
 
-### DuckDB Optimization
+---
 
-**Query optimization:**
-```sql
--- ✅ Good: Use time range filter with index
-SELECT * FROM compressed_sessions
-WHERE device_id = 'device_001'
-  AND start_time BETWEEN '2024-01-01' AND '2024-01-31'
-ORDER BY start_time;
+## Performance Benchmarks (To Be Measured)
 
--- ❌ Bad: Full table scan
-SELECT * FROM compressed_sessions
-WHERE strftime('%Y-%m', start_time) = '2024-01';
+### Layer 0: Storage Performance
+
+**Elasticsearch (expected):**
+- Write throughput: 5,000 events/sec (bulk)
+- Search latency: <50ms (p99)
+- Storage: ~3KB/event
+- Memory: ~2GB base + 1GB per 1M events
+
+**SQLite + FTS5 (needs measurement):**
+- Write throughput: ? events/sec (with FTS5 indexing)
+- Search latency: ? ms (full-text search)
+- Storage: ~2-3KB/event
+- Memory: ~50-100MB base + ? per 1M events
+
+**Benchmark plan:**
+```bash
+# Test 1: Write performance
+- Ingest 10K, 100K, 1M events
+- Measure: events/sec, latency p50/p99, memory usage
+
+# Test 2: Search performance
+- Run 100 random full-text queries
+- Measure: latency p50/p99, relevance quality
+
+# Test 3: Storage efficiency
+- Compare disk usage after 1 week of data
+- Measure: compression ratio, index overhead
 ```
 
-**Batch inserts:**
-```cpp
-// Use prepared statements for bulk inserts
-conn->Query("BEGIN TRANSACTION");
-for (const auto& session : sessions) {
-    insertCompressedSession(session);
-}
-conn->Query("COMMIT");
+### Layer 1: Compression Performance
+
+**LLM compression (estimated):**
+- Local (llama.cpp, 8B model): ~500ms/session (GPU), 2-5s (CPU)
+- API (GPT-4o-mini): ~200-500ms/session
+- Compression ratio: 85-95% reduction
+
+### Layer 2: Vector Search Performance
+
+**Qdrant (expected):**
+- Indexing: <10ms/vector
+- Search latency: <10ms (p99) for <1M vectors
+- Memory: ~4 bytes/dim/vector (e.g., 384 dims = 1.5KB/vector)
+
+---
+
+## Deployment Guide
+
+### Quick Start (Development)
+
+```bash
+# 1. Start Elasticsearch
+cd database_cpp/database_cpp/elasticsearch_client_dll/docker
+docker compose up -d elasticsearch
+
+# 2. Start Qdrant
+cd ../../qdrant_deployment
+docker compose up -d qdrant
+
+# 3. Build database components
+cd ../..
+mkdir build && cd build
+cmake ..
+cmake --build . --config Release
+
+# 4. Start Perception Engine (in separate terminal)
+cd ../../../../windows_code/build/bin/Release
+./PerceptionEngine.exe --console
+
+# 5. Start Data Collector
+cd ../../../../database_cpp/database_cpp/build
+./perception_data_collector \
+  --storage elasticsearch \
+  --es-url http://localhost:9200 \
+  --api-url http://localhost:8777/context
+
+# 6. Run session compression (manual trigger for now)
+./session_compressor \
+  --es-url http://localhost:9200 \
+  --qdrant-url http://localhost:6333
+```
+
+### Production Deployment
+
+**Architecture:**
+```
+┌───────────────────────────────────────────────────────────┐
+│                    Load Balancer                          │
+│                   (nginx / Traefik)                       │
+└─────────────────────────┬─────────────────────────────────┘
+                          │
+          ┌───────────────┼───────────────┐
+          │               │               │
+┌─────────▼─────┐  ┌──────▼──────┐  ┌────▼────────┐
+│ Perception    │  │ Perception  │  │ Perception  │
+│ Engine (Dev1) │  │ Engine (Dev2│  │ Engine (Dev3│
+│ Port 8777     │  │ Port 8777   │  │ Port 8777   │
+└───────┬───────┘  └──────┬──────┘  └────┬────────┘
+        │                 │               │
+        └─────────────────┼───────────────┘
+                          │
+                ┌─────────▼──────────┐
+                │  Data Collectors   │
+                │   (Kubernetes)     │
+                └─────────┬──────────┘
+                          │
+          ┌───────────────┼───────────────┐
+          │               │               │
+┌─────────▼─────────┐  ┌──▼─────────┐  ┌─▼─────────┐
+│ Elasticsearch     │  │ Qdrant     │  │ Redis     │
+│ Cluster (3 nodes) │  │ Cluster    │  │ (cache)   │
+│ Port 9200         │  │ Port 6333  │  │ Port 6379 │
+└───────────────────┘  └────────────┘  └───────────┘
 ```
 
 ---
 
 ## Troubleshooting
 
-### SQLite Database Locked
+### Elasticsearch Issues
 
-**Symptom:** `database is locked` error
-
-**Cause:** Multiple processes trying to write simultaneously
-
-**Solution:**
-1. Ensure only one writer at a time (SQLite limitation)
-2. Use WAL mode (automatically enabled)
-3. Consider switching to Elasticsearch for multi-writer scenarios
-
-### Elasticsearch Connection Failed
-
-**Symptom:** `Connection refused` to port 9200
-
-**Solution:**
+**Issue: "Connection refused" to port 9200**
 ```bash
-# Check if Elasticsearch is running
+# Check if running
 docker ps | grep elasticsearch
-
-# If not running, start it
-cd database_cpp/database_cpp/elasticsearch_client_dll/docker
-docker compose up -d
 
 # Check logs
 docker logs elasticsearch
 
-# Test connection
-curl http://localhost:9200
+# Restart
+docker compose restart elasticsearch
 ```
 
-### DuckDB Out of Memory
-
-**Symptom:** `Out of memory` error during compression
-
-**Cause:** Processing too many events in single batch
-
-**Solution:**
-```cpp
-// Reduce batch size in CompressionPipeline
-// Edit database_cpp/database_cpp/src/layer1/CompressionPipeline.cpp
-const int MAX_EVENTS_PER_BATCH = 1000;  // Reduce from default 10000
+**Issue: "Out of memory" errors**
+```yaml
+# Increase heap size in docker-compose.yml
+environment:
+  - "ES_JAVA_OPTS=-Xms4g -Xmx4g"  # Increase from default 2g
 ```
 
-### Data Collector Not Ingesting
+### SQLite + FTS5 Issues
 
-**Symptom:** Collector runs but no events in database
+**Issue: "no such module: fts5"**
+```bash
+# Verify FTS5 is compiled in
+sqlite3 test.db "PRAGMA compile_options;" | grep FTS5
 
-**Checklist:**
-1. Is Perception Engine running? `curl http://localhost:8777/context`
-2. Check collector logs: `./perception_data_collector --verbose`
-3. Verify database path exists and is writable
-4. Check device_id matches between collector and queries
+# If missing, rebuild SQLite with FTS5 enabled
+# Or use system SQLite (usually has FTS5)
+```
+
+**Issue: Slow full-text search**
+```sql
+-- Rebuild FTS5 index
+INSERT INTO raw_events_fts(raw_events_fts) VALUES('rebuild');
+
+-- Optimize index
+INSERT INTO raw_events_fts(raw_events_fts) VALUES('optimize');
+```
+
+### Qdrant Issues
+
+**Issue: "Collection not found"**
+```bash
+# Create collection
+curl -X PUT http://localhost:6333/collections/perception_sessions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "vectors": {
+      "size": 384,
+      "distance": "Cosine"
+    }
+  }'
+```
 
 ---
 
@@ -1290,112 +1308,93 @@ const int MAX_EVENTS_PER_BATCH = 1000;  // Reduce from default 10000
 
 ### Short-term (1-3 months)
 
-1. **LLM Compression Integration**
-   - Integrate with local LLM (llama.cpp) or API (OpenAI, Claude)
-   - Implement dynamic token budgets based on engagement score
-   - Add support for multi-language summarization
+- [ ] **Complete LLM compression integration**
+  - Local llama.cpp integration
+  - OpenAI/Anthropic API integration
+  - Dynamic token budget based on engagement
 
-2. **Complete Layer 2 Implementation**
-   - Work session detection and aggregation
-   - Day session rollups
-   - Cross-session entity tracking
+- [ ] **Embedding pipeline**
+  - sentence-transformers integration
+  - Batch embedding generation
+  - Automatic Qdrant indexing
 
-3. **Enhanced Content Extraction**
-   - Browser content extraction (full webpage text)
-   - PDF/document OCR integration
-   - Code syntax parsing for better CODE session analysis
+- [ ] **SQLite + FTS5 benchmarking**
+  - Performance comparison vs Elasticsearch
+  - Document decision: production backend choice
 
 ### Medium-term (3-6 months)
 
-4. **Vector Search (Layer 3)**
-   - Embed compressed summaries using sentence transformers
-   - Store embeddings in Qdrant or Weaviate
-   - Semantic search across all sessions
+- [ ] **Hybrid search**
+  - Combine full-text (Elasticsearch/FTS5) + semantic (Qdrant)
+  - Reciprocal Rank Fusion (RRF) for result merging
 
-5. **Multi-device Synchronization**
-   - Centralized Elasticsearch cluster
-   - Cross-device session correlation
-   - Unified timeline across devices
+- [ ] **Multi-device synchronization**
+  - Central Elasticsearch cluster
+  - Cross-device session correlation
 
-6. **Privacy Features**
-   - End-to-end encryption for sensitive content
-   - Configurable content filtering (PII redaction)
-   - Local-only mode (no cloud sync)
+- [ ] **Privacy features**
+  - Content filtering (PII redaction)
+  - End-to-end encryption for sensitive sessions
+  - Local-only mode
 
 ### Long-term (6+ months)
 
-7. **Knowledge Graph**
-   - Neo4j integration for entity relationships
-   - Automatic project/task inference
-   - Smart context retrieval for Claude/LLMs
+- [ ] **Knowledge graph (Layer 3)**
+  - Entity extraction and linking
+  - Neo4j integration for relationships
+  - Project/task inference
 
-8. **Real-time Analytics Dashboard**
-   - Web dashboard for session visualization
-   - Time-series charts (engagement over time)
-   - Export to Notion/Obsidian
+- [ ] **Real-time analytics dashboard**
+  - Grafana + Elasticsearch integration
+  - Session visualization, engagement charts
+
+- [ ] **Claude/LLM integration**
+  - MCP server with semantic search
+  - "Ask Claude about my past work" feature
 
 ---
 
 ## Appendix: Implementation Status
 
+| Component | Status | Notes |
+|-----------|--------|-------|
+| **Layer 0 - Elasticsearch** | ✅ Implemented | Fully functional, production-ready |
+| **Layer 0 - SQLite + FTS5** | 📋 Evaluation | Need performance benchmarks |
+| **Data Collector** | ✅ Implemented | Supports both ES and SQLite |
+| **Session Detection** | ✅ Implemented | Idle threshold + context switches |
+| **Engagement Calculation** | ✅ Implemented | Weighted scoring formula |
+| **Content Classification** | ✅ Implemented | Rule-based classifier |
+| **LLM Compression** | 🔨 In Progress | Framework ready, LLM integration pending |
+| **Embedding Generation** | 📋 Planned | sentence-transformers integration |
+| **Layer 2 - Qdrant** | 📋 Planned | Schema designed, client pending |
+| **Semantic Search API** | 📋 Planned | Query interface design |
+
 **Legend:**
-- ✅ **Completed** - Fully implemented and tested
-- 🔨 **In Progress** - Partially implemented
-- 📋 **Planned** - Design phase, not yet implemented
-
-### Layer 0 - Raw Event Storage
-- ✅ SQLite schema and ingestion
-- ✅ Elasticsearch schema and ingestion
-- ✅ Event ID generation (SHA-256 hashing)
-- ✅ Batch ingestion
-- ✅ Statistics API
-- ✅ Automatic cleanup (24-hour retention)
-
-### Layer 1 - Compressed Sessions
-- ✅ DuckDB schema and storage
-- ✅ Session detection algorithm
-- ✅ Engagement calculation
-- ✅ Content classification
-- ✅ Content extraction (high-attention)
-- 🔨 LLM compression (framework ready, LLM integration pending)
-- ✅ Compression pipeline orchestration
-
-### Layer 2 - Aggregated Sessions
-- 📋 Work session detection
-- 📋 Day session rollups
-- 📋 Entity tracking
-- 📋 Project inference
-
-### Data Collector
-- ✅ HTTP API polling
-- ✅ JSON parsing
-- ✅ SQLite backend
-- ✅ Elasticsearch backend
-- ✅ Error handling and retry logic
-- ✅ Command-line interface
-
-### Integration
-- ✅ Perception Engine HTTP API (`/context` endpoint)
-- ✅ Data collector → Layer 0 pipeline
-- 🔨 Layer 0 → Layer 1 compression (manual trigger, auto-scheduling pending)
-- 📋 Layer 1 → Layer 2 aggregation
+- ✅ Implemented and tested
+- 🔨 In progress
+- 📋 Planned (not started)
 
 ---
 
 ## References
 
-**Related Documentation:**
-- [CLAUDE.md](CLAUDE.md) - Perception Engine overview and build instructions
-- [ARCHITECTURE_CN.md](database_cpp/database_cpp/ARCHITECTURE_CN.md) - Database architecture (Chinese)
-- [Elasticsearch Client README](database_cpp/database_cpp/elasticsearch_client_dll/docs/INDEX.md) - Elasticsearch setup
+**Internal Documentation:**
+- [CLAUDE.md](CLAUDE.md) - Perception Engine overview
+- [ARCHITECTURE_CN.md](database_cpp/database_cpp/ARCHITECTURE_CN.md) - Original database design (Chinese)
+- [Elasticsearch Client Docs](database_cpp/database_cpp/elasticsearch_client_dll/docs/INDEX.md)
 
 **External Resources:**
-- [SQLite Documentation](https://www.sqlite.org/docs.html)
-- [DuckDB Documentation](https://duckdb.org/docs/)
 - [Elasticsearch Documentation](https://www.elastic.co/guide/en/elasticsearch/reference/current/index.html)
+- [SQLite FTS5 Extension](https://www.sqlite.org/fts5.html)
+- [Qdrant Documentation](https://qdrant.tech/documentation/)
+- [sentence-transformers](https://www.sbert.net/)
 
 ---
 
-**Document Version:** 1.0.0
+**Document Version:** 2.0.0
 **Last Updated:** 2025-11-14
 **Authors:** Perception Engine Team + Claude
+
+**Changelog:**
+- v2.0.0 (2025-11-14): Complete rewrite to reflect Elasticsearch + Qdrant architecture
+- v1.0.0 (2025-11-14): Initial version (DuckDB-based, deprecated)

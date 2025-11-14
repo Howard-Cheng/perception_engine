@@ -331,9 +331,38 @@ bool ElasticsearchClient::initializeIndex(const std::string& indexName) {
                 "window_title": {"type": "text"},
                 "url": {"type": "keyword"},
                 "screen_content": {"type": "text"},
+                "screen_content_hash": {"type": "keyword"},
+                "voice_transcription": {"type": "text"},
+                "camera_description": {"type": "text"},
+                "session_id": {"type": "keyword"},
+                "content_type": {"type": "keyword"},
+                "domain": {"type": "keyword"},
                 "interaction_count": {"type": "integer"},
                 "dwell_time_seconds": {"type": "integer"},
-                "compressed": {"type": "boolean"}
+                "compressed": {"type": "boolean"},
+                "mouse_events": {
+                    "type": "nested",
+                    "properties": {
+                        "timestamp": {"type": "date"},
+                        "event_type": {"type": "keyword"},
+                        "content": {"type": "text"},
+                        "pos_x": {"type": "integer"},
+                        "pos_y": {"type": "integer"},
+                        "element_type": {"type": "keyword"}
+                    }
+                },
+                "system_info": {
+                    "type": "object",
+                    "properties": {
+                        "battery_percent": {"type": "integer"},
+                        "is_charging": {"type": "boolean"},
+                        "network_type": {"type": "keyword"},
+                        "location_lat": {"type": "geo_point"},
+                        "location_lon": {"type": "geo_point"},
+                        "cpu_usage": {"type": "float"},
+                        "memory_usage": {"type": "float"}
+                    }
+                }
             }
         }
     })");

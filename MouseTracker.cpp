@@ -327,7 +327,7 @@ void MouseTracker::ProcessMouseEvent(WPARAM wParam, const MSLLHOOKSTRUCT* mouseI
                        << L") - (" << topRect.right << L", " << topRect.bottom << L")\n";
             
             bool isInside = (mouseInfo->pt.x >= topRect.left && mouseInfo->pt.x < topRect.right &&
-                           mouseInfo->pt.y >= topRect.top && pt.y < topRect.bottom);
+                           mouseInfo->pt.y >= topRect.top && mouseInfo->pt.y < topRect.bottom);
             std::wcout << L"  Click is " << (isInside ? L"INSIDE" : L"OUTSIDE") 
                        << L" target window bounds\n";
         }
@@ -401,17 +401,6 @@ void MouseTracker::RecordMouseOperation(MouseEventType eventType, POINT position
     } catch (...) {
        std::wcout << L"[Error getting content]" << std::endl;
     }
-    
-    // 调试输出：对比坐标窗口和前台窗口
-    #ifdef _DEBUG
-    if (pointWindow && IsWindow(pointWindow)) {
-        HWND pointRoot = GetRootOwnerWindow(pointWindow);
-        std::wstring pointApp = GetApplicationName(pointRoot);
-        std::wstring foreApp = GetApplicationName(GetRootOwnerWindow(foregroundWindow));
-        std::wcout << L"[DEBUG] PointWindow: " << pointApp 
-                   << L", ForegroundWindow: " << foreApp << L"\n";
-    }
-    #endif
 
     // 写入日志文件（异步）
     if (m_logFile.is_open()) {

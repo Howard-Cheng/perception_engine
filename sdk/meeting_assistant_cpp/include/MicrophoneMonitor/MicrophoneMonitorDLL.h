@@ -36,6 +36,13 @@ DLL_EXPORT void MicrophoneMonitor_Destroy(MicrophoneMonitorHandle handle);
 DLL_EXPORT int MicrophoneMonitor_IsMeetingAppUsingMicrophone(MicrophoneMonitorHandle handle);
 
 /**
+ * Check if a meeting app is using the speakers
+ * @param handle: MicrophoneMonitor instance handle
+ * @return: 1 if meeting app detected, 0 otherwise
+ */
+DLL_EXPORT int MicrophoneMonitor_IsMeetingAppUsingSpeakers(MicrophoneMonitorHandle handle);
+
+/**
  * Get the name of the detected meeting app
  * @param handle: MicrophoneMonitor instance handle
  * @param buffer: Buffer to receive app name (e.g., "ms-teams.exe")

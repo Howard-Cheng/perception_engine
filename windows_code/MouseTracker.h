@@ -13,7 +13,7 @@
 #include <thread>
 #include <condition_variable>
 #include <atomic>
-#include "third-party/elasticsearch/include/ElasticsearchTypes.h"
+#include "ElasticsearchTypes.h"
 
 #pragma comment(lib, "oleacc.lib")
 

@@ -11,6 +11,8 @@
 #include "HttpServer.h"
 #include "ContextCollector.h"
 #include "AudioCaptureEngine.h"
+#include "ContextCollectorAdapter.h" // NEW: Include the new ContextCollectorAdapter
+
 // #include "CameraVisionEngine.h"  // Removed - using Python client instead
 
 class PerceptionEngineService : public WindowsService {
@@ -444,11 +446,19 @@ int main(int argc, char* argv[]) {
             try {
                 // Create separate instances for console mode
                 HttpServer server(8777);
-                ContextCollector collector;
+                //ContextCollector collector;
                 AudioCaptureEngine audioEngine;
 
                 LOG_INFO("Starting context collector...");
-                collector.StartPeriodicUpdate();
+                
+                // 使用新架构 (默认)
+                ContextCollectorAdapter collector(ContextCollectorAdapter::Mode::REFACTORED);
+                // 或使用旧架构
+                // ContextCollectorAdapter collector(ContextCollectorAdapter::Mode::LEGACY);
+
+                //collector.StartPeriodicUpdate();
+                collector.InitializeElasticsearch();
+                // ...其他操作
 
                 // ? NEW: Initialize Elasticsearch (optional feature)
                 if (collector.InitializeElasticsearch("http://localhost:9200", "perception_context")) {

@@ -1,6 +1,7 @@
-﻿#include "ContextCollector.h"
+#include "ContextCollector.h"
 #include "MouseTracker.h"  // Include here instead of in header
-#include "ElasticsearchClient.h"
+#include "DatabaseClientFactory.h"
+#include "DatabaseTypes.h"
 #include <thread>
 #include <atomic>
 #include <iomanip>
@@ -431,8 +432,8 @@ bool ContextCollector::InitializeElasticsearch(const std::string& esHost, const 
     try {
         std::lock_guard<std::mutex> lock(esClientMutex);
 
-        // Create Elasticsearch client
-        esClient = std::make_unique<elasticsearch::ElasticsearchClient>(esHost);
+        // Create Elasticsearch client using factory
+        esClient = database::DatabaseClientFactory::createElasticsearch(esHost);
         esIndexName = indexName;
 
         // Test connection
@@ -445,7 +446,7 @@ bool ContextCollector::InitializeElasticsearch(const std::string& esHost, const 
         std::cout << "[ContextCollector] Connected to Elasticsearch at " << esHost << std::endl;
 
         // Initialize index with proper mapping
-        if (!esClient->initializeIndex(indexName)) {
+        if (!esClient->initializeCollection(indexName)) {
             std::cerr << "[ContextCollector] Failed to initialize index: " << indexName << std::endl;
             esClient.reset();
             return false;
@@ -454,7 +455,6 @@ bool ContextCollector::InitializeElasticsearch(const std::string& esHost, const 
 
         // Start background storage thread
         esStorageRunning.store(true);
-        /*esStorageThread = std::thread(&ContextCollector::ESStorageThreadFunc, this);*/
 
         std::cout << "[ContextCollector] Elasticsearch storage thread started (5-second interval)" << std::endl;
 
@@ -502,7 +502,7 @@ void ContextCollector::StoreContextToES(const Json& context) {
         int duration = context.getInt("duration", 0);
 
         // Create RawEvent from Json context
-        elasticsearch::RawEvent event;
+        database::RawEvent event;
 
         // Generate unique event ID
         auto nowTime = std::chrono::system_clock::now();
@@ -678,7 +678,7 @@ Json ContextCollector::GetESDBData(const std::string& keyword,
         std::cout << "[GetESDBData] Query: " << query << std::endl;
 
         // Execute search
-        elasticsearch::SearchResult searchResult = esClient->search(esIndexName, query, 0, maxResults);
+        database::SearchResult searchResult = esClient->search(esIndexName, query, 0, maxResults);
 
         std::cout << "[GetESDBData] Found " << searchResult.totalHits << " matches in "
             << searchResult.searchTimeMs << " ms" << std::endl;

@@ -6,12 +6,13 @@
 #include <string>
 #include <memory>  // For std::unique_ptr
 #include <atomic>
+#include <thread>
 
 // Forward declarations to avoid header conflicts
 class MouseTracker;
 
-namespace elasticsearch {
-    class ElasticsearchClient;
+namespace database {
+    class IDatabaseClient;
 }
 
 class ContextCollector {
@@ -39,7 +40,7 @@ private:
     mutable std::mutex mouseTrackerMutex;
 
     // Elasticsearch integration
-    std::unique_ptr<elasticsearch::ElasticsearchClient> esClient;
+    std::unique_ptr<database::IDatabaseClient> esClient;
     std::atomic<bool> esStorageRunning{false};
     std::thread esStorageThread;
     mutable std::mutex esClientMutex;

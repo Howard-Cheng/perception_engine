@@ -1,4 +1,5 @@
 #include "MouseTracker.h"
+#include "DatabaseTypes.h"  // Add this include for database::MouseEvent
 #include <iostream>
 #include <sstream>
 #include <iomanip>
@@ -383,7 +384,7 @@ void MouseTracker::RecordMouseOperation(MouseEventType eventType, POINT position
     record.position = position;
 
     // ✅ 关键改进：先立即获取元素内容（在UI状态改变之前）
-    MouseEvent dbMouseEvent;
+    database::MouseEvent dbMouseEvent;  // Use database namespace
     try {
         if (eventType == MouseEventType::TEXT_SELECTION) {
             // 对于文本选择，使用特殊方法获取选中的文本
@@ -610,7 +611,7 @@ IUIAutomationElement* MouseTracker::FindElementAtPointInTree(IUIAutomationElemen
         IUIAutomationElement* rootElement = element;
         HWND hwnd = nullptr;
         
-        // 向上查找直到找到有效的窗口句柄
+        // 向上查找直到找到有效的窗口句handles
         while (rootElement) {
             UIA_HWND uiaHwnd = 0;
             if (SUCCEEDED(rootElement->get_CurrentNativeWindowHandle(&uiaHwnd)) && uiaHwnd) {

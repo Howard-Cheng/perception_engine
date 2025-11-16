@@ -14,8 +14,8 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # Elasticsearch Client DLL (subdirectory)
 # ============================================================================
 
-# Add elasticsearch_client as a subdirectory
-add_subdirectory(elasticsearch_client)
+# Add database_client as a subdirectory
+add_subdirectory(database_client)
 
 # ============================================================================
 
@@ -60,7 +60,7 @@ set(OpenCV_BIN_DIR "${OpenCV_DIR}/x64/vc16/bin")
 file(GLOB OPENCV_WORLD_LIB "${OpenCV_LIB_DIR}/opencv_world*.lib")
 
 # Elasticsearch Client (built as subdirectory)
-# The elasticsearch_client target is now available from the subdirectory
+# The database_client target is now available from the subdirectory
 set(ELASTICSEARCH_AVAILABLE TRUE)
 message(STATUS "Elasticsearch client enabled (built from subdirectory)")
 
@@ -123,7 +123,7 @@ target_include_directories(PerceptionEngine PRIVATE
 # Add Elasticsearch include directory (from subdirectory target)
 if(ELASTICSEARCH_AVAILABLE)
     target_include_directories(PerceptionEngine PRIVATE
-        $<TARGET_PROPERTY:elasticsearch_client,INTERFACE_INCLUDE_DIRECTORIES>
+        $<TARGET_PROPERTY:database_client,INTERFACE_INCLUDE_DIRECTORIES>
     )
     target_compile_definitions(PerceptionEngine PRIVATE
         ELASTICSEARCH_ENABLED
@@ -162,7 +162,7 @@ target_link_libraries(PerceptionEngine PRIVATE
 # Link Elasticsearch client library (from subdirectory target)
 if(ELASTICSEARCH_AVAILABLE)
     target_link_libraries(PerceptionEngine PRIVATE
-        elasticsearch_client
+        database_client
     )
 endif()
 

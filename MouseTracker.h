@@ -13,11 +13,14 @@
 #include <thread>
 #include <condition_variable>
 #include <atomic>
-#include "ElasticsearchTypes.h"
+
+// Forward declaration to avoid circular dependency
+namespace database {
+    struct MouseEvent;
+}
 
 #pragma comment(lib, "oleacc.lib")
 
-using namespace elasticsearch;
 // 鼠标事件类型
 enum class MouseEventType {
     LEFT_CLICK,
@@ -66,7 +69,7 @@ public:
         return m_clickedCount;
     }
 
-    inline std::vector<MouseEvent> GetMouseEvents() const {
+    inline std::vector<database::MouseEvent> GetMouseEvents() const {
         return m_mouseEvents;
     }
 
@@ -130,7 +133,7 @@ private:
     std::ofstream m_logFile;
 
     UINT64 m_clickedCount;
-    std::vector<MouseEvent> m_mouseEvents;
+    std::vector<database::MouseEvent> m_mouseEvents;
 };
 
 // 辅助函数

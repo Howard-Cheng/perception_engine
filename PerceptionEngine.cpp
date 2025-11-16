@@ -1,4 +1,4 @@
-﻿#define WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
 #define _WINSOCKAPI_    // Prevent inclusion of winsock.h
 #include "Logger.h"  // NEW: Add Logger first
 #include <iostream>
@@ -44,12 +44,12 @@ public:
             contextCollector = std::make_unique<ContextCollector>();
             LOG_INFO("Context collector started");
 
-            // ⚡ NEW: Initialize Elasticsearch (optional feature)
+            // ? NEW: Initialize Elasticsearch (optional feature)
             // If ES is not available, system continues without it
             if (contextCollector->InitializeElasticsearch("http://localhost:9200", "perception_context")) {
-                LOG_INFO("✅ Elasticsearch initialized - auto storage every 5 seconds");
+                LOG_INFO("? Elasticsearch initialized - auto storage every 5 seconds");
             } else {
-                LOG_WARN("⚠️  Elasticsearch not available - running without ES storage");
+                LOG_WARN("??  Elasticsearch not available - running without ES storage");
                 LOG_INFO("   To enable ES: Install and start Elasticsearch on http://localhost:9200");
             }
 
@@ -245,7 +245,7 @@ private:
                     LOG_ERROR("Context collector not initialized");
                 }
             }
-            // ⚡ NEW: Elasticsearch query endpoint
+            // ? NEW: Elasticsearch query endpoint
             else if (request.path.find("/query") == 0 && request.method == "GET") {
                 if (!contextCollector) {
                     response.SetBody("{\"error\":\"Service not initialized\"}");
@@ -450,11 +450,11 @@ int main(int argc, char* argv[]) {
                 LOG_INFO("Starting context collector...");
                 collector.StartPeriodicUpdate();
 
-                // ⚡ NEW: Initialize Elasticsearch (optional feature)
+                // ? NEW: Initialize Elasticsearch (optional feature)
                 if (collector.InitializeElasticsearch("http://localhost:9200", "perception_context")) {
-                    LOG_INFO("✅ Elasticsearch initialized - auto storage every 5 seconds");
+                    LOG_INFO("? Elasticsearch initialized - auto storage every 5 seconds");
                 } else {
-                    LOG_WARN("⚠️  Elasticsearch not available - running without ES storage");
+                    LOG_WARN("??  Elasticsearch not available - running without ES storage");
                 }
 
                 // Initialize audio engine (only if NOT in screen-only mode)
@@ -508,7 +508,7 @@ int main(int argc, char* argv[]) {
                         response.status = 200;
                         LOG_DEBUG("Sent context response");
                     }
-                    // ⚡ NEW: Elasticsearch query endpoint
+                    // ? NEW: Elasticsearch query endpoint
                     else if (request.path.find("/query") == 0 && request.method == "GET") {
                         if (!collector.IsElasticsearchAvailable()) {
                             response.SetBody("{\"error\":\"Elasticsearch not available\"}");

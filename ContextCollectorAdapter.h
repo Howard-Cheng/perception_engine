@@ -79,7 +79,7 @@ public:
         if (mode_ == Mode::LEGACY) {
             return legacyCollector_->InitializeElasticsearch(esHost, indexName);
         } else {
-            return refactoredCollector_->InitializeElasticsearch(esHost, indexName);
+            return refactoredCollector_->InitializeDatabase(esHost, indexName);
         }
     }
     
@@ -87,7 +87,7 @@ public:
         if (mode_ == Mode::LEGACY) {
             legacyCollector_->ShutdownElasticsearch();
         } else {
-            refactoredCollector_->ShutdownElasticsearch();
+            refactoredCollector_->ShutdownDatabase();
         }
     }
     

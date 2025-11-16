@@ -1,4 +1,4 @@
-#include "ContextCollectorRefactored.h"
+﻿#include "ContextCollectorRefactored.h"
 #include <random>
 #include <iostream>
 #include <sstream>
@@ -32,9 +32,9 @@ ContextCollectorRefactored::ContextCollectorRefactored() {
 
 ContextCollectorRefactored::~ContextCollectorRefactored() {
     StopPeriodicUpdate();
-    ShutdownElasticsearch();
+    ShutdownDatabase();
     
-    // ? FIX: Clear window switch callback before shutdown
+    // ✅ FIX: Clear window switch callback before shutdown
     if (auto appProvider = contextManager_.getAppActivityProvider()) {
         appProvider->clearWindowSwitchCallback();
         std::cout << "[ContextCollector] Window switch callback cleared" << std::endl;
@@ -114,12 +114,12 @@ std::string ContextCollectorRefactored::GenerateFusedContext() const {
 // Elasticsearch Integration
 // ========================================
 
-bool ContextCollectorRefactored::InitializeElasticsearch(const std::string& esHost, 
+bool ContextCollectorRefactored::InitializeDatabase(const std::string& esHost,
                                                          const std::string& indexName) {
     try {
         std::lock_guard<std::mutex> lock(esClientMutex_);
         
-        esClient_ = database::DatabaseClientFactory::createElasticsearch(esHost);
+        esClient_ = database::DatabaseClientFactory::create(database::DatabaseType::ELASTICSEARCH, esHost);
         esIndexName_ = indexName;
         
         if (!esClient_->testConnection()) {
@@ -148,7 +148,7 @@ bool ContextCollectorRefactored::InitializeElasticsearch(const std::string& esHo
     }
 }
 
-void ContextCollectorRefactored::ShutdownElasticsearch() {
+void ContextCollectorRefactored::ShutdownDatabase() {
     esStorageRunning_.store(false);
     
     std::lock_guard<std::mutex> lock(esClientMutex_);

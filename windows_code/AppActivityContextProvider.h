@@ -8,14 +8,14 @@
 #include <iostream>  // For std::cout, std::cerr
 
 /**
- * @brief 应用活动上下文提供者
+ * @brief Application Activity Context Provider
  * 
- * 负责收集:
- * - 活动应用名称
- * - 窗口标题
- * - 应用内容
- * - 鼠标交互事件
- * - 停留时间
+ * Collects:
+ * - Active application name
+ * - Window title
+ * - Application content
+ * - Mouse interaction events
+ * - Dwell time
  */
 class AppActivityContextProvider : public IContextProvider {
 public:
@@ -111,7 +111,7 @@ public:
     // ========================================
     
     /**
-     * @brief 注册窗口切换回调 (供 ContextCollector 使用)
+     * @brief Register window switch callback (for use by ContextCollector)
      */
     void registerWindowSwitchCallback(WindowSwitchCallback callback) {
         std::lock_guard<std::mutex> lock(callbackMutex_);
@@ -120,7 +120,7 @@ public:
     }
     
     /**
-     * @brief 清除窗口切换回调
+     * @brief Clear window switch callback
      */
     void clearWindowSwitchCallback() {
         std::lock_guard<std::mutex> lock(callbackMutex_);

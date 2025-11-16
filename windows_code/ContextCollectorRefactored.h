@@ -78,16 +78,15 @@ public:
     // ========================================
     
     /**
-     * @brief Initialize Elasticsearch client
+     * @brief Initialize Database client
      */
-    bool InitializeElasticsearch(const std::string& esHost = "http://localhost:9200",
+    bool InitializeDatabase(const std::string& esHost = "http://localhost:9200",
                                  const std::string& indexName = "perception_context");
     
     /**
      * @brief Shutdown Elasticsearch client
      */
-    void ShutdownElasticsearch();
-    
+    void ShutdownDatabase();
     /**
      * @brief Query Elasticsearch data
      */

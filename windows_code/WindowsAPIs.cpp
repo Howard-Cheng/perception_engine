@@ -145,12 +145,21 @@ namespace WindowsAPIs {
 
     // Internal window event handler
     void WindowsAPIsManager::OnWindowEventInternal(const WindowInfo& info) {
+        // ✅ 添加调试日志
+        std::cout << "[DEBUG] OnWindowEventInternal called!" << std::endl;
+        std::cout << "  App: " << WideStringToUtf8(info.processName) << std::endl;
+        std::cout << "  Window: " << WideStringToUtf8(info.windowTitle) << std::endl;
+
         try {
             std::string appName = GetAppNameFromWindowInfo(info);
             std::string windowTitle = WideStringToUtf8(info.windowTitle);
 
+            std::cout << "  Processed App: " << appName << std::endl;
+            std::cout << "  Processed Window: " << windowTitle << std::endl;
+
             // Skip empty, invalid, or system app names
             if (appName.empty() || appName == "Unknown" || appName == "Desktop" || appName == "csc_ui") {
+                std::cout << "  -> Skipped (invalid app)" << std::endl;
                 return;
             }
 
@@ -163,14 +172,19 @@ namespace WindowsAPIs {
             if (!m_lastActiveApp.empty() &&
                 (m_lastActiveApp != appName || m_lastActiveAppWindowTitle != windowTitle)) {
                 shouldRecord = true;
+                std::cout << "  -> Should record: YES (different app/window)" << std::endl;
+            }
+            else {
+                std::cout << "  -> Should record: NO (same app/window or first time)" << std::endl;
             }
 
             // Record the previous app's duration if it's different
             if (shouldRecord) {
                 auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - m_lastAppStartTime);
 
-                // Only record if the app was active for more than 10 seconds
-                //TODO: adjust threshold as needed
+                std::cout << "  -> Duration: " << duration.count() << " seconds" << std::endl;
+
+                // Only record if the app was active for more than 2 seconds
                 if (duration.count() > 2) {
                     int durationSecs = static_cast<int>(duration.count());
 
@@ -179,7 +193,6 @@ namespace WindowsAPIs {
 
                     // App info to be inserted/updated
                     ActiveAppRecord record;
-                    // New combination: create new record
                     record.appName = m_lastActiveApp;
                     record.windowTitle = m_lastActiveAppWindowTitle;
                     record.timestamp = m_lastAppStartTime;
@@ -187,13 +200,22 @@ namespace WindowsAPIs {
                     record.appContent = m_lastActiveAppContent;
                     m_activeAppHistory[key] = record;
 
+                    std::cout << "  -> ✅ RECORDED: " << m_lastActiveApp << " (" << durationSecs << "s)" << std::endl;
+
                     // Trigger window switch callback with new app info
                     {
                         std::lock_guard<std::mutex> callbackLock(m_callbackMutex);
                         if (m_windowSwitchCallback) {
+                            std::cout << "  -> ✅ CALLBACK triggered!" << std::endl;
                             m_windowSwitchCallback(record);
                         }
+                        else {
+                            std::cout << "  -> ❌ No callback registered" << std::endl;
+                        }
                     }
+                }
+                else {
+                    std::cout << "  -> Skipped (duration too short: " << duration.count() << "s)" << std::endl;
                 }
             }
 
@@ -203,6 +225,8 @@ namespace WindowsAPIs {
             m_lastAppStartTime = now;
             m_lastActiveAppContent = GetCurrentActiveAppContent();
 
+            std::cout << "  -> Updated current app: " << m_lastActiveApp << std::endl;
+
             // Clean up old records periodically
             static auto lastCleanup = std::chrono::system_clock::now();
             if (std::chrono::duration_cast<std::chrono::minutes>(now - lastCleanup).count() >= 5) {
@@ -210,8 +234,11 @@ namespace WindowsAPIs {
                 lastCleanup = now;
             }
         }
+        catch (const std::exception& e) {
+            std::cerr << "[ERROR] OnWindowEventInternal exception: " << e.what() << std::endl;
+        }
         catch (...) {
-            // Ignore event processing errors
+            std::cerr << "[ERROR] OnWindowEventInternal unknown exception" << std::endl;
         }
     }
 

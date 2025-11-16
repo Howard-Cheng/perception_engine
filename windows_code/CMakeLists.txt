@@ -82,6 +82,9 @@ set(PERCEPTION_ENGINE_SOURCES
     SileroVAD.cpp
     BrowserContentExtractor.cpp
     MouseTracker.cpp
+    
+    # NEW: Refactored Context Collector (Strategy Pattern)
+    ContextCollectorRefactored.cpp
 )
 
 set(PERCEPTION_ENGINE_HEADERS
@@ -96,6 +99,16 @@ set(PERCEPTION_ENGINE_HEADERS
     SileroVAD.h
     BrowserContentExtractor.h
     MouseTracker.h
+    
+    # NEW: Refactored Context Collector Headers (Strategy + Composite Pattern)
+    IContextProvider.h
+    SystemContextProvider.h
+    VoiceContextProvider.h
+    CameraContextProvider.h
+    AppActivityContextProvider.h
+    CompositeContextManager.h
+    ContextCollectorRefactored.h
+    ContextCollectorAdapter.h
 )
 
 # ============================================================================

@@ -9,7 +9,7 @@
 #include <atomic>
 #include "core/WindowsService.h"
 #include "communication/HttpServer.h"
-#include "context_refactored/ContextCollectorRefactored.h"  // UPDATED: Use refactored version
+#include "context_refactored/ContextCollector.h"  // UPDATED: Use ContextCollector
 #include "audio/AudioCaptureEngine.h"
 
 // #include "CameraVisionEngine.h"  // Removed - using Python client instead
@@ -17,7 +17,7 @@
 class PerceptionEngineService : public WindowsService {
 private:
     std::unique_ptr<HttpServer> httpServer;
-    std::unique_ptr<ContextCollectorRefactored> contextCollector;  // UPDATED
+    std::unique_ptr<ContextCollector> contextCollector;  // UPDATED
     std::unique_ptr<AudioCaptureEngine> audioEngine;
     // std::unique_ptr<CameraVisionEngine> cameraEngine;  // Removed - using Python client
     std::unique_ptr<std::thread> serverThread;
@@ -42,10 +42,10 @@ public:
             }
 
             // Initialize context collector
-            contextCollector = std::make_unique<ContextCollectorRefactored>();  // UPDATED
+            contextCollector = std::make_unique<ContextCollector>();  // UPDATED
             LOG_INFO("Context collector started");
 
-            // ? NEW: Initialize Elasticsearch (optional feature)
+            // NEW: Initialize Elasticsearch (optional feature)
             // If ES is not available, system continues without it
             if (contextCollector->InitializeDatabase("http://localhost:9200", "perception_context")) {  // UPDATED: renamed method
                 LOG_INFO("? Elasticsearch initialized - auto storage every 5 seconds");
@@ -449,10 +449,10 @@ int main(int argc, char* argv[]) {
 
                 LOG_INFO("Starting context collector...");
                 
-                // UPDATED: Use ContextCollectorRefactored directly
-                ContextCollectorRefactored collector;
+                // UPDATED: Use ContextCollector directly
+                ContextCollector collector;
 
-                // ? NEW: Initialize Elasticsearch (optional feature)
+                // NEW: Initialize Elasticsearch (optional feature)
                 if (collector.InitializeDatabase("http://localhost:9200", "perception_context")) {  // UPDATED: renamed method
                     LOG_INFO("? Elasticsearch initialized - auto storage every 5 seconds");
                 } else {

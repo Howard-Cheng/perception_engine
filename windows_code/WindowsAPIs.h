@@ -10,6 +10,7 @@
 // Forward declarations
 class WindowEventMonitor;
 class BrowserContentExtractor;
+class AsyncTaskQueue;
 struct WindowInfo;
 
 // Windows APIs wrapper functions
@@ -80,6 +81,9 @@ namespace WindowsAPIs {
         // Event callback function for window monitoring (internal)
         void OnWindowEventInternal(const WindowInfo& info);
 
+        // ✅ NEW: Process window switch event asynchronously
+        void ProcessWindowSwitchAsync(const ActiveAppRecord& record);
+
         // Cleanup old records (older than 1 hour)
         void CleanupOldRecords();
 
@@ -89,7 +93,7 @@ namespace WindowsAPIs {
         // Convert WindowInfo to app name
         std::string GetAppNameFromWindowInfo(const WindowInfo& info);
 
-        // Member variables (替代原来的 static 变量)
+        // Member variables
         std::unique_ptr<WindowEventMonitor> m_eventMonitor;
         std::unordered_map<std::string, ActiveAppRecord> m_activeAppHistory;
         std::mutex m_historyMutex;
@@ -104,12 +108,16 @@ namespace WindowsAPIs {
 
         // Window switch callback
         WindowSwitchCallback m_windowSwitchCallback;
-        std::mutex m_callbackMutex;// Global location cache
+        std::mutex m_callbackMutex;
+        
+        // ✅ NEW: Async task queue for callback execution
+        std::unique_ptr<AsyncTaskQueue> m_callbackTaskQueue;
+        
+        // Global location cache
         Location m_cachedLocation;
         std::chrono::steady_clock::time_point m_lastLocationUpdate;
         const std::chrono::minutes LOCATION_CACHE_DURATION{ 30 }; // 30 minutes cache
         bool m_locationInitialized = false;
-
     };
 
     // ⚡ Compatibility layer: Keep original namespace functions for backward compatibility
@@ -147,7 +155,6 @@ namespace WindowsAPIs {
     bool IsNetworkConnected();
     std::string GetNetworkType();
     double GetNetworkSpeed();
-
 
     // Timestamp
     std::string GetCurrentTimestamp();

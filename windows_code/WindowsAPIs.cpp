@@ -1,6 +1,7 @@
 ﻿#include "WindowsAPIs.h"
 #include "WindowEventMonitor.h"
 #include "BrowserContentExtractor.h"
+#include "AsyncTaskQueue.h"  // ✅ NEW: Include async task queue
 #define WIN32_LEAN_AND_MEAN
 #define _WINSOCKAPI_    // Prevent inclusion of winsock.h
 #include <windows.h>
@@ -59,11 +60,23 @@ namespace WindowsAPIs {
     {
         m_lastAppStartTime = std::chrono::system_clock::now();
         m_lastLocationUpdate = std::chrono::steady_clock::now();
+        
+        // ✅ NEW: Create and start async task queue for callbacks
+        m_callbackTaskQueue = std::make_unique<AsyncTaskQueue>("WindowSwitchCallbackQueue");
+        m_callbackTaskQueue->Start();
+        std::cout << "[WindowsAPIsManager] Async task queue started" << std::endl;
     }
 
     // Destructor
     WindowsAPIsManager::~WindowsAPIsManager() {
         CleanupActiveAppMonitoring();
+        
+        // ✅ NEW: Stop async task queue
+        if (m_callbackTaskQueue) {
+            m_callbackTaskQueue->Stop();
+            m_callbackTaskQueue.reset();
+            std::cout << "[WindowsAPIsManager] Async task queue stopped" << std::endl;
+        }
     }
 
     // Initialize active app monitoring
@@ -145,7 +158,7 @@ namespace WindowsAPIs {
 
     // Internal window event handler
     void WindowsAPIsManager::OnWindowEventInternal(const WindowInfo& info) {
-        // ✅ 添加调试日志
+        // ✅ Debug logs
         std::cout << "[DEBUG] OnWindowEventInternal called!" << std::endl;
         std::cout << "  App: " << WideStringToUtf8(info.processName) << std::endl;
         std::cout << "  Window: " << WideStringToUtf8(info.windowTitle) << std::endl;
@@ -202,17 +215,8 @@ namespace WindowsAPIs {
 
                     std::cout << "  -> ✅ RECORDED: " << m_lastActiveApp << " (" << durationSecs << "s)" << std::endl;
 
-                    // Trigger window switch callback with new app info
-                    {
-                        std::lock_guard<std::mutex> callbackLock(m_callbackMutex);
-                        if (m_windowSwitchCallback) {
-                            std::cout << "  -> ✅ CALLBACK triggered!" << std::endl;
-                            m_windowSwitchCallback(record);
-                        }
-                        else {
-                            std::cout << "  -> ❌ No callback registered" << std::endl;
-                        }
-                    }
+                    // ✅ NEW: Post callback to async task queue (non-blocking)
+                    ProcessWindowSwitchAsync(record);
                 }
                 else {
                     std::cout << "  -> Skipped (duration too short: " << duration.count() << "s)" << std::endl;
@@ -240,6 +244,38 @@ namespace WindowsAPIs {
         catch (...) {
             std::cerr << "[ERROR] OnWindowEventInternal unknown exception" << std::endl;
         }
+    }
+
+    // ✅ NEW: Process window switch callback asynchronously
+    void WindowsAPIsManager::ProcessWindowSwitchAsync(const ActiveAppRecord& record) {
+        if (!m_callbackTaskQueue || !m_callbackTaskQueue->IsRunning()) {
+            std::cerr << "[WindowsAPIsManager] Callback task queue not running!" << std::endl;
+            return;
+        }
+        
+        // Post task to async queue (non-blocking)
+        m_callbackTaskQueue->PostTask([this, record]() {
+            try {
+                std::lock_guard<std::mutex> callbackLock(m_callbackMutex);
+                if (m_windowSwitchCallback) {
+                    std::cout << "  -> ✅ ASYNC CALLBACK triggered!" << std::endl;
+                    
+                    // Execute callback in background thread
+                    m_windowSwitchCallback(record);
+                    
+                    std::cout << "  -> ✅ ASYNC CALLBACK completed!" << std::endl;
+                } else {
+                    std::cout << "  -> ❌ No callback registered" << std::endl;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[WindowSwitchCallback] Exception: " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "[WindowSwitchCallback] Unknown exception" << std::endl;
+            }
+        });
+        
+        std::cout << "  -> Task posted to async queue (pending: " 
+                  << m_callbackTaskQueue->GetPendingTaskCount() << ")" << std::endl;
     }
 
     // Helper function: Generate unique key

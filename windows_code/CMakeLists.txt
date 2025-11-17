@@ -11,7 +11,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # ============================================================================
 
-# Elasticsearch Client DLL (subdirectory)
+# Database Client DLL (subdirectory)
 # ============================================================================
 
 # Add database_client as a subdirectory
@@ -59,10 +59,10 @@ set(OpenCV_BIN_DIR "${OpenCV_DIR}/x64/vc16/bin")
 # Find OpenCV world library
 file(GLOB OPENCV_WORLD_LIB "${OpenCV_LIB_DIR}/opencv_world*.lib")
 
-# Elasticsearch Client (built as subdirectory)
+# Database Client (built as subdirectory)
 # The database_client target is now available from the subdirectory
 set(ELASTICSEARCH_AVAILABLE TRUE)
-message(STATUS "Elasticsearch client enabled (built from subdirectory)")
+message(STATUS "Database client enabled (built from subdirectory)")
 
 # ============================================================================
 
@@ -70,46 +70,46 @@ message(STATUS "Elasticsearch client enabled (built from subdirectory)")
 # ============================================================================
 
 set(PERCEPTION_ENGINE_SOURCES
-    PerceptionEngine.cpp
-    Logger.cpp
-    ContextCollector.cpp
-    HttpServer.cpp
-    WindowsAPIs.cpp
-    WindowsService.cpp
-    WindowEventMonitor.cpp
-    AudioCaptureEngine.cpp
-    AsyncWhisperQueue.cpp
-    SileroVAD.cpp
-    BrowserContentExtractor.cpp
-    MouseTracker.cpp
-    
-    # NEW: Refactored Context Collector (Strategy Pattern)
-    ContextCollectorRefactored.cpp
+    src/core/PerceptionEngine.cpp
+    src/core/WindowsService.cpp
+    src/utils/Logger.cpp
+    src/context/ContextCollector.cpp
+    src/context_refactored/ContextCollectorRefactored.cpp
+    src/communication/HttpServer.cpp
+    src/platform/WindowsAPIs.cpp
+    src/platform/WindowEventMonitor.cpp
+    src/platform/MouseTracker.cpp
+    src/platform/BrowserContentExtractor.cpp
+    src/audio/AudioCaptureEngine.cpp
+    src/audio/AsyncWhisperQueue.cpp
+    src/audio/SileroVAD.cpp
+    src/providers/SystemContextProvider.cpp
+    src/providers/VoiceContextProvider.cpp
+    src/providers/CameraContextProvider.cpp
+    src/providers/AppActivityContextProvider.cpp
+    src/providers/CompositeContextManager.cpp
 )
 
 set(PERCEPTION_ENGINE_HEADERS
-    Logger.h
-    ContextCollector.h
-    HttpServer.h
-    WindowsAPIs.h
-    WindowsService.h
-    WindowEventMonitor.h
-    AudioCaptureEngine.h
-    AsyncWhisperQueue.h
-    SileroVAD.h
-    BrowserContentExtractor.h
-    MouseTracker.h
-    
-    # NEW: Refactored Context Collector Headers (Strategy + Composite Pattern)
-    IContextProvider.h
-    SystemContextProvider.h
-    VoiceContextProvider.h
-    CameraContextProvider.h
-    AppActivityContextProvider.h
-    CompositeContextManager.h
-    ContextCollectorRefactored.h
-    ContextCollectorAdapter.h
-    json.hpp
+    include/core/WindowsService.h
+    include/utils/Logger.h
+    include/context/ContextCollector.h
+    include/context_refactored/ContextCollectorRefactored.h
+    include/context_refactored/ContextCollectorAdapter.h
+    include/communication/HttpServer.h
+    include/platform/WindowsAPIs.h
+    include/platform/WindowEventMonitor.h
+    include/platform/MouseTracker.h
+    include/platform/BrowserContentExtractor.h
+    include/audio/AudioCaptureEngine.h
+    include/audio/AsyncWhisperQueue.h
+    include/audio/SileroVAD.h
+    include/providers/IContextProvider.h
+    include/providers/CompositeContextManager.h
+    include/providers/SystemContextProvider.h
+    include/providers/AppActivityContextProvider.h
+    include/providers/VoiceContextProvider.h
+    include/providers/CameraContextProvider.h
 )
 
 # ============================================================================
@@ -121,12 +121,104 @@ set(PERCEPTION_ENGINE_HEADERS
 add_executable(PerceptionEngine ${PERCEPTION_ENGINE_SOURCES} ${PERCEPTION_ENGINE_HEADERS})
 
 # ============================================================================
+# Visual Studio Source Groups (organize files in Solution Explorer)
+# ============================================================================
+
+# Group source files by directory structure
+source_group("Source Files\\core" FILES
+    src/core/PerceptionEngine.cpp
+    src/core/WindowsService.cpp
+)
+
+source_group("Source Files\\utils" FILES
+    src/utils/Logger.cpp
+)
+
+source_group("Source Files\\context" FILES
+    src/context/ContextCollector.cpp
+)
+
+source_group("Source Files\\context_refactored" FILES
+    src/context_refactored/ContextCollectorRefactored.cpp
+)
+
+source_group("Source Files\\communication" FILES
+    src/communication/HttpServer.cpp
+)
+
+source_group("Source Files\\platform" FILES
+    src/platform/WindowsAPIs.cpp
+    src/platform/WindowEventMonitor.cpp
+    src/platform/MouseTracker.cpp
+    src/platform/BrowserContentExtractor.cpp
+)
+
+source_group("Source Files\\audio" FILES
+    src/audio/AudioCaptureEngine.cpp
+    src/audio/AsyncWhisperQueue.cpp
+    src/audio/SileroVAD.cpp
+)
+
+source_group("Source Files\\providers" FILES
+    src/providers/SystemContextProvider.cpp
+    src/providers/VoiceContextProvider.cpp
+    src/providers/CameraContextProvider.cpp
+    src/providers/AppActivityContextProvider.cpp
+    src/providers/CompositeContextManager.cpp
+)
+
+# Group header files by directory structure
+source_group("Header Files\\core" FILES
+    include/core/WindowsService.h
+)
+
+source_group("Header Files\\utils" FILES
+    include/utils/Logger.h
+)
+
+source_group("Header Files\\context" FILES
+    include/context/ContextCollector.h
+)
+
+source_group("Header Files\\context_refactored" FILES
+    include/context_refactored/ContextCollectorRefactored.h
+    include/context_refactored/ContextCollectorAdapter.h
+)
+
+source_group("Header Files\\communication" FILES
+    include/communication/HttpServer.h
+)
+
+source_group("Header Files\\platform" FILES
+    include/platform/WindowsAPIs.h
+    include/platform/WindowEventMonitor.h
+    include/platform/MouseTracker.h
+    include/platform/BrowserContentExtractor.h
+)
+
+source_group("Header Files\\audio" FILES
+    include/audio/AudioCaptureEngine.h
+    include/audio/AsyncWhisperQueue.h
+    include/audio/SileroVAD.h
+)
+
+source_group("Header Files\\providers" FILES
+    include/providers/IContextProvider.h
+    include/providers/CompositeContextManager.h
+    include/providers/SystemContextProvider.h
+    include/providers/AppActivityContextProvider.h
+    include/providers/VoiceContextProvider.h
+    include/providers/CameraContextProvider.h
+)
+
+# ============================================================================
 
 # Include Directories
 # ============================================================================
 
 target_include_directories(PerceptionEngine PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${WHISPER_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/ggml/include
     ${JSON_INCLUDE_DIR}

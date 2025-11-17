@@ -1,6 +1,6 @@
 #pragma once
 
-#include "third-party/include/json.hpp"
+#include "json.hpp"
 #include "WindowsAPIs.h"
 #include "CompositeContextManager.h"
 #include "DatabaseClientFactory.h"

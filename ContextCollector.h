@@ -1,5 +1,5 @@
 #pragma once
-#include "third-party/include/json.hpp"
+#include "json.hpp"
 #include "WindowsAPIs.h"
 #include <chrono>
 #include <mutex>

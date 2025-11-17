@@ -109,6 +109,7 @@ set(PERCEPTION_ENGINE_HEADERS
     CompositeContextManager.h
     ContextCollectorRefactored.h
     ContextCollectorAdapter.h
+    json.hpp
 )
 
 # ============================================================================

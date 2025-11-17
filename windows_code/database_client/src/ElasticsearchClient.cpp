@@ -1,15 +1,16 @@
 // src/ElasticsearchClient.cpp
 #include "ElasticsearchClient.h"
-#include <curl/curl.h>
+#include <curl/cURL.h>
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <iomanip>
 #include <cstring>
 #include <ctime>
+#include <iostream>
 
 using json = nlohmann::json;
 
-namespace elasticsearch {
+namespace database {
 
 // Helper: CURL write callback
 static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
@@ -17,26 +18,28 @@ static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* use
     return size * nmemb;
 }
 
-// Helper: Convert time_t to ISO 8601 string
+// Helper: Convert time_t to ISO 8601 string (using local time)
 static std::string timestampToISO8601(std::time_t timestamp) {
     std::tm tm_val;
 #ifdef _WIN32
-    gmtime_s(&tm_val, &timestamp);
+    localtime_s(&tm_val, &timestamp);  // 使用本地时间
 #else
-    gmtime_r(&timestamp, &tm_val);
+    localtime_r(&timestamp, &tm_val);  // 使用本地时间
 #endif
     
     std::ostringstream oss;
     oss << std::put_time(&tm_val, "%Y-%m-%dT%H:%M:%S");
-    oss << ".000Z";
+    oss << ".000";  // 移除 Z 后缀，表示本地时间
     return oss.str();
 }
 
-// Helper: Convert ISO 8601 string to time_t
+// Helper: Convert ISO 8601 string to time_t (parse as local time)
 static std::time_t iso8601ToTimestamp(const std::string& iso8601) {
     std::tm tm_val = {};
     std::istringstream ss(iso8601);
     ss >> std::get_time(&tm_val, "%Y-%m-%dT%H:%M:%S");
+    
+    // mktime treats input as local time
     return std::mktime(&tm_val);
 }
 
@@ -113,7 +116,25 @@ public:
         curl_slist_free_all(headers);
         curl_easy_cleanup(curl);
         
-        return (res == CURLE_OK) && (http_code >= 200 && http_code < 300);
+        if ((res == CURLE_OK) && (http_code >= 200 && http_code < 300)) {
+            return true;
+        }
+        else {
+            // Enhanced error logging
+            std::cerr << "Elasticsearch request failed:" << std::endl;
+            std::cerr << "  Method: " << method << std::endl;
+            std::cerr << "  URL: " << url << std::endl;
+            std::cerr << "  HTTP Code: " << http_code << std::endl;
+            std::cerr << "  CURL Code: " << res << std::endl;
+            if (!body.empty()) {
+                std::cerr << "  Request Body (first 500 chars): " 
+                         << body.substr(0, 500) << std::endl;
+            }
+            if (!response.empty()) {
+                std::cerr << "  Response: " << response << std::endl;
+            }
+            return false;
+        }
     }
     
     std::string eventToJson(const RawEvent& event) {
@@ -155,16 +176,21 @@ public:
             j["mouse_events"] = mouseEventsArray;
         }
         
-        // System info
+        // System info - FIXED: Proper geo_point format for Elasticsearch
         json sysInfo;
         if (event.systemInfo.batteryPercent) 
             sysInfo["battery_percent"] = *event.systemInfo.batteryPercent;
         sysInfo["is_charging"] = event.systemInfo.isCharging;
         sysInfo["network_type"] = event.systemInfo.networkType;
-        if (event.systemInfo.locationLat) 
-            sysInfo["location_lat"] = *event.systemInfo.locationLat;
-        if (event.systemInfo.locationLon) 
-            sysInfo["location_lon"] = *event.systemInfo.locationLon;
+        
+        // FIX: Elasticsearch geo_point must be a single object with lat/lon, not separate fields
+        if (event.systemInfo.locationLat && event.systemInfo.locationLon) {
+            sysInfo["location"] = {
+                {"lat", *event.systemInfo.locationLat},
+                {"lon", *event.systemInfo.locationLon}
+            };
+        }
+        
         if (event.systemInfo.cpuUsage) 
             sysInfo["cpu_usage"] = *event.systemInfo.cpuUsage;
         if (event.systemInfo.memoryUsage) 
@@ -223,7 +249,7 @@ public:
                 if (ctStr == "TEXT") event.contentType = ContentType::TEXT;
                 else if (ctStr == "IMAGE") event.contentType = ContentType::IMAGE;
                 else if (ctStr == "VIDEO") event.contentType = ContentType::VIDEO;
-                else if (ctStr == "AUDIO") event.contentType = ContentType::AUDIO;
+                else if (ctStr == "AUDIO" ) event.contentType = ContentType::AUDIO;
                 else if (ctStr == "CODE") event.contentType = ContentType::CODE;
                 else if (ctStr == "DOCUMENT") event.contentType = ContentType::DOCUMENT;
                 else event.contentType = ContentType::UNKNOWN;
@@ -282,12 +308,27 @@ public:
                 if (sysInfo.contains("network_type") && !sysInfo["network_type"].is_null()) {
                     event.systemInfo.networkType = sysInfo["network_type"].get<std::string>();
                 }
-                if (sysInfo.contains("location_lat") && !sysInfo["location_lat"].is_null()) {
-                    event.systemInfo.locationLat = sysInfo["location_lat"].get<double>();
+                
+                // FIX: Parse geo_point location object
+                if (sysInfo.contains("location") && sysInfo["location"].is_object()) {
+                    const auto& location = sysInfo["location"];
+                    if (location.contains("lat") && !location["lat"].is_null()) {
+                        event.systemInfo.locationLat = location["lat"].get<double>();
+                    }
+                    if (location.contains("lon") && !location["lon"].is_null()) {
+                        event.systemInfo.locationLon = location["lon"].get<double>();
+                    }
                 }
-                if (sysInfo.contains("location_lon") && !sysInfo["location_lon"].is_null()) {
-                    event.systemInfo.locationLon = sysInfo["location_lon"].get<double>();
+                // Support legacy format (separate lat/lon fields)
+                else {
+                    if (sysInfo.contains("location_lat") && !sysInfo["location_lat"].is_null()) {
+                        event.systemInfo.locationLat = sysInfo["location_lat"].get<double>();
+                    }
+                    if (sysInfo.contains("location_lon") && !sysInfo["location_lon"].is_null()) {
+                        event.systemInfo.locationLon = sysInfo["location_lon"].get<double>();
+                    }
                 }
+                
                 if (sysInfo.contains("cpu_usage") && !sysInfo["cpu_usage"].is_null()) {
                     event.systemInfo.cpuUsage = sysInfo["cpu_usage"].get<double>();
                 }
@@ -310,8 +351,12 @@ ElasticsearchClient::ElasticsearchClient(const std::string& esUrl)
 
 ElasticsearchClient::~ElasticsearchClient() = default;
 
-bool ElasticsearchClient::initializeIndex(const std::string& indexName) {
-    std::string endpoint = "/" + indexName;
+DatabaseType ElasticsearchClient::getType() const {
+    return DatabaseType::ELASTICSEARCH;
+}
+
+bool ElasticsearchClient::initializeCollection(const std::string& collectionName) {
+    std::string endpoint = "/" + collectionName;
     std::string response;
     
     // Check if exists
@@ -357,8 +402,7 @@ bool ElasticsearchClient::initializeIndex(const std::string& indexName) {
                         "battery_percent": {"type": "integer"},
                         "is_charging": {"type": "boolean"},
                         "network_type": {"type": "keyword"},
-                        "location_lat": {"type": "geo_point"},
-                        "location_lon": {"type": "geo_point"},
+                        "location": {"type": "geo_point"},
                         "cpu_usage": {"type": "float"},
                         "memory_usage": {"type": "float"}
                     }
@@ -521,29 +565,31 @@ int ElasticsearchClient::deleteOlderThan(const std::string& indexName,
     }
 }
 
-bool ElasticsearchClient::refreshIndex(const std::string& indexName) {
-    std::string endpoint = "/" + indexName + "/_refresh";
+// Interface implementations - use new method names
+
+bool ElasticsearchClient::refreshCollection(const std::string& collectionName) {
+    std::string endpoint = "/" + collectionName + "/_refresh";
     std::string response;
     return pImpl_->httpRequest("POST", endpoint, "", response);
 }
 
-IndexStats ElasticsearchClient::getIndexStats(const std::string& indexName) {
-    IndexStats stats;
-    stats.indexName = indexName;
+CollectionStats ElasticsearchClient::getCollectionStats(const std::string& collectionName) {
+    CollectionStats stats;
+    stats.collectionName = collectionName;
     
-    stats.documentCount = getDocumentCount(indexName);
-    stats.uncompressedCount = getUncompressedCount(indexName);
+    stats.documentCount = getDocumentCount(collectionName);
+    stats.uncompressedCount = getUncompressedCount(collectionName);
     stats.compressedCount = stats.documentCount - stats.uncompressedCount;
     
     // Get size
-    std::string endpoint = "/" + indexName + "/_stats";
+    std::string endpoint = "/" + collectionName + "/_stats";
     std::string response;
     
     if (pImpl_->httpRequest("GET", endpoint, "", response)) {
         try {
             auto j = json::parse(response);
-            if (j.contains("indices") && j["indices"].contains(indexName)) {
-                auto idx = j["indices"][indexName];
+            if (j.contains("indices") && j["indices"].contains(collectionName)) {
+                auto idx = j["indices"][collectionName];
                 if (idx.contains("total") && idx["total"].contains("store")) {
                     stats.sizeInBytes = idx["total"]["store"]["size_in_bytes"].get<long long>();
                 }
@@ -592,16 +638,10 @@ int ElasticsearchClient::getUncompressedCount(const std::string& indexName) {
     }
 }
 
-bool ElasticsearchClient::deleteIndex(const std::string& indexName) {
-    std::string endpoint = "/" + indexName;
+bool ElasticsearchClient::deleteCollection(const std::string& collectionName) {
+    std::string endpoint = "/" + collectionName;
     std::string response;
     return pImpl_->httpRequest("DELETE", endpoint, "", response);
-}
-
-bool ElasticsearchClient::indexExists(const std::string& indexName) {
-    std::string endpoint = "/" + indexName;
-    std::string response;
-    return pImpl_->httpRequest("GET", endpoint, "", response);
 }
 
 bool ElasticsearchClient::testConnection() {
@@ -609,12 +649,18 @@ bool ElasticsearchClient::testConnection() {
     return pImpl_->httpRequest("GET", "/", "", response);
 }
 
-std::string ElasticsearchClient::getClusterInfo() {
+std::string ElasticsearchClient::getServerInfo() {
     std::string response;
     if (pImpl_->httpRequest("GET", "/", "", response)) {
         return response;
     }
     return "{}";
+}
+
+bool ElasticsearchClient::collectionExists(const std::string& collectionName) {
+    std::string endpoint = "/" + collectionName;
+    std::string response;
+    return pImpl_->httpRequest("GET", endpoint, "", response);
 }
 
 RawEvent ElasticsearchClient::getDocumentByAppName(const std::string& indexName, 
@@ -643,4 +689,4 @@ bool ElasticsearchClient::deleteDocumentByAppName(const std::string& indexName,
     return pImpl_->httpRequest("DELETE", endpoint, "", response);
 }
 
-} // namespace elasticsearch
+} // namespace database

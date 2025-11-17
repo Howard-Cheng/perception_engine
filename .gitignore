@@ -81,3 +81,7 @@ lpt[1-9]
 
 # database
 database/perception_data/
+
+# tests
+llm_summary/tests/
+vectordb/tests/

@@ -11,8 +11,14 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # ============================================================================
 
-# wink wink
-set(ELASTICSEARCH_AVAILABLE TRUE)
+# Database Client DLL (subdirectory)
+# ============================================================================
+
+# Add database_client as a subdirectory
+add_subdirectory(database_client)
+
+# ============================================================================
+
 # Dependencies
 # ============================================================================
 
@@ -53,61 +59,58 @@ set(OpenCV_BIN_DIR "${OpenCV_DIR}/x64/vc16/bin")
 # Find OpenCV world library
 file(GLOB OPENCV_WORLD_LIB "${OpenCV_LIB_DIR}/opencv_world*.lib")
 
-# ? NEW: Elasticsearch Client
-set(ELASTICSEARCH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/elasticsearch")
-set(ELASTICSEARCH_INCLUDE_DIR "${ELASTICSEARCH_DIR}/include")
-set(ELASTICSEARCH_LIB_DIR "${ELASTICSEARCH_DIR}/lib")
-
-# Check if Elasticsearch library exists
-if(EXISTS "${ELASTICSEARCH_LIB_DIR}/elasticsearch_client.lib")
-    set(ELASTICSEARCH_AVAILABLE TRUE)
-    message(STATUS "Elasticsearch client found: ${ELASTICSEARCH_LIB_DIR}/elasticsearch_client.lib")
-else()
-    set(ELASTICSEARCH_AVAILABLE FALSE)
-    message(WARNING "Elasticsearch client library not found at ${ELASTICSEARCH_LIB_DIR}/elasticsearch_client.lib")
-    message(WARNING "Elasticsearch features will be disabled")
-endif()
+# Database Client (built as subdirectory)
+# The database_client target is now available from the subdirectory
+set(ELASTICSEARCH_AVAILABLE TRUE)
+message(STATUS "Database client enabled (built from subdirectory)")
 
 # ============================================================================
 
-# wink wink
-set(ELASTICSEARCH_AVAILABLE TRUE)
 # Source Files
 # ============================================================================
 
 set(PERCEPTION_ENGINE_SOURCES
-    PerceptionEngine.cpp
-    Logger.cpp
-    ContextCollector.cpp
-    HttpServer.cpp
-    WindowsAPIs.cpp
-    WindowsService.cpp
-    WindowEventMonitor.cpp
-    AudioCaptureEngine.cpp
-    AsyncWhisperQueue.cpp
-    SileroVAD.cpp
-    BrowserContentExtractor.cpp
-    MouseTracker.cpp
+    src/core/PerceptionEngine.cpp
+    src/core/WindowsService.cpp
+    src/utils/Logger.cpp
+    src/context/ContextCollector.cpp
+    src/communication/HttpServer.cpp
+    src/platform/WindowsAPIs.cpp
+    src/platform/WindowEventMonitor.cpp
+    src/platform/MouseTracker.cpp
+    src/platform/BrowserContentExtractor.cpp
+    src/audio/AudioCaptureEngine.cpp
+    src/audio/AsyncWhisperQueue.cpp
+    src/audio/SileroVAD.cpp
+    src/providers/SystemContextProvider.cpp
+    src/providers/VoiceContextProvider.cpp
+    src/providers/CameraContextProvider.cpp
+    src/providers/AppActivityContextProvider.cpp
+    src/providers/CompositeContextManager.cpp
 )
 
 set(PERCEPTION_ENGINE_HEADERS
-    Logger.h
-    ContextCollector.h
-    HttpServer.h
-    WindowsAPIs.h
-    WindowsService.h
-    WindowEventMonitor.h
-    AudioCaptureEngine.h
-    AsyncWhisperQueue.h
-    SileroVAD.h
-    BrowserContentExtractor.h
-    MouseTracker.h
+    include/core/WindowsService.h
+    include/utils/Logger.h
+    include/context/ContextCollector.h
+    include/communication/HttpServer.h
+    include/platform/WindowsAPIs.h
+    include/platform/WindowEventMonitor.h
+    include/platform/MouseTracker.h
+    include/platform/BrowserContentExtractor.h
+    include/audio/AudioCaptureEngine.h
+    include/audio/AsyncWhisperQueue.h
+    include/audio/SileroVAD.h
+    include/providers/IContextProvider.h
+    include/providers/CompositeContextManager.h
+    include/providers/SystemContextProvider.h
+    include/providers/AppActivityContextProvider.h
+    include/providers/VoiceContextProvider.h
+    include/providers/CameraContextProvider.h
 )
 
 # ============================================================================
 
-# wink wink
-set(ELASTICSEARCH_AVAILABLE TRUE)
 # Executables
 # ============================================================================
 
@@ -115,14 +118,95 @@ set(ELASTICSEARCH_AVAILABLE TRUE)
 add_executable(PerceptionEngine ${PERCEPTION_ENGINE_SOURCES} ${PERCEPTION_ENGINE_HEADERS})
 
 # ============================================================================
+# Visual Studio Source Groups (organize files in Solution Explorer)
+# ============================================================================
 
-# wink wink
-set(ELASTICSEARCH_AVAILABLE TRUE)
+# Group source files by directory structure
+source_group("Source Files\\core" FILES
+    src/core/PerceptionEngine.cpp
+    src/core/WindowsService.cpp
+)
+
+source_group("Source Files\\utils" FILES
+    src/utils/Logger.cpp
+)
+
+source_group("Source Files\\context" FILES
+    src/context/ContextCollector.cpp
+)
+
+source_group("Source Files\\communication" FILES
+    src/communication/HttpServer.cpp
+)
+
+source_group("Source Files\\platform" FILES
+    src/platform/WindowsAPIs.cpp
+    src/platform/WindowEventMonitor.cpp
+    src/platform/MouseTracker.cpp
+    src/platform/BrowserContentExtractor.cpp
+)
+
+source_group("Source Files\\audio" FILES
+    src/audio/AudioCaptureEngine.cpp
+    src/audio/AsyncWhisperQueue.cpp
+    src/audio/SileroVAD.cpp
+)
+
+source_group("Source Files\\providers" FILES
+    src/providers/SystemContextProvider.cpp
+    src/providers/VoiceContextProvider.cpp
+    src/providers/CameraContextProvider.cpp
+    src/providers/AppActivityContextProvider.cpp
+    src/providers/CompositeContextManager.cpp
+)
+
+# Group header files by directory structure
+source_group("Header Files\\core" FILES
+    include/core/WindowsService.h
+)
+
+source_group("Header Files\\utils" FILES
+    include/utils/Logger.h
+)
+
+source_group("Header Files\\context" FILES
+    include/context/ContextCollector.h
+)
+
+source_group("Header Files\\communication" FILES
+    include/communication/HttpServer.h
+)
+
+source_group("Header Files\\platform" FILES
+    include/platform/WindowsAPIs.h
+    include/platform/WindowEventMonitor.h
+    include/platform/MouseTracker.h
+    include/platform/BrowserContentExtractor.h
+)
+
+source_group("Header Files\\audio" FILES
+    include/audio/AudioCaptureEngine.h
+    include/audio/AsyncWhisperQueue.h
+    include/audio/SileroVAD.h
+)
+
+source_group("Header Files\\providers" FILES
+    include/providers/IContextProvider.h
+    include/providers/CompositeContextManager.h
+    include/providers/SystemContextProvider.h
+    include/providers/AppActivityContextProvider.h
+    include/providers/VoiceContextProvider.h
+    include/providers/CameraContextProvider.h
+)
+
+# ============================================================================
+
 # Include Directories
 # ============================================================================
 
 target_include_directories(PerceptionEngine PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${WHISPER_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/ggml/include
     ${JSON_INCLUDE_DIR}
@@ -130,10 +214,10 @@ target_include_directories(PerceptionEngine PRIVATE
     ${OpenCV_INCLUDE_DIRS}
 )
 
-# ? Add Elasticsearch include directory if available
+# Add Elasticsearch include directory (from subdirectory target)
 if(ELASTICSEARCH_AVAILABLE)
     target_include_directories(PerceptionEngine PRIVATE
-        ${ELASTICSEARCH_INCLUDE_DIR}
+        $<TARGET_PROPERTY:database_client,INTERFACE_INCLUDE_DIRECTORIES>
     )
     target_compile_definitions(PerceptionEngine PRIVATE
         ELASTICSEARCH_ENABLED
@@ -142,8 +226,6 @@ endif()
 
 # ============================================================================
 
-# wink wink
-set(ELASTICSEARCH_AVAILABLE TRUE)
 # Link Libraries
 # ============================================================================
 
@@ -171,17 +253,15 @@ target_link_libraries(PerceptionEngine PRIVATE
     WindowsApp  # WinRT APIs
 )
 
-# ? Link Elasticsearch client library if available
+# Link Elasticsearch client library (from subdirectory target)
 if(ELASTICSEARCH_AVAILABLE)
     target_link_libraries(PerceptionEngine PRIVATE
-        ${ELASTICSEARCH_LIB_DIR}/elasticsearch_client.lib
+        database_client
     )
 endif()
 
 # ============================================================================
 
-# wink wink
-set(ELASTICSEARCH_AVAILABLE TRUE)
 # Compiler Flags
 # ============================================================================
 
@@ -205,8 +285,6 @@ endif()
 
 # ============================================================================
 
-# wink wink
-set(ELASTICSEARCH_AVAILABLE TRUE)
 # Post-build: Copy models and DLLs to output directory
 # ============================================================================
 
@@ -248,9 +326,12 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-cpu.dll
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml-cpu.dll
+    # Copy ggml-cuda.dll if it exists (CUDA support may not be built)
+    COMMAND ${CMAKE_COMMAND} -E echo "Checking for CUDA support..."
+    COMMAND ${CMAKE_COMMAND} -E true
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-cuda.dll
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml-cuda.dll
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml-cuda.dll || ${CMAKE_COMMAND} -E echo "Warning: ggml-cuda.dll not found, CUDA acceleration may not be available"
 
     # Copy CUDA runtime DLLs to bin/ (required for GPU acceleration)
     # COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -299,9 +380,8 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-cpu.dll
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/ggml-cpu.dll
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-cuda.dll
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/ggml-cuda.dll
+    # Skip ggml-cuda.dll for Debug build
+    COMMAND ${CMAKE_COMMAND} -E echo "Note: ggml-cuda.dll not copied (file not found)"
 
     # Copy CUDA runtime DLLs to bin/Release/ (required for GPU acceleration)
     # COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -324,8 +404,6 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
 
 # ============================================================================
 
-# wink wink
-set(ELASTICSEARCH_AVAILABLE TRUE)
 # Installation (optional)
 # ============================================================================
 
@@ -339,8 +417,6 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/models/
 
 # ============================================================================
 
-# wink wink
-set(ELASTICSEARCH_AVAILABLE TRUE)
 # Print Configuration
 # ============================================================================
 
@@ -351,6 +427,7 @@ message(STATUS "C++ standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "Whisper include: ${WHISPER_INCLUDE_DIR}")
 message(STATUS "Whisper library: ${WHISPER_LIB_DIR}/whisper.lib")
 message(STATUS "GGML libraries: ${GGML_LIB_DIR}/")
+message(STATUS "Elasticsearch: ${ELASTICSEARCH_AVAILABLE}")
 message(STATUS "Output directory: ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 message(STATUS "=====================================")
 message(STATUS "")

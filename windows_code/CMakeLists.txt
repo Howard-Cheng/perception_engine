@@ -73,7 +73,6 @@ set(PERCEPTION_ENGINE_SOURCES
     src/core/PerceptionEngine.cpp
     src/core/WindowsService.cpp
     src/utils/Logger.cpp
-    src/context/ContextCollector.cpp
     src/context_refactored/ContextCollectorRefactored.cpp
     src/communication/HttpServer.cpp
     src/platform/WindowsAPIs.cpp
@@ -93,9 +92,7 @@ set(PERCEPTION_ENGINE_SOURCES
 set(PERCEPTION_ENGINE_HEADERS
     include/core/WindowsService.h
     include/utils/Logger.h
-    include/context/ContextCollector.h
     include/context_refactored/ContextCollectorRefactored.h
-    include/context_refactored/ContextCollectorAdapter.h
     include/communication/HttpServer.h
     include/platform/WindowsAPIs.h
     include/platform/WindowEventMonitor.h
@@ -132,10 +129,6 @@ source_group("Source Files\\core" FILES
 
 source_group("Source Files\\utils" FILES
     src/utils/Logger.cpp
-)
-
-source_group("Source Files\\context" FILES
-    src/context/ContextCollector.cpp
 )
 
 source_group("Source Files\\context_refactored" FILES
@@ -176,13 +169,8 @@ source_group("Header Files\\utils" FILES
     include/utils/Logger.h
 )
 
-source_group("Header Files\\context" FILES
-    include/context/ContextCollector.h
-)
-
 source_group("Header Files\\context_refactored" FILES
     include/context_refactored/ContextCollectorRefactored.h
-    include/context_refactored/ContextCollectorAdapter.h
 )
 
 source_group("Header Files\\communication" FILES

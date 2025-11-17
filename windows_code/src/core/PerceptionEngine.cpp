@@ -9,16 +9,15 @@
 #include <atomic>
 #include "core/WindowsService.h"
 #include "communication/HttpServer.h"
-#include "context/ContextCollector.h"
+#include "context_refactored/ContextCollectorRefactored.h"  // UPDATED: Use refactored version
 #include "audio/AudioCaptureEngine.h"
-#include "context_refactored/ContextCollectorAdapter.h" // NEW: Include the new ContextCollectorAdapter
 
 // #include "CameraVisionEngine.h"  // Removed - using Python client instead
 
 class PerceptionEngineService : public WindowsService {
 private:
     std::unique_ptr<HttpServer> httpServer;
-    std::unique_ptr<ContextCollector> contextCollector;
+    std::unique_ptr<ContextCollectorRefactored> contextCollector;  // UPDATED
     std::unique_ptr<AudioCaptureEngine> audioEngine;
     // std::unique_ptr<CameraVisionEngine> cameraEngine;  // Removed - using Python client
     std::unique_ptr<std::thread> serverThread;
@@ -43,12 +42,12 @@ public:
             }
 
             // Initialize context collector
-            contextCollector = std::make_unique<ContextCollector>();
+            contextCollector = std::make_unique<ContextCollectorRefactored>();  // UPDATED
             LOG_INFO("Context collector started");
 
             // ? NEW: Initialize Elasticsearch (optional feature)
             // If ES is not available, system continues without it
-            if (contextCollector->InitializeElasticsearch("http://localhost:9200", "perception_context")) {
+            if (contextCollector->InitializeDatabase("http://localhost:9200", "perception_context")) {  // UPDATED: renamed method
                 LOG_INFO("? Elasticsearch initialized - auto storage every 5 seconds");
             } else {
                 LOG_WARN("??  Elasticsearch not available - running without ES storage");
@@ -446,22 +445,15 @@ int main(int argc, char* argv[]) {
             try {
                 // Create separate instances for console mode
                 HttpServer server(8777);
-                //ContextCollector collector;
                 AudioCaptureEngine audioEngine;
 
                 LOG_INFO("Starting context collector...");
                 
-                // 使用新架构 (默认)
-                ContextCollectorAdapter collector(ContextCollectorAdapter::Mode::REFACTORED);
-                // 或使用旧架构
-                // ContextCollectorAdapter collector(ContextCollectorAdapter::Mode::LEGACY);
-
-                //collector.StartPeriodicUpdate();
-                collector.InitializeElasticsearch();
-                // ...其他操作
+                // UPDATED: Use ContextCollectorRefactored directly
+                ContextCollectorRefactored collector;
 
                 // ? NEW: Initialize Elasticsearch (optional feature)
-                if (collector.InitializeElasticsearch("http://localhost:9200", "perception_context")) {
+                if (collector.InitializeDatabase("http://localhost:9200", "perception_context")) {  // UPDATED: renamed method
                     LOG_INFO("? Elasticsearch initialized - auto storage every 5 seconds");
                 } else {
                     LOG_WARN("??  Elasticsearch not available - running without ES storage");

@@ -18,26 +18,28 @@ static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* use
     return size * nmemb;
 }
 
-// Helper: Convert time_t to ISO 8601 string
+// Helper: Convert time_t to ISO 8601 string (using local time)
 static std::string timestampToISO8601(std::time_t timestamp) {
     std::tm tm_val;
 #ifdef _WIN32
-    gmtime_s(&tm_val, &timestamp);
+    localtime_s(&tm_val, &timestamp);  // 使用本地时间
 #else
-    gmtime_r(&timestamp, &tm_val);
+    localtime_r(&timestamp, &tm_val);  // 使用本地时间
 #endif
     
     std::ostringstream oss;
     oss << std::put_time(&tm_val, "%Y-%m-%dT%H:%M:%S");
-    oss << ".000Z";
+    oss << ".000";  // 移除 Z 后缀，表示本地时间
     return oss.str();
 }
 
-// Helper: Convert ISO 8601 string to time_t
+// Helper: Convert ISO 8601 string to time_t (parse as local time)
 static std::time_t iso8601ToTimestamp(const std::string& iso8601) {
     std::tm tm_val = {};
     std::istringstream ss(iso8601);
     ss >> std::get_time(&tm_val, "%Y-%m-%dT%H:%M:%S");
+    
+    // mktime treats input as local time
     return std::mktime(&tm_val);
 }
 

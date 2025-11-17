@@ -1,10 +1,12 @@
-#pragma once
+﻿#pragma once
 
 #include "IContextProvider.h"
 #include "MouseTracker.h"
 #include "WindowsAPIs.h"
 #include <mutex>
 #include <memory>
+#include <ctime>
+#include <chrono>
 #include <iostream>  // For std::cout, std::cerr
 
 /**
@@ -19,14 +21,14 @@
  */
 class AppActivityContextProvider : public IContextProvider {
 public:
-    // ? NEW: Callback type for window switch notifications
+    // ✅ NEW: Callback type for window switch notifications
     using WindowSwitchCallback = std::function<void(const WindowsAPIs::ActiveAppRecord&)>;
     
     AppActivityContextProvider() = default;
     ~AppActivityContextProvider() override;
     
     bool initialize() override {
-        // ? FIX: Initialize active app monitoring FIRST!
+        // ✅ FIX: Initialize active app monitoring FIRST!
         std::cout << "[AppActivityContext] Initializing active app monitoring..." << std::endl;
         if (WindowsAPIs::InitializeActiveAppMonitoring()) {
             std::cout << "[AppActivityContext] Active app monitoring initialized successfully!" << std::endl;
@@ -70,12 +72,12 @@ public:
     
     void collectContext(Json& context) const override {
         std::lock_guard<std::mutex> lock(mutex_);
-        
         context.set("activeApp", currentApp_);
         context.set("windowTitle", currentWindowTitle_);
         context.set("activeAppContent", currentContent_);
         context.set("duration", dwellTimeSeconds_);
         context.set("interactionCount", interactionCount_);
+        context.set("startTime", startSwitchTime_);
     }
     
     std::string getName() const override {
@@ -93,7 +95,7 @@ public:
         // Clear callback
         WindowsAPIs::WindowsAPIsManager::GetInstance().ClearWindowSwitchCallback();
         
-        // ? FIX: Cleanup active app monitoring
+        // ✅ FIX: Cleanup active app monitoring
         WindowsAPIs::CleanupActiveAppMonitoring();
         std::cout << "[AppActivityContext] Active app monitoring cleaned up" << std::endl;
         
@@ -107,7 +109,7 @@ public:
     }
     
     // ========================================
-    // ? NEW: Register upper-layer callback
+    // ✅ NEW: Register upper-layer callback
     // ========================================
     
     /**
@@ -136,6 +138,8 @@ public:
             currentWindowTitle_ = record.windowTitle;
             currentContent_ = record.appContent;
             dwellTimeSeconds_ = record.durationSeconds;
+            startSwitchTime_ = std::chrono::duration_cast<std::chrono::milliseconds>(
+                record.timestamp.time_since_epoch()).count();
             
             // Update interaction count
             if (mouseTracker_) {
@@ -145,7 +149,7 @@ public:
             std::cout << "[AppActivityContext] Window switched: " << currentApp_ << std::endl;
         }
         
-        // ? NEW: Trigger upper-layer callback (outside mutex to avoid deadlock)
+        // ✅ NEW: Trigger upper-layer callback (outside mutex to avoid deadlock)
         {
             std::lock_guard<std::mutex> callbackLock(callbackMutex_);
             if (upperCallback_) {
@@ -187,7 +191,7 @@ public:
     
 private:
     mutable std::mutex mutex_;
-    mutable std::mutex callbackMutex_;  // ? NEW: Separate mutex for callback
+    mutable std::mutex callbackMutex_;  // ✅ NEW: Separate mutex for callback
     
     std::unique_ptr<MouseTracker> mouseTracker_;
     std::string currentApp_;
@@ -195,8 +199,9 @@ private:
     std::string currentContent_;
     int dwellTimeSeconds_ = 0;
     int interactionCount_ = 0;
+    long long startSwitchTime_ = 0;
     
-    WindowSwitchCallback upperCallback_;  // ? NEW: Upper-layer callback
+    WindowSwitchCallback upperCallback_;  // ✅ NEW: Upper-layer callback
 };
 
 // Destructor implementation

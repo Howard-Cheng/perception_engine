@@ -1,6 +1,6 @@
 #pragma once
 
-#include "third-party/include/json.hpp"
+#include "json.hpp"
 #include <string>
 #include <memory>
 

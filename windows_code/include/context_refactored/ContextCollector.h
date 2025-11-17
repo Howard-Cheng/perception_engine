@@ -3,7 +3,7 @@
 #include "utils/json.hpp"
 #include "platform/WindowsAPIs.h"
 #include "providers/CompositeContextManager.h"
-#include "DatabaseClientFactory.h"
+#include "IDatabaseClient.h"
 #include "DatabaseTypes.h"
 #include <chrono>
 #include <mutex>
@@ -13,7 +13,7 @@
 #include <thread>
 
 /**
- * @brief Refactored ContextCollector
+ * @brief ContextCollector
  * 
  * Uses CompositeContextManager to coordinate multiple context providers
  * Responsibilities:
@@ -22,14 +22,14 @@
  * - Handle Elasticsearch storage
  * - Periodic updates
  */
-class ContextCollectorRefactored {
+class ContextCollector {
 public:
-    ContextCollectorRefactored();
-    ~ContextCollectorRefactored();
+    ContextCollector();
+    ~ContextCollector();
     
     // Disable copy
-    ContextCollectorRefactored(const ContextCollectorRefactored&) = delete;
-    ContextCollectorRefactored& operator=(const ContextCollectorRefactored&) = delete;
+    ContextCollector(const ContextCollector&) = delete;
+    ContextCollector& operator=(const ContextCollector&) = delete;
     
     /**
      * @brief Collect current context from all providers
@@ -111,7 +111,20 @@ public:
     void OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& record);
     
 private:
-    // Context manager (using composite pattern)
+    /**
+     * @brief Periodic update thread function
+     */
+    void updateCacheThread();
+    
+    /**
+     * @brief Convert Json context to RawEvent for Elasticsearch
+     */
+    database::RawEvent jsonContextToRawEvent(const Json& context);
+    
+    // ========================================
+    // Core Components
+    // ========================================
+    
     CompositeContextManager contextManager_;
     
     // Device ID
@@ -121,13 +134,12 @@ private:
     std::atomic<bool> updateThreadRunning_{false};
     std::thread updateThread_;
     
-    // Elasticsearch integration
+    // ========================================
+    // Elasticsearch Storage
+    // ========================================
+    
     std::unique_ptr<database::IDatabaseClient> esClient_;
+    std::string esIndexName_;
     std::atomic<bool> esStorageRunning_{false};
     mutable std::mutex esClientMutex_;
-    std::string esIndexName_{"perception_context"};
-    
-    // Helper methods
-    void updateCacheThread();
-    database::RawEvent jsonContextToRawEvent(const Json& context);
 };

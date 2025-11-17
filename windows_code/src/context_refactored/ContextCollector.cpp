@@ -1,10 +1,11 @@
-#include "context_refactored/ContextCollectorRefactored.h"
+#include "context_refactored/ContextCollector.h"
+#include "DatabaseClientFactory.h"
 #include <random>
 #include <iostream>
 #include <sstream>
 #include <iomanip>
 
-ContextCollectorRefactored::ContextCollectorRefactored() {
+ContextCollector::ContextCollector() {
     // Generate unique device ID
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -30,11 +31,11 @@ ContextCollectorRefactored::ContextCollectorRefactored() {
     }
 }
 
-ContextCollectorRefactored::~ContextCollectorRefactored() {
+ContextCollector::~ContextCollector() {
     StopPeriodicUpdate();
     ShutdownDatabase();
     
-    // ? FIX: Clear window switch callback before shutdown
+    // FIX: Clear window switch callback before shutdown
     if (auto appProvider = contextManager_.getAppActivityProvider()) {
         appProvider->clearWindowSwitchCallback();
         std::cout << "[ContextCollector] Window switch callback cleared" << std::endl;
@@ -43,7 +44,7 @@ ContextCollectorRefactored::~ContextCollectorRefactored() {
     contextManager_.shutdown();
 }
 
-Json ContextCollectorRefactored::CollectCurrentContext() {
+Json ContextCollector::CollectCurrentContext() {
     // Trigger all providers to update
     contextManager_.updateAll();
     
@@ -56,7 +57,7 @@ Json ContextCollectorRefactored::CollectCurrentContext() {
     return context;
 }
 
-void ContextCollectorRefactored::StartPeriodicUpdate() {
+void ContextCollector::StartPeriodicUpdate() {
     if (updateThreadRunning_.load()) {
         return; // Already running
     }
@@ -67,14 +68,14 @@ void ContextCollectorRefactored::StartPeriodicUpdate() {
     });
 }
 
-void ContextCollectorRefactored::StopPeriodicUpdate() {
+void ContextCollector::StopPeriodicUpdate() {
     updateThreadRunning_.store(false);
     if (updateThread_.joinable()) {
         updateThread_.join();
     }
 }
 
-void ContextCollectorRefactored::updateCacheThread() {
+void ContextCollector::updateCacheThread() {
     while (updateThreadRunning_.load()) {
         if (contextManager_.shouldUpdate(1)) {
             contextManager_.updateAll();
@@ -83,7 +84,7 @@ void ContextCollectorRefactored::updateCacheThread() {
     }
 }
 
-std::string ContextCollectorRefactored::GenerateFusedContext() const {
+std::string ContextCollector::GenerateFusedContext() const {
     std::ostringstream fused;
     
     // Get app activity
@@ -114,51 +115,69 @@ std::string ContextCollectorRefactored::GenerateFusedContext() const {
 // Elasticsearch Integration
 // ========================================
 
-bool ContextCollectorRefactored::InitializeDatabase(const std::string& esHost,
-                                                         const std::string& indexName) {
+bool ContextCollector::InitializeDatabase(const std::string& esHost,
+                                          const std::string& indexName) {
     try {
         std::lock_guard<std::mutex> lock(esClientMutex_);
         
-        esClient_ = database::DatabaseClientFactory::create(database::DatabaseType::ELASTICSEARCH, esHost);
+        std::cout << "[InitializeDatabase] Creating ES client for: " << esHost << std::endl;
+        esClient_ = database::DatabaseClientFactory::createElasticsearch(esHost);
         esIndexName_ = indexName;
         
+        if (!esClient_) {
+            std::cerr << "[InitializeDatabase] CRITICAL: Factory returned nullptr!" << std::endl;
+            return false;
+        }
+        
+        std::cout << "[InitializeDatabase] Testing connection..." << std::endl;
         if (!esClient_->testConnection()) {
             std::cerr << "[ContextCollector] Failed to connect to Elasticsearch at " << esHost << std::endl;
             esClient_.reset();
+            std::cerr << "[InitializeDatabase] esClient_ reset to nullptr due to connection failure" << std::endl;
             return false;
         }
         
         std::cout << "[ContextCollector] Connected to Elasticsearch at " << esHost << std::endl;
         
+        std::cout << "[InitializeDatabase] Initializing index: " << indexName << std::endl;
         if (!esClient_->initializeCollection(indexName)) {
             std::cerr << "[ContextCollector] Failed to initialize index: " << indexName << std::endl;
             esClient_.reset();
+            std::cerr << "[InitializeDatabase] esClient_ reset to nullptr due to index init failure" << std::endl;
             return false;
         }
         
         std::cout << "[ContextCollector] Elasticsearch index initialized: " << indexName << std::endl;
         esStorageRunning_.store(true);
+        std::cout << "[InitializeDatabase] ES storage flag set to true" << std::endl;
         
         return true;
         
     } catch (const std::exception& e) {
         std::cerr << "[ContextCollector] Exception initializing Elasticsearch: " << e.what() << std::endl;
-        esClient_.reset();
+        {
+            std::lock_guard<std::mutex> lock(esClientMutex_);
+            esClient_.reset();
+            std::cerr << "[InitializeDatabase] esClient_ reset to nullptr due to exception" << std::endl;
+        }
         return false;
     }
 }
 
-void ContextCollectorRefactored::ShutdownDatabase() {
+void ContextCollector::ShutdownDatabase() {
     esStorageRunning_.store(false);
     
     std::lock_guard<std::mutex> lock(esClientMutex_);
     esClient_.reset();
 }
 
-void ContextCollectorRefactored::StoreContextToES(const Json& context) {
+void ContextCollector::StoreContextToES(const Json& context) {
     std::lock_guard<std::mutex> lock(esClientMutex_);
     
     if (!esClient_) {
+        // Add detailed logging for debugging
+        std::cerr << "[StoreContextToES] Warning: esClient_ is nullptr, cannot store to ES" << std::endl;
+        std::cerr << "[StoreContextToES] ES storage running flag: " << esStorageRunning_.load() << std::endl;
         return;
     }
     
@@ -179,7 +198,7 @@ void ContextCollectorRefactored::StoreContextToES(const Json& context) {
     }
 }
 
-database::RawEvent ContextCollectorRefactored::jsonContextToRawEvent(const Json& context) {
+database::RawEvent ContextCollector::jsonContextToRawEvent(const Json& context) {
     database::RawEvent event;
     
     // Generate unique event ID
@@ -259,10 +278,10 @@ database::RawEvent ContextCollectorRefactored::jsonContextToRawEvent(const Json&
     return event;
 }
 
-Json ContextCollectorRefactored::GetESDBData(const std::string& keyword,
-                                             std::time_t startTime,
-                                             std::time_t endTime,
-                                             int maxResults) {
+Json ContextCollector::GetESDBData(const std::string& keyword,
+                                    std::time_t startTime,
+                                    std::time_t endTime,
+                                    int maxResults) {
     Json result;
     
     std::lock_guard<std::mutex> lock(esClientMutex_);
@@ -359,13 +378,15 @@ Json ContextCollectorRefactored::GetESDBData(const std::string& keyword,
     }
 }
 
-bool ContextCollectorRefactored::IsElasticsearchAvailable() const {
+bool ContextCollector::IsElasticsearchAvailable() const {
     std::lock_guard<std::mutex> lock(esClientMutex_);
     return esClient_ != nullptr && esClient_->testConnection();
 }
 
-void ContextCollectorRefactored::OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& record) {
+void ContextCollector::OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& record) {
     std::cout << "[ContextCollector] User switched window: " << record.appName << std::endl;
+    std::cout << "[OnUserSwitchWindow] ES storage running: " << esStorageRunning_.load() << std::endl;
+    std::cout << "[OnUserSwitchWindow] ES client valid: " << (esClient_ ? "YES" : "NO") << std::endl;
     
     try {
         // Collect current context

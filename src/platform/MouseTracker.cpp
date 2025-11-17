@@ -14,7 +14,7 @@
 
 MouseTracker* MouseTracker::s_instance = nullptr;
 
-MouseTracker::MouseTracker() 
+MouseTracker::MouseTracker()
     : m_mouseHook(nullptr)
     , m_pAutomation(nullptr)
     , m_isRunning(false)
@@ -42,27 +42,27 @@ MouseTracker::~MouseTracker() {
 }
 
 bool MouseTracker::Initialize() {
-    // �?设置 DPI 感知：使�?Per-Monitor V2 模式
-    // 这样可以确保在高 DPI 显示器上坐标系统正确
+    // Set DPI awareness: Use Per-Monitor V2 mode
+    // This ensures correct coordinate system on high DPI displays
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-    
-    // 初始�?COM
+
+    // Initialize COM
     HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     if (FAILED(hr)) {
         return false;
     }
 
-    // 创建 UI Automation 实例
-    hr = CoCreateInstance(__uuidof(CUIAutomation), nullptr, 
-                          CLSCTX_INPROC_SERVER, 
-                          __uuidof(IUIAutomation), 
-                          (void**)&m_pAutomation);
+    // Create UI Automation instance
+    hr = CoCreateInstance(__uuidof(CUIAutomation), nullptr,
+        CLSCTX_INPROC_SERVER,
+        __uuidof(IUIAutomation),
+        (void**)&m_pAutomation);
     if (FAILED(hr)) {
         CoUninitialize();
         return false;
     }
 
-    // 打开日志文件
+    // Open log file
     m_logFile.open(L"mouse_operations_log.txt", std::ios::app);
     if (!m_logFile.is_open()) {
         return false;
@@ -78,55 +78,57 @@ void MouseTracker::Start() {
 
     m_isRunning = true;
 
-    // 启动处理线程
+    // Start processing thread
     m_processingThread = std::thread(&MouseTracker::ProcessRecordQueue, this);
 
-    // �?关键修复：钩子必须在消息循环线程中安�?
-    // 启动消息循环线程，并在该线程中安装钩�?
+    // Critical fix: Hook must be installed in message loop thread
+    // Start message loop thread and install hook in that thread
     m_messageLoopThread = std::thread([this]() {
         std::wcout << L"[MouseTracker] Message loop thread starting...\n" << std::flush;
         m_logFile << "Message loop thread starting.\n" << std::flush;
-        
-        // �?在消息循环线程中安装钩子（关键！�?
+
+        // Install hook in message loop thread (critical!)
         m_mouseHook = SetWindowsHookEx(WH_MOUSE_LL, MouseHookProc, GetModuleHandle(nullptr), 0);
-        
+
         if (m_mouseHook) {
             std::wcout << L"[MouseTracker] Mouse hook installed successfully in message loop thread.\n" << std::flush;
             m_logFile << "Mouse hook installed successfully in message loop thread.\n" << std::flush;
-            
-            // 开始消息循�?
+
+            // Start message loop
             MSG msg;
             std::wcout << L"[MouseTracker] Starting message loop...\n" << std::flush;
-            
+
             while (m_isRunning && GetMessage(&msg, nullptr, 0, 0)) {
                 TranslateMessage(&msg);
                 DispatchMessage(&msg);
             }
-            
+
             std::wcout << L"[MouseTracker] Message loop ended.\n" << std::flush;
             m_logFile << "Message loop ended.\n" << std::flush;
-            
-            // 清理钩子
+
+            // Clean up hook
             if (m_mouseHook) {
                 UnhookWindowsHookEx(m_mouseHook);
                 m_mouseHook = nullptr;
                 std::wcout << L"[MouseTracker] Mouse hook uninstalled.\n" << std::flush;
             }
-        } else {
-            // 钩子安装失败
+        }
+        else {
+            // Hook installation failed
             DWORD error = GetLastError();
             std::wcerr << L"[MouseTracker] Mouse hook installation FAILED! Error code: " << error << L"\n" << std::flush;
             m_logFile << "Mouse hook installation FAILED! Error code: " << error << L"\n" << std::flush;
             m_isRunning = false;
         }
     });
-    
-    // 给消息循环一点时间启�?
+
+    // Give message loop some time to start
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    
+
     if (m_mouseHook) {
         std::wcout << L"[MouseTracker] Hook should be active now. Try clicking your mouse!\n" << std::flush;
-    } else {
+    }
+    else {
         std::wcerr << L"[MouseTracker] Hook installation failed! Mouse tracking will not work.\n" << std::flush;
     }
 }
@@ -136,21 +138,21 @@ void MouseTracker::Stop() {
 
     m_isRunning = false;
 
-    // 停止消息循环线程（通过发送退出消息）
+    // Stop message loop thread (by sending quit message)
     if (m_messageLoopThread.joinable()) {
-        // 发送WM_QUIT消息来停止GetMessage循环
+        // Send WM_QUIT message to stop GetMessage loop
         PostQuitMessage(0);
         m_messageLoopThread.join();
         std::wcout << L"[MouseTracker] Message loop thread stopped.\n" << std::flush;
     }
 
-    // 唤醒处理线程并等待其结束
+    // Wake up processing thread and wait for it to finish
     m_queueCondition.notify_all();
     if (m_processingThread.joinable()) {
         m_processingThread.join();
     }
 
-    // 注意：钩子已经在消息循环线程中清理了
+    // Note: Hook has already been cleaned up in message loop thread
 
     if (m_logFile.is_open()) {
         m_logFile << "========== Mouse Tracker Stopped at " << GetCurrentTimeString() << " ==========\n" << std::flush;
@@ -159,22 +161,22 @@ void MouseTracker::Stop() {
 
 LRESULT CALLBACK MouseTracker::MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
     static int callCount = 0;
-    if (callCount < 5) {  // 只输出前5次，避免刷屏
-        std::wcout << L"[HOOK] MouseHookProc called! nCode=" << nCode 
-                   << L", wParam=" << wParam << L"\n" << std::flush;
+    if (callCount < 5) {  // Only output first 5 times to avoid flooding
+        std::wcout << L"[HOOK] MouseHookProc called! nCode=" << nCode
+            << L", wParam=" << wParam << L"\n" << std::flush;
         callCount++;
     }
-    
+
     if (nCode >= 0 && s_instance && s_instance->m_isRunning) {
         const MSLLHOOKSTRUCT* mouseInfo = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
-        
-        // 忽略拖动窗口的情况（通过检测是否在非客户区�?
+
+        // Ignore window dragging (by detecting if in non-client area)
         HWND hwnd = WindowFromPoint(mouseInfo->pt);
         if (hwnd) {
-            LRESULT hitTest = SendMessage(hwnd, WM_NCHITTEST, 0, 
-                                         MAKELPARAM(mouseInfo->pt.x, mouseInfo->pt.y));
-            // 如果在标题栏或边框，忽略
-            if (hitTest == HTCAPTION || hitTest == HTBORDER || hitTest == HTLEFT || 
+            LRESULT hitTest = SendMessage(hwnd, WM_NCHITTEST, 0,
+                MAKELPARAM(mouseInfo->pt.x, mouseInfo->pt.y));
+            // If in title bar or border, ignore
+            if (hitTest == HTCAPTION || hitTest == HTBORDER || hitTest == HTLEFT ||
                 hitTest == HTRIGHT || hitTest == HTTOP || hitTest == HTBOTTOM) {
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
@@ -190,86 +192,87 @@ void MouseTracker::ProcessMouseEvent(WPARAM wParam, const MSLLHOOKSTRUCT* mouseI
     DWORD currentTime = GetTickCount();
 
     switch (wParam) {
-        case WM_LBUTTONDOWN: {
-            // 记录拖动开�?
-            m_isDragging = true;
-            m_dragStartPos = mouseInfo->pt;
-            m_dragWindow = WindowFromPoint(mouseInfo->pt);
+    case WM_LBUTTONDOWN: {
+        // Record drag start
+        m_isDragging = true;
+        m_dragStartPos = mouseInfo->pt;
+        m_dragWindow = WindowFromPoint(mouseInfo->pt);
 
-            // 检测双�?
-            if (currentTime - m_lastClickTime < GetDoubleClickTime() &&
-                abs(mouseInfo->pt.x - m_lastClickPos.x) < 5 &&
-                abs(mouseInfo->pt.y - m_lastClickPos.y) < 5) {
-                eventType = MouseEventType::LEFT_DOUBLE_CLICK;
-                m_lastClickTime = 0; // 重置，避免三连击被识别为双击
-                m_isDragging = false; // 双击不算拖动
-            } else {
-                // 不立即触�?LEFT_CLICK，等�?LBUTTONUP 来判断是否是文本选择
-                m_lastClickTime = currentTime;
-                m_lastClickPos = mouseInfo->pt;
-                return; // 暂时不处理，�?LBUTTONUP
-            }
-            break;
+        // Detect double click
+        if (currentTime - m_lastClickTime < GetDoubleClickTime() &&
+            abs(mouseInfo->pt.x - m_lastClickPos.x) < 5 &&
+            abs(mouseInfo->pt.y - m_lastClickPos.y) < 5) {
+            eventType = MouseEventType::LEFT_DOUBLE_CLICK;
+            m_lastClickTime = 0; // Reset to avoid triple click being detected as double click
+            m_isDragging = false; // Double click doesn't count as drag
         }
-        case WM_LBUTTONUP: {
-            // 检查是否是文本选择（拖动距离超过阈值）
-            if (m_isDragging) {
-                int dragDistance = abs(mouseInfo->pt.x - m_dragStartPos.x) +
-                    abs(mouseInfo->pt.y - m_dragStartPos.y);
+        else {
+            // Don't immediately trigger LEFT_CLICK, wait for LBUTTONUP to determine if it's text selection
+            m_lastClickTime = currentTime;
+            m_lastClickPos = mouseInfo->pt;
+            return; // Temporarily don't process, wait for LBUTTONUP
+        }
+        break;
+    }
+    case WM_LBUTTONUP: {
+        // Check if it's text selection (drag distance exceeds threshold)
+        if (m_isDragging) {
+            int dragDistance = abs(mouseInfo->pt.x - m_dragStartPos.x) +
+                abs(mouseInfo->pt.y - m_dragStartPos.y);
 
-                // 如果拖动距离超过10像素，认为是文本选择
-                if (dragDistance > 10) {
-                    eventType = MouseEventType::TEXT_SELECTION;
+            // If drag distance exceeds 10 pixels, consider it text selection
+            if (dragDistance > 10) {
+                eventType = MouseEventType::TEXT_SELECTION;
 
-                    // 快速入队文本选择事件
-                    PendingMouseEvent event;
-                    event.eventType = eventType;
-                    event.position = mouseInfo->pt;
-                    event.pointWindow = m_dragWindow;
-                    event.timestamp = std::chrono::system_clock::now();
+                // Quickly enqueue text selection event
+                PendingMouseEvent event;
+                event.eventType = eventType;
+                event.position = mouseInfo->pt;
+                event.pointWindow = m_dragWindow;
+                event.timestamp = std::chrono::system_clock::now();
 
-                    {
-                        std::lock_guard<std::mutex> lock(s_instance->m_queueMutex);
-                        s_instance->m_eventQueue.push(event);
-                    }
-                    s_instance->m_queueCondition.notify_one();
-
-                    m_isDragging = false;
-                    return; // 文本选择事件已处理，不再处理为点�?
+                {
+                    std::lock_guard<std::mutex> lock(s_instance->m_queueMutex);
+                    s_instance->m_eventQueue.push(event);
                 }
-                else {
-                    // 拖动距离小，是普通点�?
-                    eventType = MouseEventType::LEFT_CLICK;
-                }
+                s_instance->m_queueCondition.notify_one();
 
                 m_isDragging = false;
+                return; // Text selection event processed, don't process as click
             }
             else {
-                // 没有记录 LBUTTONDOWN，可能是其他情况
-                return;
+                // Small drag distance, regular click
+                eventType = MouseEventType::LEFT_CLICK;
             }
-            break;
+
+            m_isDragging = false;
         }
-        case WM_RBUTTONDOWN:
-            eventType = MouseEventType::RIGHT_CLICK;
-            m_isDragging = false; // 右键不算拖动
-            break;
-        default:
+        else {
+            // No LBUTTONDOWN recorded, could be other situation
             return;
+        }
+        break;
+    }
+    case WM_RBUTTONDOWN:
+        eventType = MouseEventType::RIGHT_CLICK;
+        m_isDragging = false; // Right click doesn't count as drag
+        break;
+    default:
+        return;
     }
 
     if (eventType != MouseEventType::UNKNOWN && eventType != MouseEventType::TEXT_SELECTION) {
-        // 快速入队，不阻塞钩�?
+        // Quickly enqueue, don't block hook
         PendingMouseEvent event;
         event.eventType = eventType;
         event.position = mouseInfo->pt;
-        
-        // �?关键修复：在多显示器环境下，WindowFromPoint 可能返回子窗口，其坐标系统可能不正确
-        // 应该获取顶层窗口，而不是子窗口
+
+        // Critical fix: In multi-monitor environment, WindowFromPoint may return child window with incorrect coordinate system
+        // Should get top-level window instead of child window
         HWND pointWindow = WindowFromPoint(mouseInfo->pt);
         HWND foregroundWindow = GetForegroundWindow();
-        
-        // 获取 pointWindow 的顶层父窗口
+
+        // Get top-level parent window of pointWindow
         HWND topLevelWindow = pointWindow;
         if (pointWindow) {
             HWND parent = pointWindow;
@@ -282,29 +285,29 @@ void MouseTracker::ProcessMouseEvent(WPARAM wParam, const MSLLHOOKSTRUCT* mouseI
                 parent = nextParent;
             }
         }
-        
-        // 验证顶层窗口是否与前台窗口一�?
+
+        // Verify if top-level window matches foreground window
         bool useForeground = (topLevelWindow != foregroundWindow);
-        
-        // 优先使用前台窗口（更可靠），除非 topLevelWindow 确实包含点击坐标
+
+        // Prefer foreground window (more reliable), unless topLevelWindow actually contains click coordinates
         if (topLevelWindow && IsWindow(topLevelWindow)) {
             RECT rect;
             if (GetWindowRect(topLevelWindow, &rect)) {
                 POINT pt = mouseInfo->pt;
-                if (pt.x >= rect.left && pt.x < rect.right && 
+                if (pt.x >= rect.left && pt.x < rect.right &&
                     pt.y >= rect.top && pt.y < rect.bottom) {
-                    useForeground = false;  // 坐标在范围内，使�?topLevelWindow
+                    useForeground = false;  // Coordinates within range, use topLevelWindow
                 }
             }
         }
-        
+
         event.pointWindow = useForeground ? foregroundWindow : topLevelWindow;
-        
-        // 调试：输出点击信�?
-        #ifdef _DEBUG
-        wchar_t className[256] = {0};
-        wchar_t topClassName[256] = {0};
-        wchar_t fgClassName[256] = {0};
+
+        // Debug: Output click information
+#ifdef _DEBUG
+        wchar_t className[256] = { 0 };
+        wchar_t topClassName[256] = { 0 };
+        wchar_t fgClassName[256] = { 0 };
         if (pointWindow && IsWindow(pointWindow)) {
             GetClassNameW(pointWindow, className, 256);
         }
@@ -315,25 +318,25 @@ void MouseTracker::ProcessMouseEvent(WPARAM wParam, const MSLLHOOKSTRUCT* mouseI
             GetClassNameW(foregroundWindow, fgClassName, 256);
         }
         std::wcout << L"[HOOK] Click at (" << mouseInfo->pt.x << L", " << mouseInfo->pt.y << L")\n"
-                   << L"  PointWindow: " << pointWindow << L" Class: " << className << L"\n"
-                   << L"  TopLevelWindow: " << topLevelWindow << L" Class: " << topClassName << L"\n"
-                   << L"  ForegroundWindow: " << foregroundWindow << L" Class: " << fgClassName << L"\n"
-                   << L"  Using: " << (useForeground ? L"ForegroundWindow" : L"TopLevelWindow") << L"\n";
-        
-        // 输出显示器信�?
-        RECT topRect = {0};
+            << L"  PointWindow: " << pointWindow << L" Class: " << className << L"\n"
+            << L"  TopLevelWindow: " << topLevelWindow << L" Class: " << topClassName << L"\n"
+            << L"  ForegroundWindow: " << foregroundWindow << L" Class: " << fgClassName << L"\n"
+            << L"  Using: " << (useForeground ? L"ForegroundWindow" : L"TopLevelWindow") << L"\n";
+
+        // Output display information
+        RECT topRect = { 0 };
         if (event.pointWindow && IsWindow(event.pointWindow)) {
             GetWindowRect(event.pointWindow, &topRect);
-            std::wcout << L"  TargetWindow Rect: (" << topRect.left << L", " << topRect.top 
-                       << L") - (" << topRect.right << L", " << topRect.bottom << L")\n";
-            
+            std::wcout << L"  TargetWindow Rect: (" << topRect.left << L", " << topRect.top
+                << L") - (" << topRect.right << L", " << topRect.bottom << L")\n";
+
             bool isInside = (mouseInfo->pt.x >= topRect.left && mouseInfo->pt.x < topRect.right &&
-                           mouseInfo->pt.y >= topRect.top && mouseInfo->pt.y < topRect.bottom);
-            std::wcout << L"  Click is " << (isInside ? L"INSIDE" : L"OUTSIDE") 
-                       << L" target window bounds\n";
+                mouseInfo->pt.y >= topRect.top && mouseInfo->pt.y < topRect.bottom);
+            std::wcout << L"  Click is " << (isInside ? L"INSIDE" : L"OUTSIDE")
+                << L" target window bounds\n";
         }
-        #endif
-        
+#endif
+
         event.timestamp = std::chrono::system_clock::now();
 
         {
@@ -345,18 +348,18 @@ void MouseTracker::ProcessMouseEvent(WPARAM wParam, const MSLLHOOKSTRUCT* mouseI
 }
 
 void MouseTracker::ProcessRecordQueue() {
-    // 在工作线程中初始�?COM（每个线程需要单独初始化�?
+    // Initialize COM in worker thread (each thread needs separate initialization)
     auto result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
     while (m_isRunning) {
         PendingMouseEvent event;
-        
+
         {
             std::unique_lock<std::mutex> lock(m_queueMutex);
-            // 等待队列有数据或停止信号
-            m_queueCondition.wait(lock, [this] { 
-                return !m_eventQueue.empty() || !m_isRunning; 
-            });
+            // Wait for queue to have data or stop signal
+            m_queueCondition.wait(lock, [this] {
+                return !m_eventQueue.empty() || !m_isRunning;
+                });
 
             if (!m_isRunning && m_eventQueue.empty()) {
                 break;
@@ -365,12 +368,13 @@ void MouseTracker::ProcessRecordQueue() {
             if (!m_eventQueue.empty()) {
                 event = m_eventQueue.front();
                 m_eventQueue.pop();
-            } else {
+            }
+            else {
                 continue;
             }
         }
 
-        // 在工作线程中处理耗时操作
+        // Process time-consuming operations in worker thread
         RecordMouseOperation(event.eventType, event.position, event.pointWindow);
     }
 
@@ -383,11 +387,11 @@ void MouseTracker::RecordMouseOperation(MouseEventType eventType, POINT position
     record.eventType = eventType;
     record.position = position;
 
-    // �?关键改进：先立即获取元素内容（在UI状态改变之前）
+    // Critical improvement: First immediately get element content (before UI state changes)
     database::MouseEvent dbMouseEvent;  // Use database namespace
     try {
         if (eventType == MouseEventType::TEXT_SELECTION) {
-            // 对于文本选择，使用特殊方法获取选中的文�?
+            // For text selection, use special method to get selected text
             dbMouseEvent.timestamp = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
             dbMouseEvent.eventType = "TextSelection";
             dbMouseEvent.posX = position.x;
@@ -396,14 +400,15 @@ void MouseTracker::RecordMouseOperation(MouseEventType eventType, POINT position
             m_mouseEvents.push_back(dbMouseEvent);
         }
         else {
-            // 对于点击事件，获取元素内�?
+            // For click events, get element content
             m_clickedCount++;
         }
-    } catch (...) {
-       std::wcout << L"[Error getting content]" << std::endl;
+    }
+    catch (...) {
+        std::wcout << L"[Error getting content]" << std::endl;
     }
 
-    // 写入日志文件（异步）
+    // Write to log file (asynchronously)
     if (m_logFile.is_open()) {
         m_logFile << dbMouseEvent.content << "\n" << std::flush;
     }
@@ -413,62 +418,62 @@ MouseTracker::ElementInfo MouseTracker::GetElementContentAtPoint(POINT pt, HWND 
     ElementInfo result;
     result.content = L"";
     result.elementType = L"Unknown";
-    
+
     if (!m_pAutomation) return result;
 
-    // �?使用树遍历方案（更准确、延迟更低）
+    // Use tree traversal solution (more accurate, lower latency)
     HWND hwnd = targetWindow;
     if (!hwnd || !IsWindow(hwnd)) {
         hwnd = GetForegroundWindow();
     }
-    
+
     if (!hwnd || !IsWindow(hwnd)) {
         return result;
     }
-    
-    // 获取根元�?
+
+    // Get root element
     IUIAutomationElement* rootElement = nullptr;
     HRESULT hr = m_pAutomation->ElementFromHandle(hwnd, &rootElement);
-    
+
     if (FAILED(hr) || !rootElement) {
         return result;
     }
-    
-    // �?优化：先找到内容区域，减少遍历范�?
+
+    // Optimization: First find content area to reduce traversal scope
     IUIAutomationElement* contentArea = FindContentArea(rootElement);
     IUIAutomationElement* searchRoot = contentArea ? contentArea : rootElement;
-    
-    // 获取 TreeWalker
+
+    // Get TreeWalker
     IUIAutomationTreeWalker* walker = nullptr;
     hr = m_pAutomation->get_RawViewWalker(&walker);
-    
+
     if (FAILED(hr) || !walker) {
         if (contentArea) contentArea->Release();
         rootElement->Release();
         return result;
     }
-    
-    // �?在元素树中查找目标元�?
+
+    // Find target element in element tree
     IUIAutomationElement* targetElement = FindElementAtPointInTree(searchRoot, pt, walker, 0);
-    
-    // 如果在内容区域中找不到，尝试在整个窗口中查找
+
+    // If not found in content area, try searching in entire window
     if (!targetElement && contentArea) {
         targetElement = FindElementAtPointInTree(rootElement, pt, walker, 0);
     }
-    
+
     walker->Release();
-    
+
     if (targetElement) {
-        // 获取元素信息
+        // Get element information
         CONTROLTYPEID controlType;
         targetElement->get_CurrentControlType(&controlType);
         result.elementType = GetElementTypeString(controlType);
-        
-        // 获取内容
+
+        // Get content
         result.content = TryGetElementContent(targetElement, controlType);
-        
+
         if (result.content.empty()) {
-            // 如果当前元素没内容，递归查找子元�?
+            // If current element has no content, recursively search child elements
             IUIAutomationTreeWalker* contentWalker = nullptr;
             m_pAutomation->get_RawViewWalker(&contentWalker);
             if (contentWalker) {
@@ -476,19 +481,20 @@ MouseTracker::ElementInfo MouseTracker::GetElementContentAtPoint(POINT pt, HWND 
                 contentWalker->Release();
             }
         }
-        
+
         targetElement->Release();
-    } else {
-        // �?后备方案：如果树遍历失败，使�?ElementFromPoint
+    }
+    else {
+        // Fallback solution: If tree traversal fails, use ElementFromPoint
         IUIAutomationElement* pointElement = nullptr;
         hr = m_pAutomation->ElementFromPoint(pt, &pointElement);
-        
+
         if (SUCCEEDED(hr) && pointElement) {
             CONTROLTYPEID controlType;
             pointElement->get_CurrentControlType(&controlType);
             result.elementType = GetElementTypeString(controlType);
             result.content = TryGetElementContent(pointElement, controlType);
-            
+
             if (result.content.empty()) {
                 IUIAutomationTreeWalker* contentWalker = nullptr;
                 m_pAutomation->get_RawViewWalker(&contentWalker);
@@ -497,295 +503,303 @@ MouseTracker::ElementInfo MouseTracker::GetElementContentAtPoint(POINT pt, HWND 
                     contentWalker->Release();
                 }
             }
-            
+
             pointElement->Release();
         }
     }
-    
+
     if (contentArea) contentArea->Release();
     rootElement->Release();
-    
+
     if (result.content.empty()) {
         result.content = L"[No Content Found]";
     }
-    
+
     return result;
 }
 
-// 新增：查找内容区域（类似 BrowserContentExtractor::FindDocumentElement�?
+// New: Find content area (similar to BrowserContentExtractor::FindDocumentElement)
 IUIAutomationElement* MouseTracker::FindContentArea(IUIAutomationElement* rootElement) {
     if (!m_pAutomation || !rootElement) {
         return nullptr;
     }
-    
-    // 1. 首先尝试查找 Document 控件（适用于浏览器�?
+
+    // 1. First try to find Document control (suitable for browsers)
     IUIAutomationCondition* condition = nullptr;
     VARIANT varProp;
     varProp.vt = VT_I4;
     varProp.lVal = UIA_DocumentControlTypeId;
-    
+
     HRESULT hr = m_pAutomation->CreatePropertyCondition(UIA_ControlTypePropertyId, varProp, &condition);
-    
+
     if (SUCCEEDED(hr) && condition) {
         IUIAutomationElement* docElement = nullptr;
         hr = rootElement->FindFirst(TreeScope_Descendants, condition, &docElement);
         condition->Release();
-        
+
         if (SUCCEEDED(hr) && docElement) {
             return docElement;
         }
     }
-    
-    // 2. 如果没找�?Document，查找合适的 Pane（适用�?Teams 等应用）
+
+    // 2. If Document not found, find suitable Pane (suitable for Teams and other applications)
     varProp.lVal = UIA_PaneControlTypeId;
     hr = m_pAutomation->CreatePropertyCondition(UIA_ControlTypePropertyId, varProp, &condition);
-    
+
     if (SUCCEEDED(hr) && condition) {
         IUIAutomationElementArray* paneArray = nullptr;
         hr = rootElement->FindAll(TreeScope_Descendants, condition, &paneArray);
         condition->Release();
-        
+
         if (SUCCEEDED(hr) && paneArray) {
             int length = 0;
             paneArray->get_Length(&length);
-            
-            // 遍历所�?Pane，找到最有可能是内容区的那个
+
+            // Traverse all Panes to find the one most likely to be content area
             for (int i = 0; i < length && i < 20; i++) {
                 IUIAutomationElement* pane = nullptr;
                 if (SUCCEEDED(paneArray->GetElement(i, &pane)) && pane) {
-                    // 检�?Name �?AutomationId，排除工具栏、书签栏�?
+                    // Check Name and AutomationId, exclude toolbars, bookmark bars, etc.
                     BSTR name = nullptr;
                     BSTR automationId = nullptr;
                     pane->get_CurrentName(&name);
                     pane->get_CurrentAutomationId(&automationId);
-                    
+
                     std::wstring nameStr = name ? name : L"";
                     std::wstring idStr = automationId ? automationId : L"";
-                    
+
                     if (name) SysFreeString(name);
                     if (automationId) SysFreeString(automationId);
-                    
-                    // 排除明显不是内容区的 Pane
-                    bool isExcluded = 
+
+                    // Exclude Panes that are clearly not content areas
+                    bool isExcluded =
                         nameStr.find(L"Toolbar") != std::wstring::npos ||
                         nameStr.find(L"Bookmark") != std::wstring::npos ||
                         nameStr.find(L"Tab Bar") != std::wstring::npos ||
                         nameStr.find(L"Navigation") != std::wstring::npos ||
                         idStr.find(L"Toolbar") != std::wstring::npos ||
                         idStr.find(L"TabBar") != std::wstring::npos;
-                    
+
                     if (!isExcluded) {
                         paneArray->Release();
                         return pane;
                     }
-                    
+
                     pane->Release();
                 }
             }
-            
+
             paneArray->Release();
         }
     }
-    
-    // 3. 如果都没找到，返�?nullptr（使用根元素�?
+
+    // 3. If none found, return nullptr (use root element)
     return nullptr;
 }
 
-// 新增：在元素树中查找包含指定坐标的元素（返回最小的匹配元素�?
+// New: Find element containing specified coordinates in element tree (returns smallest matching element)
 IUIAutomationElement* MouseTracker::FindElementAtPointInTree(IUIAutomationElement* element, POINT pt, IUIAutomationTreeWalker* walker, int depth) {
     if (!element || !walker || depth > 15) {
         return nullptr;
     }
-    
-    // 检查当前元素的边界矩形
+
+    // Check current element's bounding rectangle
     RECT rect;
     HRESULT hr = element->get_CurrentBoundingRectangle(&rect);
-    
+
     if (FAILED(hr)) {
         return nullptr;
     }
-    
-    // 关键修复：对�?Document 元素，如果边界矩形为 (0,0)-(0,0)，使用父窗口的边�?
+
+    // Critical fix: For Document elements, if bounding rectangle is (0,0)-(0,0), use parent window's bounds
     if (rect.left == 0 && rect.top == 0 && rect.right == 0 && rect.bottom == 0) {
-        // 尝试从元素获取窗口句�?
+        // Try to get window handle from element
         IUIAutomationElement* rootElement = element;
         HWND hwnd = nullptr;
-        
-        // 向上查找直到找到有效的窗口句handles
+
+        // Search upward until valid window handle is found
         while (rootElement) {
             UIA_HWND uiaHwnd = 0;
             if (SUCCEEDED(rootElement->get_CurrentNativeWindowHandle(&uiaHwnd)) && uiaHwnd) {
                 hwnd = (HWND)(LONG_PTR)uiaHwnd;
                 break;
             }
-            
+
             IUIAutomationTreeWalker* tempWalker = nullptr;
             if (SUCCEEDED(m_pAutomation->get_RawViewWalker(&tempWalker)) && tempWalker) {
                 IUIAutomationElement* parent = nullptr;
                 if (SUCCEEDED(tempWalker->GetParentElement(rootElement, &parent)) && parent) {
                     if (rootElement != element) rootElement->Release();
                     rootElement = parent;
-                } else {
+                }
+                else {
                     tempWalker->Release();
                     break;
                 }
                 tempWalker->Release();
-            } else {
+            }
+            else {
                 break;
             }
         }
-        
+
         if (hwnd && IsWindow(hwnd)) {
             GetWindowRect(hwnd, &rect);
         }
-        
+
         if (rootElement != element) rootElement->Release();
     }
-    
-    // 如果点不在当前元素内，返�?null
+
+    // If point not within current element, return null
     if (pt.x < rect.left || pt.x > rect.right || pt.y < rect.top || pt.y > rect.bottom) {
         return nullptr;
     }
-    
-    // 关键改进：点在当前元素内，先检查当前元素是否有文本内容
+
+    // Key improvement: Point is within current element, first check if current element has text content
     CONTROLTYPEID controlType;
     element->get_CurrentControlType(&controlType);
     std::wstring currentContent = TryGetElementContent(element, controlType);
-    
-    // 继续查找子元素，看是否有更精确（面积更小）且有内容的子元�?
+
+    // Continue searching child elements to see if there are more precise (smaller area) child elements with content
     IUIAutomationElement* child = nullptr;
     hr = walker->GetFirstChildElement(element, &child);
-    
+
     IUIAutomationElement* bestMatch = nullptr;
     LONG bestArea = LONG_MAX;
     bool bestHasContent = false;
-    
+
     while (SUCCEEDED(hr) && child) {
-        // 递归查找子元�?
+        // Recursively search child elements
         IUIAutomationElement* childMatch = FindElementAtPointInTree(child, pt, walker, depth + 1);
-        
+
         if (childMatch) {
-            // 检查这个子元素是否有内�?
+            // Check if this child element has content
             CONTROLTYPEID childType;
             childMatch->get_CurrentControlType(&childType);
             std::wstring childContent = TryGetElementContent(childMatch, childType);
             bool childHasContent = !childContent.empty();
-            
-            // 计算面积
+
+            // Calculate area
             RECT childRect;
             if (SUCCEEDED(childMatch->get_CurrentBoundingRectangle(&childRect))) {
                 LONG area = (childRect.right - childRect.left) * (childRect.bottom - childRect.top);
-                
-                // 优先选择有内容的元素，其次选择面积更小的元�?
+
+                // Prefer elements with content, then elements with smaller area
                 bool isBetter = false;
                 if (childHasContent && !bestHasContent) {
-                    isBetter = true;  // 有内容的优于没内容的
-                } else if (childHasContent == bestHasContent && area > 0 && area < bestArea) {
-                    isBetter = true;  // 同样�?没有内容，选择面积更小�?
+                    isBetter = true;  // Has content is better than no content
                 }
-                
+                else if (childHasContent == bestHasContent && area > 0 && area < bestArea) {
+                    isBetter = true;  // Same content status, choose smaller area
+                }
+
                 if (isBetter) {
                     if (bestMatch) bestMatch->Release();
                     bestMatch = childMatch;
                     bestArea = area;
                     bestHasContent = childHasContent;
-                } else {
+                }
+                else {
                     childMatch->Release();
                 }
-            } else {
+            }
+            else {
                 childMatch->Release();
             }
         }
-        
-        // 获取下一个兄�?
+
+        // Get next sibling
         IUIAutomationElement* next = nullptr;
         hr = walker->GetNextSiblingElement(child, &next);
         child->Release();
         child = next;
     }
-    
-    // 决策逻辑�?
-    // 1. 如果找到有内容的子元素，返回�?
-    // 2. 如果当前元素有内容但没找到有内容的子元素，返回当前元�?
-    // 3. 如果都没内容，返回面积最小的子元素或当前元素
+
+    // Decision logic:
+    // 1. If found child element with content, return it
+    // 2. If current element has content but no child elements with content found, return current element
+    // 3. If neither has content, return smallest child element or current element
     if (bestMatch && bestHasContent) {
-        // 找到了有内容的子元素
+        // Found child element with content
         return bestMatch;
-    } else if (!currentContent.empty()) {
-        // 当前元素有内容，没找到更好的子元�?
+    }
+    else if (!currentContent.empty()) {
+        // Current element has content, no better child elements found
         if (bestMatch) bestMatch->Release();
         element->AddRef();
         return element;
-    } else if (bestMatch) {
-        // 都没内容，返回最小的子元�?
+    }
+    else if (bestMatch) {
+        // Neither has content, return smallest child element
         return bestMatch;
-    } else {
-        // 没有子元素，返回当前元素
+    }
+    else {
+        // No child elements, return current element
         element->AddRef();
         return element;
     }
 }
 
-// 新增：递归遍历元素树查找内容（类似 BrowserContentExtractor::TraverseElementTree�?
+// New: Recursively traverse element tree to find content (similar to BrowserContentExtractor::TraverseElementTree)
 std::wstring MouseTracker::TraverseForContent(IUIAutomationElement* element, IUIAutomationTreeWalker* walker, int depth, int maxDepth) {
     if (!element || !walker || depth > maxDepth) {
         return L"";
     }
-    
-    // 先尝试当前元�?
+
+    // First try current element
     CONTROLTYPEID controlType;
     element->get_CurrentControlType(&controlType);
     std::wstring content = TryGetElementContent(element, controlType);
-    
+
     if (!content.empty()) {
         return content;
     }
-    
-    // 递归遍历子元�?
+
+    // Recursively traverse child elements
     IUIAutomationElement* child = nullptr;
     HRESULT hr = walker->GetFirstChildElement(element, &child);
-    
+
     while (SUCCEEDED(hr) && child) {
         std::wstring childContent = TraverseForContent(child, walker, depth + 1, maxDepth);
-        
+
         if (!childContent.empty()) {
             child->Release();
             return childContent;
         }
-        
-        // 获取下一个兄弟元�?
+
+        // Get next sibling element
         IUIAutomationElement* next = nullptr;
         hr = walker->GetNextSiblingElement(child, &next);
         child->Release();
         child = next;
     }
-    
+
     return L"";
 }
 
-// 新增辅助函数：尝试从元素获取内容（封装所有获取方法）
+// New helper function: Try to get content from element (encapsulates all retrieval methods)
 std::wstring MouseTracker::TryGetElementContent(IUIAutomationElement* element, CONTROLTYPEID controlType) {
     if (!element) return L"";
 
     std::wstring result;
     HRESULT hr;
 
-    // 1. 首先尝试获取 Name 属�?
+    // 1. First try to get Name property
     BSTR name = nullptr;
     if (SUCCEEDED(element->get_CurrentName(&name)) && name) {
         std::wstring nameStr = name;
         SysFreeString(name);
-        
-        // �?�?trimmed首尾空白字符
+
+        // Trim leading and trailing whitespace characters
         nameStr = TrimWhitespace(nameStr);
-        
+
         if (!nameStr.empty()) {
             result = nameStr;
-            
-            // 对于超链接，尝试附加 URL
+
+            // For hyperlinks, try to append URL
             if (controlType == UIA_HyperlinkControlTypeId) {
                 IUIAutomationValuePattern* valuePattern = nullptr;
-                if (SUCCEEDED(element->GetCurrentPatternAs(UIA_ValuePatternId, 
+                if (SUCCEEDED(element->GetCurrentPatternAs(UIA_ValuePatternId,
                     __uuidof(IUIAutomationValuePattern), (void**)&valuePattern)) && valuePattern) {
                     BSTR url = nullptr;
                     if (SUCCEEDED(valuePattern->get_CurrentValue(&url)) && url) {
@@ -793,20 +807,20 @@ std::wstring MouseTracker::TryGetElementContent(IUIAutomationElement* element, C
                         SysFreeString(url);
                         urlStr = TrimWhitespace(urlStr);
                         if (!urlStr.empty()) {
-                            result += L" �?" + urlStr;
+                            result += L" - " + urlStr;
                         }
                     }
                     valuePattern->Release();
                 }
             }
-            
+
             return result;
         }
     }
-    
-    // 2. 尝试 ValuePattern（适用于编辑框、输入框等）
+
+    // 2. Try ValuePattern (suitable for edit boxes, input fields, etc.)
     IUIAutomationValuePattern* valuePattern = nullptr;
-    if (SUCCEEDED(element->GetCurrentPatternAs(UIA_ValuePatternId, 
+    if (SUCCEEDED(element->GetCurrentPatternAs(UIA_ValuePatternId,
         __uuidof(IUIAutomationValuePattern), (void**)&valuePattern)) && valuePattern) {
         BSTR value = nullptr;
         if (SUCCEEDED(valuePattern->get_CurrentValue(&value)) && value) {
@@ -821,10 +835,10 @@ std::wstring MouseTracker::TryGetElementContent(IUIAutomationElement* element, C
         }
         valuePattern->Release();
     }
-    
-    // 3. 尝试 TextPattern（适用于文本内容、文档等�?
+
+    // 3. Try TextPattern (suitable for text content, documents, etc.)
     IUIAutomationTextPattern* textPattern = nullptr;
-    if (SUCCEEDED(element->GetCurrentPatternAs(UIA_TextPatternId, 
+    if (SUCCEEDED(element->GetCurrentPatternAs(UIA_TextPatternId,
         __uuidof(IUIAutomationTextPattern), (void**)&textPattern)) && textPattern) {
         IUIAutomationTextRange* textRange = nullptr;
         if (SUCCEEDED(textPattern->get_DocumentRange(&textRange)) && textRange) {
@@ -844,8 +858,8 @@ std::wstring MouseTracker::TryGetElementContent(IUIAutomationElement* element, C
         }
         textPattern->Release();
     }
-    
-    // 4. 尝试 HelpText 作为后备
+
+    // 4. Try HelpText as fallback
     BSTR helpText = nullptr;
     if (SUCCEEDED(element->get_CurrentHelpText(&helpText)) && helpText) {
         std::wstring helpStr = helpText;
@@ -856,24 +870,24 @@ std::wstring MouseTracker::TryGetElementContent(IUIAutomationElement* element, C
             return result;
         }
     }
-    
-    return result;  // 返回空字符串表示未找到内�?
+
+    return result;  // Return empty string indicating no content found
 }
 
 std::wstring MouseTracker::GetElementTypeString(CONTROLTYPEID controlType) {
     switch (controlType) {
-        case UIA_ButtonControlTypeId: return L"Button";
-        case UIA_HyperlinkControlTypeId: return L"Hyperlink";
-        case UIA_TextControlTypeId: return L"Text";
-        case UIA_EditControlTypeId: return L"TextBox";
-        case UIA_TabItemControlTypeId: return L"Tab";
-        case UIA_MenuItemControlTypeId: return L"MenuItem";
-        case UIA_CheckBoxControlTypeId: return L"CheckBox";
-        case UIA_RadioButtonControlTypeId: return L"RadioButton";
-        case UIA_ComboBoxControlTypeId: return L"ComboBox";
-        case UIA_ListItemControlTypeId: return L"ListItem";
-        case UIA_ImageControlTypeId: return L"Image";
-        default: return L"Unknown";
+    case UIA_ButtonControlTypeId: return L"Button";
+    case UIA_HyperlinkControlTypeId: return L"Hyperlink";
+    case UIA_TextControlTypeId: return L"Text";
+    case UIA_EditControlTypeId: return L"TextBox";
+    case UIA_TabItemControlTypeId: return L"Tab";
+    case UIA_MenuItemControlTypeId: return L"MenuItem";
+    case UIA_CheckBoxControlTypeId: return L"CheckBox";
+    case UIA_RadioButtonControlTypeId: return L"RadioButton";
+    case UIA_ComboBoxControlTypeId: return L"ComboBox";
+    case UIA_ListItemControlTypeId: return L"ListItem";
+    case UIA_ImageControlTypeId: return L"Image";
+    default: return L"Unknown";
     }
 }
 
@@ -881,13 +895,13 @@ HWND MouseTracker::GetRootOwnerWindow(HWND hwnd) {
     if (!hwnd || !IsWindow(hwnd)) {
         return nullptr;
     }
-    
-    // 获取顶层所有者窗�?
+
+    // Get top-level owner window
     HWND rootWindow = GetAncestor(hwnd, GA_ROOTOWNER);
     if (!rootWindow) {
         rootWindow = hwnd;
     }
-    
+
     return rootWindow;
 }
 
@@ -895,10 +909,10 @@ std::wstring MouseTracker::GetApplicationName(HWND hwnd) {
     if (!hwnd || !IsWindow(hwnd)) {
         return L"Unknown";
     }
-    
+
     DWORD processId = 0;
     GetWindowThreadProcessId(hwnd, &processId);
-    
+
     if (processId == 0) {
         return L"Unknown";
     }
@@ -910,7 +924,7 @@ std::wstring MouseTracker::GetApplicationName(HWND hwnd) {
 
     wchar_t processName[MAX_PATH] = L"";
     DWORD size = MAX_PATH;
-    
+
     if (QueryFullProcessImageNameW(hProcess, 0, processName, &size)) {
         std::wstring fullPath(processName);
         size_t lastSlash = fullPath.find_last_of(L"\\/");
@@ -928,20 +942,20 @@ std::wstring MouseTracker::GetWindowTitle(HWND hwnd) {
     if (!hwnd || !IsWindow(hwnd)) {
         return L"";
     }
-    
+
     wchar_t title[512] = L"";
     int length = GetWindowTextW(hwnd, title, 512);
-    
+
     if (length > 0) {
         return std::wstring(title);
     }
-    
-    // 如果窗口标题为空，尝试获取类�?
+
+    // If window title is empty, try to get class name
     wchar_t className[256] = L"";
     if (GetClassNameW(hwnd, className, 256) > 0) {
         return std::wstring(L"[") + className + L"]";
     }
-    
+
     return L"";
 }
 
@@ -963,7 +977,7 @@ void MouseTracker::SaveToFile(const std::wstring& filename) {
     if (!file.is_open()) return;
 
     file << L"{\n  \"records\": [\n";
-    
+
     std::lock_guard<std::mutex> lock(m_recordsMutex);
     for (size_t i = 0; i < m_records.size(); ++i) {
         file << L"    " << m_records[i].toJson();
@@ -972,7 +986,7 @@ void MouseTracker::SaveToFile(const std::wstring& filename) {
         }
         file << L"\n";
     }
-    
+
     file << L"  ]\n}\n";
     file.close();
 }
@@ -980,74 +994,74 @@ void MouseTracker::SaveToFile(const std::wstring& filename) {
 std::wstring MouseTracker::GetAllRecordsAsJson() {
     std::wstringstream ss;
     ss << L"{\n  \"records\": [\n";
-    
+
     std::lock_guard<std::mutex> lock(m_recordsMutex);
-    
+
     if (m_records.empty()) {
         ss << L"  ]\n}";
         return ss.str();
     }
-    
-    // �?新逻辑：合并相邻的相同 applicationName 的记�?
+
+    // New logic: Merge adjacent records with same applicationName
     std::vector<std::pair<std::wstring, std::vector<MouseOperationRecord>>> groupedRecords;
-    
+
     std::wstring currentApp;
     std::vector<MouseOperationRecord> currentTracks;
-    
+
     for (const auto& record : m_records) {
         if (record.applicationName != currentApp) {
-            // 应用程序切换了，保存之前的组
+            // Application switched, save previous group
             if (!currentTracks.empty()) {
-                groupedRecords.push_back({currentApp, currentTracks});
+                groupedRecords.push_back({ currentApp, currentTracks });
             }
-            // 开始新�?
+            // Start new group
             currentApp = record.applicationName;
             currentTracks.clear();
         }
-        // 添加到当前组
+        // Add to current group
         currentTracks.push_back(record);
     }
-    
-    // 添加最后一�?
+
+    // Add last group
     if (!currentTracks.empty()) {
-        groupedRecords.push_back({currentApp, currentTracks});
+        groupedRecords.push_back({ currentApp, currentTracks });
     }
-    
-    // 生成 JSON
+
+    // Generate JSON
     for (size_t i = 0; i < groupedRecords.size(); ++i) {
         const auto& [appName, tracks] = groupedRecords[i];
-        
-        // JSON 转义函数
+
+        // JSON escape function
         auto escapeJson = [](const std::wstring& str) -> std::wstring {
             std::wstring escaped;
             for (wchar_t c : str) {
                 switch (c) {
-                    case L'\\': escaped += L"\\\\"; break;
-                    case L'\"': escaped += L"\\\""; break;
-                    case L'\n': escaped += L"\\n"; break;
-                    case L'\r': escaped += L"\\r"; break;
-                    case L'\t': escaped += L"\\t"; break;
-                    default: escaped += c; break;
+                case L'\\': escaped += L"\\\\"; break;
+                case L'\"': escaped += L"\\\""; break;
+                case L'\n': escaped += L"\\n"; break;
+                case L'\r': escaped += L"\\r"; break;
+                case L'\t': escaped += L"\\t"; break;
+                default: escaped += c; break;
                 }
             }
             return escaped;
-        };
-        
+            };
+
         ss << L"    {\n";
         ss << L"      \"applicationName\": \"" << escapeJson(appName) << L"\",\n";
         ss << L"      \"tracks\": [\n";
-        
-        // 输出该应用的所有记�?
+
+        // Output all records for this application
         for (size_t j = 0; j < tracks.size(); ++j) {
             const auto& record = tracks[j];
-            
-            // 转换时间�?
+
+            // Convert timestamp
             auto time_t_val = std::chrono::system_clock::to_time_t(record.timestamp);
             std::tm tm_val;
             localtime_s(&tm_val, &time_t_val);
             wchar_t timeStr[100];
             wcsftime(timeStr, 100, L"%Y-%m-%d %H:%M:%S", &tm_val);
-            
+
             ss << L"        {\n";
             ss << L"          \"timestamp\": \"" << timeStr << L"\",\n";
             ss << L"          \"eventType\": \"" << MouseEventTypeToString(record.eventType) << L"\",\n";
@@ -1056,73 +1070,73 @@ std::wstring MouseTracker::GetAllRecordsAsJson() {
             ss << L"          \"windowTitle\": \"" << escapeJson(record.windowTitle) << L"\",\n";
             ss << L"          \"elementType\": \"" << escapeJson(record.elementType) << L"\"\n";
             ss << L"        }";
-            
+
             if (j < tracks.size() - 1) {
                 ss << L",";
             }
             ss << L"\n";
         }
-        
+
         ss << L"      ]\n";
         ss << L"    }";
-        
+
         if (i < groupedRecords.size() - 1) {
             ss << L",";
         }
         ss << L"\n";
     }
-    
+
     ss << L"  ]\n}";
     return ss.str();
 }
 
 std::wstring MouseOperationRecord::toJson() const {
     std::wstringstream ss;
-    
-    // 转换时间戳为字符�?
+
+    // Convert timestamp to string
     auto time_t_val = std::chrono::system_clock::to_time_t(timestamp);
     std::tm tm_val;
     localtime_s(&tm_val, &time_t_val);
-    
+
     wchar_t timeStr[100];
     wcsftime(timeStr, 100, L"%Y-%m-%d %H:%M:%S", &tm_val);
 
-    // JSON 转义函数
+    // JSON escape function
     auto escapeJson = [](const std::wstring& str) -> std::wstring {
         std::wstring escaped;
         for (wchar_t c : str) {
             switch (c) {
-                case L'\\': escaped += L"\\\\"; break;
-                case L'\"': escaped += L"\\\""; break;
-                case L'\n': escaped += L"\\n"; break;
-                case L'\r': escaped += L"\\r"; break;
-                case L'\t': escaped += L"\\t"; break;
-                default: escaped += c; break;
+            case L'\\': escaped += L"\\\\"; break;
+            case L'\"': escaped += L"\\\""; break;
+            case L'\n': escaped += L"\\n"; break;
+            case L'\r': escaped += L"\\r"; break;
+            case L'\t': escaped += L"\\t"; break;
+            default: escaped += c; break;
             }
         }
         return escaped;
-    };
+        };
 
     ss << L"{\n"
-       << L"      \"timestamp\": \"" << timeStr << L"\",\n"
-       << L"      \"eventType\": \"" << MouseEventTypeToString(eventType) << L"\",\n"
-       << L"      \"position\": {\"x\": " << position.x << L", \"y\": " << position.y << L"},\n"
-       << L"      \"content\": \"" << escapeJson(content) << L"\",\n"
-       << L"      \"applicationName\": \"" << escapeJson(applicationName) << L"\",\n"
-       << L"      \"windowTitle\": \"" << escapeJson(windowTitle) << L"\",\n"
-       << L"      \"elementType\": \"" << escapeJson(elementType) << L"\"\n"
-       << L"    }";
+        << L"      \"timestamp\": \"" << timeStr << L"\",\n"
+        << L"      \"eventType\": \"" << MouseEventTypeToString(eventType) << L"\",\n"
+        << L"      \"position\": {\"x\": " << position.x << L", \"y\": " << position.y << L"},\n"
+        << L"      \"content\": \"" << escapeJson(content) << L"\",\n"
+        << L"      \"applicationName\": \"" << escapeJson(applicationName) << L"\",\n"
+        << L"      \"windowTitle\": \"" << escapeJson(windowTitle) << L"\",\n"
+        << L"      \"elementType\": \"" << escapeJson(elementType) << L"\"\n"
+        << L"    }";
 
     return ss.str();
 }
 
 std::wstring MouseEventTypeToString(MouseEventType type) {
     switch (type) {
-        case MouseEventType::LEFT_CLICK: return L"LeftClick";
-        case MouseEventType::LEFT_DOUBLE_CLICK: return L"DoubleClick";
-        case MouseEventType::RIGHT_CLICK: return L"RightClick";
-        case MouseEventType::TEXT_SELECTION: return L"TextSelection";
-        default: return L"Unknown";
+    case MouseEventType::LEFT_CLICK: return L"LeftClick";
+    case MouseEventType::LEFT_DOUBLE_CLICK: return L"DoubleClick";
+    case MouseEventType::RIGHT_CLICK: return L"RightClick";
+    case MouseEventType::TEXT_SELECTION: return L"TextSelection";
+    default: return L"Unknown";
     }
 }
 
@@ -1131,38 +1145,38 @@ std::string GetCurrentTimeString() {
     auto time_t_val = std::chrono::system_clock::to_time_t(now);
     std::tm tm_val;
     localtime_s(&tm_val, &time_t_val);
-    
+
     wchar_t buffer[100];
     wcsftime(buffer, 100, L"%Y-%m-%d %H:%M:%S", &tm_val);
     return WindowsAPIs::WideStringToUtf8(buffer);
 }
 
-// �?trimmed首尾空白字符（空格、制表符、换行符等）
+// Trim leading and trailing whitespace characters (spaces, tabs, newlines, etc.)
 std::wstring TrimWhitespace(const std::wstring& str) {
     if (str.empty()) return str;
-    
-    // 查找第一个非空白字符
+
+    // Find first non-whitespace character
     size_t start = 0;
     while (start < str.length() && ::iswspace(str[start])) {
         start++;
     }
-    
-    // 如果全是空白字符
+
+    // If all characters are whitespace
     if (start == str.length()) {
         return L"";
     }
-    
-    // 查找最后一个非空白字符
+
+    // Find last non-whitespace character
     size_t end = str.length() - 1;
     while (end > start && ::iswspace(str[end])) {
         end--;
     }
-    
-    // 返回修剪后的字符�?
+
+    // Return trimmed string
     return str.substr(start, end - start + 1);
 }
 
-// 新增：获取选中的文�?
+// New: Get selected text
 std::wstring MouseTracker::GetSelectedText(HWND targetWindow) {
     if (!m_pAutomation) return L"";
 
@@ -1175,18 +1189,18 @@ std::wstring MouseTracker::GetSelectedText(HWND targetWindow) {
         return L"";
     }
 
-    // 获取焦点元素（Focus Element�?
+    // Get focus element (Focus Element)
     IUIAutomationElement* focusElement = nullptr;
     HRESULT hr = m_pAutomation->GetFocusedElement(&focusElement);
 
     if (SUCCEEDED(hr) && focusElement) {
-        // 尝试使用 TextPattern 获取选中的文�?
+        // Try to use TextPattern to get selected text
         IUIAutomationTextPattern* textPattern = nullptr;
         hr = focusElement->GetCurrentPatternAs(UIA_TextPatternId,
             __uuidof(IUIAutomationTextPattern), (void**)&textPattern);
 
         if (SUCCEEDED(hr) && textPattern) {
-            // 获取选中的文本范�?
+            // Get selected text range
             IUIAutomationTextRangeArray* selectionArray = nullptr;
             hr = textPattern->GetSelection(&selectionArray);
 
@@ -1196,7 +1210,7 @@ std::wstring MouseTracker::GetSelectedText(HWND targetWindow) {
 
                 std::wstring selectedText;
 
-                // 遍历所有选中的范围（可能有多个）
+                // Traverse all selected ranges (there might be multiple)
                 for (int i = 0; i < length; i++) {
                     IUIAutomationTextRange* textRange = nullptr;
                     if (SUCCEEDED(selectionArray->GetElement(i, &textRange)) && textRange) {
@@ -1227,16 +1241,16 @@ std::wstring MouseTracker::GetSelectedText(HWND targetWindow) {
         focusElement->Release();
     }
 
-    // 后备方案：尝试从剪贴板获取（如果用户复制了选中的文本）
-    // 注意：这个方法并不完美，因为剪贴板可能包含之前的内容
-    // 但作为后备方案，总比没有�?
+    // Fallback solution: Try to get from clipboard (if user copied selected text)
+    // Note: This method is not perfect because clipboard may contain previous content
+    // But as a fallback solution, better than nothing
 
-    // 尝试从窗口的根元素查�?
+    // Try to search from window's root element
     IUIAutomationElement* rootElement = nullptr;
     hr = m_pAutomation->ElementFromHandle(hwnd, &rootElement);
 
     if (SUCCEEDED(hr) && rootElement) {
-        // 查找支持 TextPattern 的元�?
+        // Find elements that support TextPattern
         IUIAutomationTextPattern* textPattern = nullptr;
         hr = rootElement->GetCurrentPatternAs(UIA_TextPatternId,
             __uuidof(IUIAutomationTextPattern), (void**)&textPattern);

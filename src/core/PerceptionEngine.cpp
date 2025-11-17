@@ -9,7 +9,7 @@
 #include <atomic>
 #include "core/WindowsService.h"
 #include "communication/HttpServer.h"
-#include "context_refactored/ContextCollector.h"  // UPDATED: Use ContextCollector
+#include "context/ContextCollector.h"  // UPDATED: Use context folder
 #include "audio/AudioCaptureEngine.h"
 
 // #include "CameraVisionEngine.h"  // Removed - using Python client instead

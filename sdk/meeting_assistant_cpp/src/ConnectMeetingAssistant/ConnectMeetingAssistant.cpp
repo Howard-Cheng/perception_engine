@@ -1,4 +1,5 @@
 #include "ConnectMeetingAssistant.h"
+#include "Logger.h"
 #include <Windows.h>
 #include <iostream>
 #include <string>
@@ -14,12 +15,19 @@ static std::thread g_listenerThread;
 // DLL entry point - ensure cleanup on unload
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
     switch (fdwReason) {
+    case DLL_PROCESS_ATTACH:
+        // Initialize logger when DLL loads
+        Logger::GetInstance().Initialize("ConnectMeetingAssistant.log", LogLevel::DEBUG_L);
+        LOG_INFO("ConnectMeetingAssistant DLL loaded");
+        break;
+        
     case DLL_PROCESS_DETACH:
         // Force cleanup before DLL unloads to prevent std::thread destructor crash
         if (g_running || g_listenerThread.joinable()) {
-            std::cout << "[ConnectMA] DLL unloading - forcing cleanup\n";
+            LOG_INFO("DLL unloading - forcing cleanup");
             DisconnectMeetingAssistant();
         }
+        Logger::GetInstance().Shutdown();
         break;
     }
     return TRUE;
@@ -33,6 +41,8 @@ void PipeListenerThread() {
     char buffer[4096];
     DWORD bytesRead;
 
+    LOG_INFO("Pipe listener thread started");
+
     while (g_running) {
         BOOL success = ReadFile(
             g_hPipe,
@@ -44,7 +54,9 @@ void PipeListenerThread() {
 
         if (!success || bytesRead == 0) {
             if (GetLastError() == ERROR_BROKEN_PIPE) {
-                std::cout << "[ConnectMA] Server disconnected\n";
+                LOG_WARN("Server disconnected (broken pipe)");
+            } else {
+                LOG_ERROR_FMT("ReadFile failed with error: %lu", GetLastError());
             }
             break;
         }
@@ -52,7 +64,7 @@ void PipeListenerThread() {
         buffer[bytesRead] = '\0';
         std::string message(buffer);
         
-        std::cout << "[ConnectMA] Received message: " << message << "\n";
+        LOG_INFO_FMT("Received message: %s", message.c_str());
 
         // Parse message: "EVENT|appName|processId"
         // EVENT: 1=Started, 2=Ended
@@ -60,7 +72,7 @@ void PipeListenerThread() {
         size_t pos2 = message.find('|', pos1 + 1);
         
         if (pos1 == std::string::npos || pos2 == std::string::npos) {
-            std::cout << "[ConnectMA] Invalid message format\n";
+            LOG_WARN("Invalid message format");
             continue;
         }
 
@@ -71,34 +83,39 @@ void PipeListenerThread() {
         MeetingStatus status = (eventStr == "1") ? MEETING_STATUS_STARTED : MEETING_STATUS_ENDED;
         unsigned long processId = std::stoul(pidStr);
 
-        std::cout << "[ConnectMA] Event: " << (status == MEETING_STATUS_STARTED ? "STARTED" : "ENDED") 
-                  << ", App: " << appName << ", PID: " << processId << "\n";
+        LOG_INFO_FMT("Parsed event - Status: %s, App: %s, PID: %lu",
+                     (status == MEETING_STATUS_STARTED ? "STARTED" : "ENDED"),
+                     appName.c_str(), processId);
 
         // Call user callback
         UserDecision decision = USER_DECISION_DECLINE;
         if (g_callback != nullptr) {
             decision = g_callback(status, appName.c_str(), processId);
-            std::cout << "[ConnectMA] User decision: " << (decision == USER_DECISION_ACCEPT ? "ACCEPT" : "DECLINE") << "\n";
+            LOG_INFO_FMT("User callback returned decision: %s",
+                        (decision == USER_DECISION_ACCEPT ? "ACCEPT" : "DECLINE"));
+        } else {
+            LOG_WARN("No callback registered");
         }
     }
 
     g_running = false;
+    LOG_INFO("Pipe listener thread exiting");
 }
 
 CONNECT_API int ConnectMeetingAssistant(OnMeetingStatusChangedCallback callback) {
     if (g_hPipe != INVALID_HANDLE_VALUE) {
-        std::cout << "[ConnectMA] Already connected\n";
+        LOG_WARN("Already connected to MeetingAssistant");
         return 0; // Already connected
     }
 
     if (callback == nullptr) {
-        std::cout << "[ConnectMA] Callback is NULL\n";
+        LOG_ERROR("Callback is NULL");
         return -1; // Invalid callback
     }
 
     g_callback = callback;
 
-    std::cout << "[ConnectMA] Connecting to pipe: " << PIPE_NAME << "\n";
+    LOG_INFO("Connecting to named pipe...");
 
     // Try to connect to the pipe
     while (true) {
@@ -118,25 +135,26 @@ CONNECT_API int ConnectMeetingAssistant(OnMeetingStatusChangedCallback callback)
 
         DWORD error = GetLastError();
         if (error != ERROR_PIPE_BUSY) {
-            std::cout << "[ConnectMA] Failed to connect. Error: " << error << "\n";
+            LOG_ERROR_FMT("Failed to connect to pipe. Error: %lu", error);
             return -2; // Connection failed
         }
 
         // Pipe is busy, wait and retry
-        std::cout << "[ConnectMA] Pipe is busy, waiting...\n";
+        LOG_DEBUG("Pipe is busy, waiting...");
         if (!WaitNamedPipeW(PIPE_NAME, 5000)) {
-            std::cout << "[ConnectMA] Timeout waiting for pipe\n";
+            LOG_ERROR("Timeout waiting for pipe");
             return -3; // Timeout
         }
     }
 
-    std::cout << "[ConnectMA] Connected to MeetingAssistant!\n";
+    LOG_INFO("Successfully connected to MeetingAssistant pipe");
 
     // Set pipe to message mode
     DWORD mode = PIPE_READMODE_MESSAGE;
     BOOL success = SetNamedPipeHandleState(g_hPipe, &mode, NULL, NULL);
     if (!success) {
-        std::cout << "[ConnectMA] Failed to set pipe mode. Error: " << GetLastError() << "\n";
+        DWORD error = GetLastError();
+        LOG_ERROR_FMT("Failed to set pipe mode. Error: %lu", error);
         CloseHandle(g_hPipe);
         g_hPipe = INVALID_HANDLE_VALUE;
         return -4;
@@ -145,16 +163,18 @@ CONNECT_API int ConnectMeetingAssistant(OnMeetingStatusChangedCallback callback)
     // Start listener thread
     g_running = true;
     g_listenerThread = std::thread(PipeListenerThread);
+    LOG_INFO("Listener thread started");
 
     return 0; // Success
 }
 
 CONNECT_API int DisconnectMeetingAssistant() {
     if (g_hPipe == INVALID_HANDLE_VALUE && !g_listenerThread.joinable()) {
+        LOG_DEBUG("Not connected, nothing to disconnect");
         return 0; // Not connected
     }
 
-    std::cout << "[ConnectMA] Disconnecting...\n";
+    LOG_INFO("Disconnecting from MeetingAssistant...");
 
     // Signal thread to stop
     g_running = false;
@@ -163,16 +183,19 @@ CONNECT_API int DisconnectMeetingAssistant() {
     if (g_hPipe != INVALID_HANDLE_VALUE) {
         CloseHandle(g_hPipe);
         g_hPipe = INVALID_HANDLE_VALUE;
+        LOG_DEBUG("Pipe handle closed");
     }
 
     // Wait for thread to finish
     if (g_listenerThread.joinable()) {
+        LOG_DEBUG("Waiting for listener thread to join...");
         g_listenerThread.join();
+        LOG_DEBUG("Listener thread joined successfully");
     }
 
     g_callback = nullptr;
 
-    std::cout << "[ConnectMA] Disconnected\n";
+    LOG_INFO("Disconnected from MeetingAssistant");
     return 0;
 }
 

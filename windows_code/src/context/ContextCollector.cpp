@@ -1,4 +1,4 @@
-#include "context_refactored/ContextCollector.h"
+#include "context/ContextCollector.h"
 #include "DatabaseClientFactory.h"
 #include <random>
 #include <iostream>

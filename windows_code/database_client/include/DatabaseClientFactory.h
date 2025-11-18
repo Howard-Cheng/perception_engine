@@ -2,6 +2,7 @@
 #pragma once
 
 #include "IDatabaseClient.h"
+#include "DatabaseTypes.h"
 #include <memory>
 #include <string>
 
@@ -45,6 +46,16 @@ public:
      * @return Unique pointer to IDatabaseClient
      */
     static std::unique_ptr<IDatabaseClient> createSQLite(const std::string& dbPath);
+    
+    /**
+     * @brief Create a MeiliSearch client
+     * 
+     * @param meiliUrl MeiliSearch URL (e.g., "http://localhost:7700")
+     * @param apiKey API key for authentication (optional, default: "")
+     * @return Unique pointer to IDatabaseClient
+     */
+    static std::unique_ptr<IDatabaseClient> createMeiliSearch(const std::string& meiliUrl, 
+                                                              const std::string& apiKey = "");
     
     /**
      * @brief Create a database client from type and connection string

@@ -152,6 +152,7 @@ enum class DatabaseType {
     MONGODB,
     POSTGRESQL,
     SQLITE,
+    MEILISEARCH,
     UNKNOWN
 };
 

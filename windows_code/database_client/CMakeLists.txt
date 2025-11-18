@@ -13,6 +13,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 # Library sources
 set(LIB_SOURCES
     src/ElasticsearchClient.cpp
+    src/MeiliSearchClient.cpp
     src/DatabaseClientFactory.cpp
     src/ElasticsearchClientAPI.cpp
 )
@@ -21,6 +22,7 @@ set(LIB_HEADERS
     include/DatabaseTypes.h
     include/IDatabaseClient.h
     include/ElasticsearchClient.h
+    include/MeiliSearchClient.h
     include/DatabaseClientFactory.h
     include/ElasticsearchClientAPI.h
 )
@@ -123,4 +125,56 @@ endif()
 
 message(STATUS "Database Client DLL configured")
 message(STATUS "  Output: ${CMAKE_BINARY_DIR}/bin/database_client.dll")
-message(STATUS "  Supported databases: Elasticsearch (MongoDB, PostgreSQL - planned)")
+message(STATUS "  Supported databases: Elasticsearch, MeiliSearch (MongoDB, PostgreSQL - planned)")
+
+# Optional: Build tests
+option(BUILD_TESTS "Build test programs" ON)
+
+if(BUILD_TESTS)
+    # MeiliSearch client test
+    add_executable(meilisearch_client_test
+        tests/meilisearch_client_test.cpp
+    )
+    
+    target_link_libraries(meilisearch_client_test
+        PRIVATE
+            database_client
+    )
+    
+    target_include_directories(meilisearch_client_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    
+    set_target_properties(meilisearch_client_test PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    )
+    
+    message(STATUS "Building MeiliSearch client test")
+endif()
+
+# Optional: Build examples
+option(BUILD_EXAMPLES "Build example programs" ON)
+
+if(BUILD_EXAMPLES)
+    # MeiliSearch example
+    add_executable(meilisearch_example
+        examples/meilisearch_example.cpp
+    )
+    
+    target_link_libraries(meilisearch_example
+        PRIVATE
+            database_client
+    )
+    
+    target_include_directories(meilisearch_example
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    
+    set_target_properties(meilisearch_example PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    )
+    
+    message(STATUS "Building MeiliSearch example")
+endif()

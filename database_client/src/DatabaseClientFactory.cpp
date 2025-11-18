@@ -1,6 +1,8 @@
 // src/DatabaseClientFactory.cpp
 #include "DatabaseClientFactory.h"
 #include "ElasticsearchClient.h"
+//#include "SQLiteClient.h"
+#include "MeiliSearchClient.h"
 #include <stdexcept>
 
 namespace database {
@@ -24,8 +26,13 @@ DatabaseClientFactory::createPostgreSQL(const std::string& connectionString) {
 
 std::unique_ptr<IDatabaseClient> 
 DatabaseClientFactory::createSQLite(const std::string& dbPath) {
-    // TODO: Implement SQLite client
-    throw std::runtime_error("SQLite client not yet implemented");
+    //return std::make_unique<SQLiteClient>(dbPath);
+    return nullptr;
+}
+
+std::unique_ptr<IDatabaseClient> 
+DatabaseClientFactory::createMeiliSearch(const std::string& meiliUrl, const std::string& apiKey) {
+    return std::make_unique<MeiliSearchClient>(meiliUrl, apiKey);
 }
 
 std::unique_ptr<IDatabaseClient> 
@@ -39,8 +46,10 @@ DatabaseClientFactory::create(DatabaseType type, const std::string& connectionSt
             return createPostgreSQL(connectionString);
         case DatabaseType::SQLITE:
             return createSQLite(connectionString);
+        case DatabaseType::MEILISEARCH:
+            return createMeiliSearch(connectionString, "");
         default:
-            throw std::runtime_error("Unknown database type");
+            throw std::runtime_error("Unsupported database type");
     }
 }
 

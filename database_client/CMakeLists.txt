@@ -131,6 +131,25 @@ message(STATUS "  Supported databases: Elasticsearch, MeiliSearch (MongoDB, Post
 option(BUILD_TESTS "Build test programs" ON)
 
 if(BUILD_TESTS)
+    # Elasticsearch client test
+    add_executable(elasticsearch_client_test
+        tests/elasticsearch_client_test.cpp
+    )
+    
+    target_link_libraries(elasticsearch_client_test
+        PRIVATE
+            database_client
+    )
+    
+    target_include_directories(elasticsearch_client_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    
+    set_target_properties(elasticsearch_client_test PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    )
+    
     # MeiliSearch client test
     add_executable(meilisearch_client_test
         tests/meilisearch_client_test.cpp
@@ -150,13 +169,34 @@ if(BUILD_TESTS)
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     )
     
-    message(STATUS "Building MeiliSearch client test")
+    message(STATUS "Building database client tests:")
+    message(STATUS "  - Elasticsearch client test")
+    message(STATUS "  - MeiliSearch client test")
 endif()
 
 # Optional: Build examples
 option(BUILD_EXAMPLES "Build example programs" ON)
 
 if(BUILD_EXAMPLES)
+    # Elasticsearch example
+    add_executable(elasticsearch_example
+        examples/elasticsearch_example.cpp
+    )
+    
+    target_link_libraries(elasticsearch_example
+        PRIVATE
+            database_client
+    )
+    
+    target_include_directories(elasticsearch_example
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    
+    set_target_properties(elasticsearch_example PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    )
+    
     # MeiliSearch example
     add_executable(meilisearch_example
         examples/meilisearch_example.cpp
@@ -176,5 +216,7 @@ if(BUILD_EXAMPLES)
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     )
     
-    message(STATUS "Building MeiliSearch example")
+    message(STATUS "Building database client examples:")
+    message(STATUS "  - Elasticsearch example")
+    message(STATUS "  - MeiliSearch example")
 endif()

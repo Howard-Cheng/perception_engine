@@ -58,6 +58,7 @@ enum class ContentType {
     AUDIO,
     CODE,
     DOCUMENT,
+    MEETING,
     UNKNOWN
 };
 

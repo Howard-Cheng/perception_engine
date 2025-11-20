@@ -62,7 +62,7 @@ int main() {
             event.interactionCount = 8;
             event.dwellTimeSeconds = 180;
             event.compressed = false;
-            event.contentType = ContentType::WEB_PAGE;
+            event.contentType = ContentType::TEXT;  // Changed from WEB_PAGE
             event.domain = Domain::WORK;
             sampleEvents.push_back(event);
         }
@@ -104,7 +104,7 @@ int main() {
             event.interactionCount = 5;
             event.dwellTimeSeconds = 2400;
             event.compressed = false;
-            event.contentType = ContentType::MEETING;
+            event.contentType = ContentType::AUDIO;  // Changed from MEETING
             event.domain = Domain::WORK;
             sampleEvents.push_back(event);
         }

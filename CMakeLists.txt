@@ -88,6 +88,7 @@ set(PERCEPTION_ENGINE_SOURCES
     src/providers/AppActivityContextProvider.cpp
     src/providers/CompositeContextManager.cpp
     src/dataprocess/DataProcessClient.cpp
+    src/sessionmanager/SessionManager.cpp
 )
 
 set(PERCEPTION_ENGINE_HEADERS
@@ -111,6 +112,7 @@ set(PERCEPTION_ENGINE_HEADERS
     include/dataprocess/DataProcessProtocol.h
     include/dataprocess/DataProcessClient.h
     include/dataprocess/TaskQueue.h
+    include/sessionmanager/SessionManager.h
 )
 
 # DataProcessServer source files
@@ -174,8 +176,8 @@ source_group("Source Files\\audio" FILES
 
 source_group("Source Files\\providers" FILES
     src/providers/SystemContextProvider.cpp
-    src.providers/VoiceContextProvider.cpp
-    src/providers/CameraContextProvider.cpp
+    src/providers/VoiceContextProvider.cpp
+    src.providers/CameraContextProvider.cpp
     src.providers/AppActivityContextProvider.cpp
     src.providers/CompositeContextManager.cpp
 )
@@ -184,6 +186,9 @@ source_group("Source Files\\dataprocess" FILES
     src/dataprocess/DataProcessClient.cpp
 )
 
+source_group("Source Files\\sessionmanager" FILES
+    src/sessionmanager/SessionManager.cpp
+)
 # Group header files by directory structure
 source_group("Header Files\\core" FILES
     include/core/WindowsService.h
@@ -227,6 +232,10 @@ source_group("Header Files\\dataprocess" FILES
     include/dataprocess/DataProcessProtocol.h
     include/dataprocess/DataProcessClient.h
     include/dataprocess/TaskQueue.h
+)
+
+source_group("Header Files\\sessionmanager" FILES
+    include/sessionmanager/SessionManager.h
 )
 
 # DataProcessServer source groups

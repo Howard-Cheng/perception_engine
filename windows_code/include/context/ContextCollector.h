@@ -5,6 +5,7 @@
 #include "providers/CompositeContextManager.h"
 #include "IDatabaseClient.h"
 #include "DatabaseTypes.h"
+#include "sessionmanager/SessionManager.h"  // ?? Add SessionManager
 #include <chrono>
 #include <mutex>
 #include <string>
@@ -138,8 +139,14 @@ private:
     // Elasticsearch Storage
     // ========================================
     
-    std::unique_ptr<database::IDatabaseClient> esClient_;
+    std::shared_ptr<database::IDatabaseClient> esClient_;
     std::string esIndexName_;
     std::atomic<bool> esStorageRunning_{false};
     mutable std::mutex esClientMutex_;
+    
+    // ========================================
+    // ?? Session Management (Replaces old compression code)
+    // ========================================
+    
+    std::unique_ptr<sessionmanager::SessionManager> sessionManager_;
 };

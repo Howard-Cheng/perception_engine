@@ -87,6 +87,7 @@ set(PERCEPTION_ENGINE_SOURCES
     src/providers/CameraContextProvider.cpp
     src/providers/AppActivityContextProvider.cpp
     src/providers/CompositeContextManager.cpp
+    src/dataprocess/DataProcessClient.cpp
 )
 
 set(PERCEPTION_ENGINE_HEADERS
@@ -107,6 +108,22 @@ set(PERCEPTION_ENGINE_HEADERS
     include/providers/AppActivityContextProvider.h
     include/providers/VoiceContextProvider.h
     include/providers/CameraContextProvider.h
+    include/dataprocess/DataProcessProtocol.h
+    include/dataprocess/DataProcessClient.h
+    include/dataprocess/TaskQueue.h
+)
+
+# DataProcessServer source files
+set(DATAPROCESS_SERVER_SOURCES
+    src/dataprocess/DataProcessServerMain.cpp
+    src/dataprocess/TaskQueue.cpp
+    src/utils/Logger.cpp
+)
+
+set(DATAPROCESS_SERVER_HEADERS
+    include/dataprocess/DataProcessProtocol.h
+    include/dataprocess/TaskQueue.h
+    include/utils/Logger.h
 )
 
 # ============================================================================
@@ -116,6 +133,9 @@ set(PERCEPTION_ENGINE_HEADERS
 
 # Main PerceptionEngine service
 add_executable(PerceptionEngine ${PERCEPTION_ENGINE_SOURCES} ${PERCEPTION_ENGINE_HEADERS})
+
+# DataProcessServer executable
+add_executable(DataProcessServer ${DATAPROCESS_SERVER_SOURCES} ${DATAPROCESS_SERVER_HEADERS})
 
 # ============================================================================
 # Visual Studio Source Groups (organize files in Solution Explorer)
@@ -154,10 +174,14 @@ source_group("Source Files\\audio" FILES
 
 source_group("Source Files\\providers" FILES
     src/providers/SystemContextProvider.cpp
-    src/providers/VoiceContextProvider.cpp
+    src.providers/VoiceContextProvider.cpp
     src/providers/CameraContextProvider.cpp
-    src/providers/AppActivityContextProvider.cpp
-    src/providers/CompositeContextManager.cpp
+    src.providers/AppActivityContextProvider.cpp
+    src.providers/CompositeContextManager.cpp
+)
+
+source_group("Source Files\\dataprocess" FILES
+    src/dataprocess/DataProcessClient.cpp
 )
 
 # Group header files by directory structure
@@ -199,6 +223,25 @@ source_group("Header Files\\providers" FILES
     include/providers/CameraContextProvider.h
 )
 
+source_group("Header Files\\dataprocess" FILES
+    include/dataprocess/DataProcessProtocol.h
+    include/dataprocess/DataProcessClient.h
+    include/dataprocess/TaskQueue.h
+)
+
+# DataProcessServer source groups
+source_group("Source Files" FILES
+    src/dataprocess/DataProcessServerMain.cpp
+    src/dataprocess/TaskQueue.cpp
+    src/utils/Logger.cpp
+)
+
+source_group("Header Files" FILES
+    include/dataprocess/DataProcessProtocol.h
+    include/dataprocess/TaskQueue.h
+    include/utils/Logger.h
+)
+
 # ============================================================================
 
 # Include Directories
@@ -212,6 +255,11 @@ target_include_directories(PerceptionEngine PRIVATE
     ${JSON_INCLUDE_DIR}
     ${ONNXRUNTIME_INCLUDE_DIR}
     ${OpenCV_INCLUDE_DIRS}
+)
+
+target_include_directories(DataProcessServer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 # Add Elasticsearch include directory (from subdirectory target)
@@ -251,6 +299,11 @@ target_link_libraries(PerceptionEngine PRIVATE
 
     # WinRT (for location services)
     WindowsApp  # WinRT APIs
+)
+
+# DataProcessServer only needs basic Windows APIs
+target_link_libraries(DataProcessServer PRIVATE
+    # No external dependencies needed
 )
 
 # Link Elasticsearch client library (from subdirectory target)
@@ -349,6 +402,12 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
         ${CMAKE_CURRENT_SOURCE_DIR}/dashboard.html
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/dashboard.html
 
+    # Copy DataProcessServer.exe to bin/ (same directory as PerceptionEngine.exe)
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying DataProcessServer.exe to output directory..."
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:DataProcessServer>
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/DataProcessServer.exe
+
     # For MSVC multi-config: also copy to bin/Release/
     COMMAND ${CMAKE_COMMAND} -E make_directory
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/whisper
@@ -398,6 +457,11 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/dashboard.html
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/dashboard.html
+
+    # Copy DataProcessServer.exe to bin/Release/
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:DataProcessServer>
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/DataProcessServer.exe
 
     COMMENT "Copying models and DLLs to output directory"
 )

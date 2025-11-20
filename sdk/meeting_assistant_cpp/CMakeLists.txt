@@ -123,15 +123,19 @@ endif()
 add_library(ConnectMeetingAssistant SHARED
     # Headers
     include/ConnectMeetingAssistant/ConnectMeetingAssistant.h
+    include/MicrophoneMonitor/Logger.h
     
     # Sources
     src/ConnectMeetingAssistant/ConnectMeetingAssistant.cpp
+    src/MicrophoneMonitor/Logger.cpp
 )
 
 target_include_directories(ConnectMeetingAssistant
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/ConnectMeetingAssistant>
         $<INSTALL_INTERFACE:include/ConnectMeetingAssistant>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/MicrophoneMonitor
 )
 
 target_compile_definitions(ConnectMeetingAssistant PRIVATE

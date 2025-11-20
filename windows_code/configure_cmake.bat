@@ -187,7 +187,28 @@ cmake -B "%BUILD_DIR%" -S . ^
       -A x64 ^
       -DCMAKE_TOOLCHAIN_FILE="%VCPKG_TOOLCHAIN%"
 
-if %errorlevel% neq 0 (
+set CMAKE_EXIT_CODE=!errorlevel!
+
+if "!CMAKE_EXIT_CODE!"=="0" (
+    echo.
+    echo ============================================
+    echo CMake Configuration Successful!
+    echo ============================================
+    echo.
+    echo Build files generated in: %BUILD_DIR%
+    echo.
+    echo Solution file: %BUILD_DIR%\PerceptionEngine.sln
+    echo.
+    echo Next steps:
+    echo   1. Open the solution in Visual Studio:
+    echo      start %BUILD_DIR%\PerceptionEngine.sln
+    echo.
+    echo   2. Or build from command line:
+    echo      cmake --build %BUILD_DIR% --config Release
+    echo.
+    pause
+    exit /b 0
+) else (
     echo.
     echo [ERROR] CMake configuration failed!
     echo.
@@ -199,21 +220,3 @@ if %errorlevel% neq 0 (
     pause
     exit /b 1
 )
-
-echo.
-echo ============================================
-echo CMake Configuration Successful!
-echo ============================================
-echo.
-echo Build files generated in: %BUILD_DIR%
-echo.
-echo Solution file: %BUILD_DIR%\PerceptionEngine.sln
-echo.
-echo Next steps:
-echo   1. Open the solution in Visual Studio:
-echo      start %BUILD_DIR%\PerceptionEngine.sln
-echo.
-echo   2. Or build from command line:
-echo      cmake --build %BUILD_DIR% --config Release
-echo.
-pause

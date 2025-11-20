@@ -1,0 +1,222 @@
+# Database Client Library (for PerceptionEngine)
+
+cmake_minimum_required(VERSION 3.15)
+project(database_client VERSION 2.0.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Find dependencies (vcpkg manifest mode)
+find_package(CURL REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
+
+# Library sources
+set(LIB_SOURCES
+    src/ElasticsearchClient.cpp
+    src/MeiliSearchClient.cpp
+    src/DatabaseClientFactory.cpp
+    src/ElasticsearchClientAPI.cpp
+)
+
+set(LIB_HEADERS
+    include/DatabaseTypes.h
+    include/IDatabaseClient.h
+    include/ElasticsearchClient.h
+    include/MeiliSearchClient.h
+    include/DatabaseClientFactory.h
+    include/ElasticsearchClientAPI.h
+)
+
+# Create shared library (DLL)
+add_library(database_client SHARED
+    ${LIB_SOURCES}
+    ${LIB_HEADERS}
+)
+
+# Include directories
+target_include_directories(database_client
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+# Link dependencies
+target_link_libraries(database_client
+    PRIVATE
+        CURL::libcurl
+        nlohmann_json::nlohmann_json
+)
+
+# Compiler definitions for DLL export
+target_compile_definitions(database_client
+    PRIVATE
+        DB_CLIENT_EXPORTS
+)
+
+# Windows-specific settings
+if(WIN32)
+    target_compile_definitions(database_client PRIVATE 
+        _CRT_SECURE_NO_WARNINGS
+        CURL_STATICLIB
+    )
+endif()
+
+# Set output directory
+set_target_properties(database_client PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+)
+
+# Post-build: Copy CURL DLL to output directory
+if(WIN32)
+    set(VCPKG_INSTALLED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../vcpkg_installed/x64-windows")
+    
+    if(EXISTS "${VCPKG_INSTALLED_DIR}/bin/libcurl.dll")
+        add_custom_command(TARGET database_client POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VCPKG_INSTALLED_DIR}/bin/libcurl.dll"
+                ${CMAKE_BINARY_DIR}/bin/libcurl.dll
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VCPKG_INSTALLED_DIR}/bin/libcurl.dll"
+                ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/libcurl.dll
+            COMMENT "Copying libcurl.dll to output directory"
+        )
+    endif()
+    
+    if(EXISTS "${VCPKG_INSTALLED_DIR}/bin/zlib1.dll")
+        add_custom_command(TARGET database_client POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VCPKG_INSTALLED_DIR}/bin/zlib1.dll"
+                ${CMAKE_BINARY_DIR}/bin/zlib1.dll
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VCPKG_INSTALLED_DIR}/bin/zlib1.dll"
+                ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/zlib1.dll
+            COMMENT "Copying zlib1.dll to output directory"
+        )
+    endif()
+    
+    if(EXISTS "${VCPKG_INSTALLED_DIR}/bin/libcrypto-3-x64.dll")
+        add_custom_command(TARGET database_client POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VCPKG_INSTALLED_DIR}/bin/libcrypto-3-x64.dll"
+                ${CMAKE_BINARY_DIR}/bin/libcrypto-3-x64.dll
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VCPKG_INSTALLED_DIR}/bin/libcrypto-3-x64.dll"
+                ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/libcrypto-3-x64.dll
+            COMMENT "Copying libcrypto-3-x64.dll to output directory"
+        )
+    endif()
+    
+    if(EXISTS "${VCPKG_INSTALLED_DIR}/bin/libssl-3-x64.dll")
+        add_custom_command(TARGET database_client POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VCPKG_INSTALLED_DIR}/bin/libssl-3-x64.dll"
+                ${CMAKE_BINARY_DIR}/bin/libssl-3-x64.dll
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VCPKG_INSTALLED_DIR}/bin/libssl-3-x64.dll"
+                ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/libssl-3-x64.dll
+            COMMENT "Copying libssl-3-x64.dll to output directory"
+        )
+    endif()
+endif()
+
+message(STATUS "Database Client DLL configured")
+message(STATUS "  Output: ${CMAKE_BINARY_DIR}/bin/database_client.dll")
+message(STATUS "  Supported databases: Elasticsearch, MeiliSearch (MongoDB, PostgreSQL - planned)")
+
+# Optional: Build tests
+option(BUILD_TESTS "Build test programs" ON)
+
+if(BUILD_TESTS)
+    # Elasticsearch client test
+    add_executable(elasticsearch_client_test
+        tests/elasticsearch_client_test.cpp
+    )
+    
+    target_link_libraries(elasticsearch_client_test
+        PRIVATE
+            database_client
+    )
+    
+    target_include_directories(elasticsearch_client_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    
+    set_target_properties(elasticsearch_client_test PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    )
+    
+    # MeiliSearch client test
+    add_executable(meilisearch_client_test
+        tests/meilisearch_client_test.cpp
+    )
+    
+    target_link_libraries(meilisearch_client_test
+        PRIVATE
+            database_client
+    )
+    
+    target_include_directories(meilisearch_client_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    
+    set_target_properties(meilisearch_client_test PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    )
+    
+    message(STATUS "Building database client tests:")
+    message(STATUS "  - Elasticsearch client test")
+    message(STATUS "  - MeiliSearch client test")
+endif()
+
+# Optional: Build examples
+option(BUILD_EXAMPLES "Build example programs" ON)
+
+if(BUILD_EXAMPLES)
+    # Elasticsearch example
+    add_executable(elasticsearch_example
+        examples/elasticsearch_example.cpp
+    )
+    
+    target_link_libraries(elasticsearch_example
+        PRIVATE
+            database_client
+    )
+    
+    target_include_directories(elasticsearch_example
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    
+    set_target_properties(elasticsearch_example PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    )
+    
+    # MeiliSearch example
+    add_executable(meilisearch_example
+        examples/meilisearch_example.cpp
+    )
+    
+    target_link_libraries(meilisearch_example
+        PRIVATE
+            database_client
+    )
+    
+    target_include_directories(meilisearch_example
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    
+    set_target_properties(meilisearch_example PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    )
+    
+    message(STATUS "Building database client examples:")
+    message(STATUS "  - Elasticsearch example")
+    message(STATUS "  - MeiliSearch example")
+endif()

@@ -1,4 +1,4 @@
-#include "NamedPipeServer.h"
+﻿#include "NamedPipeServer.h"
 #include <iostream>
 #include <sstream>
 
@@ -19,6 +19,23 @@ bool NamedPipeServer::Start() {
     if (running_) {
         std::cout << "[PipeServer] Already running\n";
         return true;
+    }
+
+    // Check for existing pipe instance
+    HANDLE hTest = CreateFileW(
+        PIPE_NAME,
+        GENERIC_READ | GENERIC_WRITE,
+        0,
+        NULL,
+        OPEN_EXISTING,
+        0,
+        NULL
+    );
+    
+    if (hTest != INVALID_HANDLE_VALUE) {
+        std::cout << "[PipeServer] WARNING: Found existing pipe instance. Cleaning up...\n";
+        CloseHandle(hTest);
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 
     running_ = true;
@@ -59,13 +76,16 @@ void NamedPipeServer::Stop() {
 }
 
 void NamedPipeServer::ServerThread() {
+    const int MAX_RETRY = 3;
+    int retryCount = 0;
+    
     while (running_) {
-        // Create named pipe
+        // Create named pipe with unlimited instances to avoid ERROR_PIPE_BUSY
         hPipe_ = CreateNamedPipeW(
             PIPE_NAME,
             PIPE_ACCESS_DUPLEX,
             PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
-            1, // Max instances
+            PIPE_UNLIMITED_INSTANCES, // ✅ Changed from 1 to PIPE_UNLIMITED_INSTANCES
             4096, // Output buffer size
             4096, // Input buffer size
             0, // Default timeout
@@ -73,10 +93,31 @@ void NamedPipeServer::ServerThread() {
         );
 
         if (hPipe_ == INVALID_HANDLE_VALUE) {
-            std::cout << "[PipeServer] Failed to create pipe. Error: " << GetLastError() << "\n";
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-            continue;
+            DWORD error = GetLastError();
+            std::cout << "[PipeServer] Failed to create pipe. Error: " << error;
+            
+            if (error == ERROR_PIPE_BUSY) {
+                std::cout << " (ERROR_PIPE_BUSY - Another instance may be running or cleanup pending)\n";
+                
+                if (retryCount < MAX_RETRY) {
+                    retryCount++;
+                    std::cout << "[PipeServer] Retry " << retryCount << "/" << MAX_RETRY << " after 2 seconds...\n";
+                    std::this_thread::sleep_for(std::chrono::seconds(2));
+                    continue;
+                } else {
+                    std::cout << "[PipeServer] Max retries reached. Exiting server thread.\n";
+                    running_ = false;
+                    return;
+                }
+            } else {
+                std::cout << "\n";
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                continue;
+            }
         }
+        
+        // Reset retry count on success
+        retryCount = 0;
 
         std::cout << "[PipeServer] Waiting for client connection...\n";
 
@@ -191,7 +232,8 @@ UserResponse NamedPipeServer::NotifyMeetingEvent(MeetingEvent event, const std::
     // Flush the pipe to ensure message is sent
     FlushFileBuffers(hClientPipe_);
     
-    std::cout << "[PipeServer] Message sent\n";
-    }
+    std::cout << "[PipeServer] Message sent successfully\n";
+    return UserResponse::NoResponse;
+}
 
 } // namespace MeetingAssistant

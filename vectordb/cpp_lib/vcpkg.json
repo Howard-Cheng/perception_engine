@@ -1,0 +1,10 @@
+{
+    "name": "vectordb-cpp",
+    "version": "1.0.0",
+    "description": "C++ vector database library using Qdrant and ONNX embedding models",
+    "dependencies": [
+        "nlohmann-json",
+        "curl"
+    ],
+    "overrides": []
+}

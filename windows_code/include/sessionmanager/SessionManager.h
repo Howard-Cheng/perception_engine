@@ -159,6 +159,11 @@ private:
      * @brief Simple similarity (app + window)
      */
     int CompareContentSimple(const Json& record1, const Json& record2);
+
+    /**
+     * @brief Content-based similarity (screen content)
+     */
+    int CompareContentMLBased(const Json& record1, const Json& record2);
     
     /**
      * @brief Content-based similarity (includes screen content)
@@ -209,7 +214,7 @@ private:
     Statistics stats_;
     
     // Similarity algorithm
-    SimilarityAlgorithm algorithm_ = SimilarityAlgorithm::SIMPLE;
+    SimilarityAlgorithm algorithm_ = SimilarityAlgorithm::ML_BASED;
 };
 
 } // namespace sessionmanager

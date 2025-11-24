@@ -1,4 +1,7 @@
-#include "sessionmanager/SessionManager.h"
+﻿#include "sessionmanager/SessionManager.h"
+#include "embeddingmodel/E5EmbeddingDLL.h"
+#include "utils/Logger.h"
+#include "config/ConfigManager.h"
 #include <iostream>
 #include <sstream>
 #include <iomanip>
@@ -20,6 +23,10 @@ SessionManager::SessionManager(
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> dis(100000, 999999);
     deviceId_ = "device_" + std::to_string(dis(gen));
+    int result = E5_Initialize(L"D:\\Hanson Programs\\test_embedding\\model_q4.onnx");
+    if (result != 0) {
+        std::cerr << "Initialization failed: " << E5_GetLastError() << std::endl;
+    }
     
     std::cout << "[SessionManager] Created with device ID: " << deviceId_ << std::endl;
     std::cout << "[SessionManager] Config: threshold=" << config_.compressionThreshold
@@ -29,6 +36,7 @@ SessionManager::SessionManager(
 
 SessionManager::~SessionManager() {
     Stop();
+    E5_Cleanup();
 }
 
 void SessionManager::Start() {
@@ -313,16 +321,45 @@ int SessionManager::CompareContent(const Json& record1, const Json& record2) {
     switch (algorithm_) {
         case SimilarityAlgorithm::SIMPLE:
             return CompareContentSimple(record1, record2);
-        
         case SimilarityAlgorithm::CONTENT_BASED:
             return CompareContentWithText(record1, record2);
-        
         case SimilarityAlgorithm::TIME_AWARE:
             return CompareContentWithTime(record1, record2);
-        
+        case SimilarityAlgorithm::ML_BASED:
+            return CompareContentMLBased(record1, record2);
         default:
             return CompareContentSimple(record1, record2);
     }
+}
+
+int SessionManager::CompareContentMLBased(const Json& record1, const Json& record2) {
+
+    std::cout << "Model loaded successfully!\n" << std::endl;
+
+    // Test Case 1: Similar documents (sample text)
+    std::cout << "=== Test Case 1: Similar Documents ===" << std::endl;
+    std::string content1 = record1.getString("screen_content", "");
+    std::string content2 = record2.getString("screen_content", "");
+    LOG_INFO(std::string("content1:").append(content1));
+    LOG_INFO(std::string("content2:").append(content2));
+
+    float similarity1;
+    auto result = E5_CompareDocumentsSimple(content1.c_str(), content2.c_str(), &similarity1);
+
+    if (result != 0) {
+        std::cerr << "Comparison failed: " << E5_GetLastError() << std::endl;
+        LOG_INFO("Comparison failed:");
+    }
+    else {
+        LOG_INFO(std::string("Similarity: ").append(std::to_string(similarity1 / 100).c_str()));
+        if (similarity1 >= 70.0f) {
+            LOG_INFO("Result: SIMILAR documents ✓");
+        }
+        else {
+            LOG_INFO("RResult: NOT similar documents");
+        }
+    }
+
 }
 
 int SessionManager::CompareContentSimple(const Json& record1, const Json& record2) {

@@ -11,6 +11,7 @@
 #include "communication/HttpServer.h"
 #include "context/ContextCollector.h"  // UPDATED: Use context folder
 #include "audio/AudioCaptureEngine.h"
+#include "utils/Logger.h"  // NEW: Add Logger first
 
 // #include "CameraVisionEngine.h"  // Removed - using Python client instead
 

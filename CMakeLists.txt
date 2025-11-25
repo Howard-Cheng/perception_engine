@@ -448,6 +448,18 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
         ${CMAKE_CURRENT_SOURCE_DIR}/config.json
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/config.json
 
+    # Copy models folder from windows_code to bin/
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying models folder to output directory..."
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/models
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models
+
+    # Copy scripts folder from windows_code to bin/
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying scripts folder to output directory..."
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/scripts
+
     # Copy whisper model to bin/
     COMMAND ${CMAKE_COMMAND} -E make_directory
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/whisper
@@ -527,6 +539,19 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/config.json
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/config.json
+    
+    # Copy models folder to bin/$<CONFIG>/
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying models folder to $<CONFIG> directory..."
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/models
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models
+    
+    # Copy scripts folder to bin/$<CONFIG>/
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying scripts folder to $<CONFIG> directory..."
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/scripts
+    
     COMMAND ${CMAKE_COMMAND} -E make_directory
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/whisper
     COMMAND ${CMAKE_COMMAND} -E make_directory
@@ -546,7 +571,7 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
         ${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/onnxruntime.dll
 
-    COMMENT "Copying models and DLLs to output directory"
+    COMMENT "Copying models, scripts, and DLLs to output directory"
 )
 
 # ============================================================================

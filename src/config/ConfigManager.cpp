@@ -12,25 +12,25 @@ ConfigManager& ConfigManager::GetInstance() {
 }
 
 ConfigManager::ConfigManager() : loaded_(false) {
-    // Set default values
-    config_.set("embedding_model_path", "models/embedding/model_q4.onnx");
+    // Set default values - match config.ini key names exactly
+    config_.set("model_path", "models/embedding/model_q4.onnx");  
     config_.set("tokenizer_path", "models/embedding/tokenizer");
     config_.set("python_executable", "python");
     config_.set("chunk_document_script", "scripts/chunk_document.py");
-    
+
     config_.set("compression_threshold", 100);
     config_.set("similarity_threshold", 70.0f);
     config_.set("batch_size", 50);
     config_.set("session_manager_enabled", true);
-    
+
     config_.set("database_type", "elasticsearch");
     config_.set("database_host", "localhost");
     config_.set("database_port", 9200);
     config_.set("database_index", "perception_events");
-    
-    config_.set("whisper_model_path", "models/whisper/ggml-small.bin");
-    config_.set("vad_model_path", "models/vad/silero_vad.onnx");
-    
+
+    config_.set("whisper_path", "models/whisper/ggml-small.bin");  
+    config_.set("vad_path", "models/vad/silero_vad.onnx"); 
+
     config_.set("temp_directory", "temp");
     config_.set("log_directory", "logs");
 }
@@ -82,9 +82,6 @@ bool ConfigManager::LoadConfig(const std::string& configPath) {
                 
                 // Construct full key with section prefix
                 std::string fullKey = key;
-                if (!currentSection.empty()) {
-                    fullKey = currentSection + "_" + key;
-                }
                 
                 // Set value based on type
                 if (value == "true" || value == "TRUE") {
@@ -131,7 +128,7 @@ bool ConfigManager::SaveConfig(const std::string& configPath) {
         
         file << "# Perception Engine Configuration\n";
         file << "\n[embedding]\n";
-        file << "model_path=" << config_.getString("embedding_model_path", "") << "\n";
+        file << "model_path=" << config_.getString("model_path", "") << "\n";
         file << "tokenizer_path=" << config_.getString("tokenizer_path", "") << "\n";
         file << "python_executable=" << config_.getString("python_executable", "") << "\n";
         file << "chunk_document_script=" << config_.getString("chunk_document_script", "") << "\n";
@@ -149,8 +146,8 @@ bool ConfigManager::SaveConfig(const std::string& configPath) {
         file << "index=" << config_.getString("database_index", "") << "\n";
         
         file << "\n[models]\n";
-        file << "whisper_path=" << config_.getString("whisper_model_path", "") << "\n";
-        file << "vad_path=" << config_.getString("vad_model_path", "") << "\n";
+        file << "whisper_path=" << config_.getString("whisper_path", "") << "\n";
+        file << "vad_path=" << config_.getString("vad_path", "") << "\n";
         
         file << "\n[paths]\n";
         file << "temp_directory=" << config_.getString("temp_directory", "") << "\n";
@@ -170,19 +167,29 @@ bool ConfigManager::SaveConfig(const std::string& configPath) {
 
 std::wstring ConfigManager::GetEmbeddingModelPath() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string path = config_.getString("embedding_model_path", "models/embedding/model_q4.onnx");
+    std::string path = config_.getString("model_path", "models/embedding/model_q4.onnx");
     std::string resolved = ResolvePath(path);
     return ConvertToWideString(resolved);
 }
 
 std::string ConfigManager::GetEmbeddingModelPathUtf8() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string path = config_.getString("embedding_model_path", "models/embedding/model_q4.onnx");
+    return GetEmbeddingModelPathUtf8_Unlocked();
+}
+
+std::string ConfigManager::GetEmbeddingModelPathUtf8_Unlocked() const {
+    // Internal helper - assumes mutex is already locked
+    std::string path = config_.getString("model_path", "models/embedding/model_q4.onnx");
     return ResolvePath(path);
 }
 
 std::string ConfigManager::GetTokenizerPath() const {
     std::lock_guard<std::mutex> lock(mutex_);
+    return GetTokenizerPath_Unlocked();
+}
+
+std::string ConfigManager::GetTokenizerPath_Unlocked() const {
+    // Internal helper - assumes mutex is already locked
     std::string path = config_.getString("tokenizer_path", "models/embedding/tokenizer");
     return ResolvePath(path);
 }
@@ -200,11 +207,21 @@ std::string ConfigManager::GetChunkDocumentScript() const {
 
 int ConfigManager::GetCompressionThreshold() const {
     std::lock_guard<std::mutex> lock(mutex_);
+    return GetCompressionThreshold_Unlocked();
+}
+
+int ConfigManager::GetCompressionThreshold_Unlocked() const {
+    // Internal helper - assumes mutex is already locked
     return config_.getInt("compression_threshold", 100);
 }
 
 float ConfigManager::GetSimilarityThreshold() const {
     std::lock_guard<std::mutex> lock(mutex_);
+    return GetSimilarityThreshold_Unlocked();
+}
+
+float ConfigManager::GetSimilarityThreshold_Unlocked() const {
+    // Internal helper - assumes mutex is already locked
     return static_cast<float>(config_.getDouble("similarity_threshold", 70.0));
 }
 
@@ -240,13 +257,13 @@ std::string ConfigManager::GetDatabaseIndexName() const {
 
 std::string ConfigManager::GetWhisperModelPath() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string path = config_.getString("whisper_model_path", "models/whisper/ggml-small.bin");
+    std::string path = config_.getString("whisper_path", "models/whisper/ggml-small.bin");
     return ResolvePath(path);
 }
 
 std::string ConfigManager::GetVADModelPath() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string path = config_.getString("vad_model_path", "models/vad/silero_vad.onnx");
+    std::string path = config_.getString("vad_path", "models/vad/silero_vad.onnx");
     return ResolvePath(path);
 }
 
@@ -265,7 +282,7 @@ std::string ConfigManager::GetLogDirectory() const {
 void ConfigManager::SetEmbeddingModelPath(const std::wstring& path) {
     std::lock_guard<std::mutex> lock(mutex_);
     std::string utf8Path = ConvertToUtf8(path);
-    config_.set("embedding_model_path", utf8Path);
+    config_.set("model_path", utf8Path);
 }
 
 void ConfigManager::SetTokenizerPath(const std::string& path) {
@@ -283,32 +300,37 @@ void ConfigManager::SetSimilarityThreshold(float threshold) {
     config_.set("similarity_threshold", threshold);
 }
 
+void ConfigManager::SetPythonExecutable(const std::string& execute) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    config_.set("python_executable", execute);
+}
+
 bool ConfigManager::ValidateConfiguration() const {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    // Check critical paths exist
-    std::string modelPath = GetEmbeddingModelPathUtf8();
+    // Check critical paths exist - use unlocked internal methods
+    std::string modelPath = GetEmbeddingModelPathUtf8_Unlocked();
     if (!std::filesystem::exists(modelPath)) {
         lastError_ = "Embedding model not found: " + modelPath;
         LOG_ERROR(lastError_);
         return false;
     }
     
-    std::string tokenizerPath = GetTokenizerPath();
+    std::string tokenizerPath = GetTokenizerPath_Unlocked();
     if (!std::filesystem::exists(tokenizerPath)) {
         lastError_ = "Tokenizer not found: " + tokenizerPath;
         LOG_WARN(lastError_ + " (may be acceptable if not using document comparison)");
     }
     
-    // Check thresholds are reasonable
-    int compressionThreshold = GetCompressionThreshold();
+    // Check thresholds are reasonable - use unlocked internal methods
+    int compressionThreshold = GetCompressionThreshold_Unlocked();
     if (compressionThreshold < 1 || compressionThreshold > 10000) {
         lastError_ = "Invalid compression threshold: " + std::to_string(compressionThreshold);
         LOG_ERROR(lastError_);
         return false;
     }
     
-    float similarityThreshold = GetSimilarityThreshold();
+    float similarityThreshold = GetSimilarityThreshold_Unlocked();
     if (similarityThreshold < 0.0f || similarityThreshold > 100.0f) {
         lastError_ = "Invalid similarity threshold: " + std::to_string(similarityThreshold);
         LOG_ERROR(lastError_);

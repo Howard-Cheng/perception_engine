@@ -1,6 +1,7 @@
 #define E5EMBEDDING_EXPORTS
 #include "embeddingmodel/E5EmbeddingDLL.h"
 #include "config/ConfigManager.h"
+#include "utils/Logger.h"  // NEW: Add Logger
 
 #include <onnxruntime_cxx_api.h>
 #include <string>
@@ -85,10 +86,34 @@ float DotProduct(const float* a, const float* b) {
 
 E5_API int E5_Initialize(const wchar_t* model_path) {
     std::lock_guard<std::mutex> lock(g_mutex);
+    Logger::GetInstance().Initialize("Embedding.log", LogLevel::DEBUG_L);
 
     if (g_initialized) {
         SetError("Already initialized");
         return -1;
+    }
+
+
+    // =========================================
+    // Load Configuration
+    // =========================================
+    LOG_INFO("Loading configuration from config.ini...");
+    if (!ConfigManager::GetInstance().LoadConfig("config.ini")) {
+        LOG_WARN("Failed to load config.ini, using default values");
+        LOG_WARN(std::string("Error: ") + ConfigManager::GetInstance().GetLastError());
+    }
+    else {
+        LOG_INFO("Configuration loaded successfully");
+    }
+
+    // Validate configuration
+    if (!ConfigManager::GetInstance().ValidateConfiguration()) {
+        LOG_ERROR("Configuration validation failed:");
+        LOG_ERROR(ConfigManager::GetInstance().GetLastError());
+        LOG_WARN("Continuing with best-effort configuration...");
+    }
+    else {
+        LOG_INFO("Configuration validated successfully");
     }
 
     try {
@@ -452,48 +477,89 @@ E5_API int E5_CompareDocuments(
     }
 
     try {
-        // Create temp files for documents
-        std::string temp_doc_A = "temp_doc_A.txt";
-        std::string temp_doc_B = "temp_doc_B.txt";
-        std::string chunks_A_file = "temp_chunks_A.bin";
-        std::string chunks_B_file = "temp_chunks_B.bin";
+        // Get paths from ConfigManager
+        std::string python_executable = ConfigManager::GetInstance().GetPythonExecutable();
+        std::string chunk_script = ConfigManager::GetInstance().GetChunkDocumentScript();
+
+        // Normalize paths: replace forward slashes with backslashes for Windows
+        std::replace(chunk_script.begin(), chunk_script.end(), '/', '\\');
+
+        // Get executable directory (not current working directory!)
+        char exePath[MAX_PATH];
+        GetModuleFileNameA(NULL, exePath, MAX_PATH);
+        std::string exePathStr(exePath);
+        size_t lastSlash = exePathStr.find_last_of("\\/");
+        std::string exe_dir = exePathStr.substr(0, lastSlash);
+
+        // Create temp files in the same directory as executable
+        std::string temp_doc_A = exe_dir + "\\temp_doc_A.txt";
+        std::string temp_doc_B = exe_dir + "\\temp_doc_B.txt";
+        std::string chunks_A_file = exe_dir + "\\temp_chunks_A.bin";
+        std::string chunks_B_file = exe_dir + "\\temp_chunks_B.bin";
+
+        LOG_INFO("Executable directory: " + exe_dir);
+        LOG_INFO("Python executable: " + python_executable);
+        LOG_INFO("Chunk script: " + chunk_script);
 
         // Save documents to temp files
         if (!SaveTextToFile(temp_doc_A, doc_A_text)) {
-            SetError("Failed to save document A to temp file");
+            SetError("Failed to save document A to temp file: " + temp_doc_A);
+            LOG_ERROR(g_last_error);
             return -1;
         }
 
         if (!SaveTextToFile(temp_doc_B, doc_B_text)) {
-            SetError("Failed to save document B to temp file");
+            SetError("Failed to save document B to temp file: " + temp_doc_B);
+            LOG_ERROR(g_last_error);
             return -1;
         }
 
         // Call Python to chunk documents
-        // Convert tokenizer path to UTF-8
+        // Convert tokenizer path to UTF-8 and normalize
         std::wstring tokenizer_path_w = g_tokenizer_path;
         int size_needed = WideCharToMultiByte(CP_UTF8, 0, tokenizer_path_w.c_str(), (int)tokenizer_path_w.length(), NULL, 0, NULL, NULL);
         std::string tokenizer_path(size_needed, 0);
         WideCharToMultiByte(CP_UTF8, 0, tokenizer_path_w.c_str(), (int)tokenizer_path_w.length(), &tokenizer_path[0], size_needed, NULL, NULL);
 
-        char cmd_A[1024];
+        // Normalize tokenizer path too
+        std::replace(tokenizer_path.begin(), tokenizer_path.end(), '/', '\\');
+
+        // Build commands using absolute paths - no quotes around python_executable
+        char cmd_A[4096];
         sprintf_s(cmd_A, sizeof(cmd_A),
-                  "py chunk_document.py %s %s %d %d \"%s\"",
-                  temp_doc_A.c_str(), chunks_A_file.c_str(), chunk_size, overlap, tokenizer_path.c_str());
+            "%s \"%s\" \"%s\" \"%s\" %d %d \"%s\"",
+            python_executable.c_str(),
+            chunk_script.c_str(),
+            temp_doc_A.c_str(),
+            chunks_A_file.c_str(),
+            chunk_size,
+            overlap,
+            tokenizer_path.c_str());
 
-        char cmd_B[1024];
+        char cmd_B[4096];
         sprintf_s(cmd_B, sizeof(cmd_B),
-                  "py chunk_document.py %s %s %d %d \"%s\"",
-                  temp_doc_B.c_str(), chunks_B_file.c_str(), chunk_size, overlap, tokenizer_path.c_str());
+            "%s \"%s\" \"%s\" \"%s\" %d %d \"%s\"",
+            python_executable.c_str(),
+            chunk_script.c_str(),
+            temp_doc_B.c_str(),
+            chunks_B_file.c_str(),
+            chunk_size,
+            overlap,
+            tokenizer_path.c_str());
 
+        LOG_INFO("Executing command A: " + std::string(cmd_A));
 
         if (system(cmd_A) != 0) {
-            SetError("Failed to chunk document A (Python error)");
+            SetError("Failed to chunk document A (Python error). Command: " + std::string(cmd_A));
+            LOG_ERROR(g_last_error);
             return -1;
         }
 
+        LOG_INFO("Executing command B: " + std::string(cmd_B));
+
         if (system(cmd_B) != 0) {
-            SetError("Failed to chunk document B (Python error)");
+            SetError("Failed to chunk document B (Python error). Command: " + std::string(cmd_B));
+            LOG_ERROR(g_last_error);
             return -1;
         }
 

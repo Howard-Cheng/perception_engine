@@ -82,10 +82,14 @@ message(STATUS "Database client enabled (built from subdirectory)")
 # E5EmbeddingDLL source files
 set(E5_EMBEDDING_DLL_SOURCES
     src/embeddingmodel/E5EmbeddingDLL.cpp
+    src/config/ConfigManager.cpp        # NEW: Add ConfigManager
+    src/utils/Logger.cpp                # NEW: Add Logger (ConfigManager depends on it)
 )
 
 set(E5_EMBEDDING_DLL_HEADERS
     include/embeddingmodel/E5EmbeddingDLL.h
+    include/config/ConfigManager.h      # NEW: Add ConfigManager header
+    include/utils/Logger.h              # NEW: Add Logger header
 )
 
 set(PERCEPTION_ENGINE_SOURCES

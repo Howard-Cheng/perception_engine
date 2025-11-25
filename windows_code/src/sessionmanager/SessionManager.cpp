@@ -23,9 +23,16 @@ SessionManager::SessionManager(
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> dis(100000, 999999);
     deviceId_ = "device_" + std::to_string(dis(gen));
-    int result = E5_Initialize(L"D:\\Hanson Programs\\test_embedding\\model_q4.onnx");
+    // Initialize E5 Embedding using ConfigManager
+    std::wstring modelPath = ConfigManager::GetInstance().GetEmbeddingModelPath();
+    int result = E5_Initialize(modelPath.c_str());
     if (result != 0) {
-        std::cerr << "Initialization failed: " << E5_GetLastError() << std::endl;
+        std::cerr << "[SessionManager] E5 initialization failed: " << E5_GetLastError() << std::endl;
+        LOG_ERROR(std::string("E5 initialization failed: ") + E5_GetLastError());
+    }
+    else {
+        std::cout << "[SessionManager] E5 model loaded successfully" << std::endl;
+        LOG_INFO("E5 model loaded successfully");
     }
     
     std::cout << "[SessionManager] Created with device ID: " << deviceId_ << std::endl;
@@ -343,23 +350,17 @@ int SessionManager::CompareContentMLBased(const Json& record1, const Json& recor
     LOG_INFO(std::string("content1:").append(content1));
     LOG_INFO(std::string("content2:").append(content2));
 
-    float similarity1;
-    auto result = E5_CompareDocumentsSimple(content1.c_str(), content2.c_str(), &similarity1);
-
+    float similarity;
+    auto result = E5_CompareDocumentsSimple(content1.c_str(), content2.c_str(), &similarity);
     if (result != 0) {
         std::cerr << "Comparison failed: " << E5_GetLastError() << std::endl;
         LOG_INFO("Comparison failed:");
+        return 0;
     }
     else {
-        LOG_INFO(std::string("Similarity: ").append(std::to_string(similarity1 / 100).c_str()));
-        if (similarity1 >= 70.0f) {
-            LOG_INFO("Result: SIMILAR documents ✓");
-        }
-        else {
-            LOG_INFO("RResult: NOT similar documents");
-        }
+        LOG_INFO(std::string("Similarity: ").append(std::to_string(similarity).c_str()));
     }
-
+    return similarity;
 }
 
 int SessionManager::CompareContentSimple(const Json& record1, const Json& record2) {

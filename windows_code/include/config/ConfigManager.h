@@ -58,6 +58,7 @@ public:
     void SetTokenizerPath(const std::string& path);
     void SetCompressionThreshold(int threshold);
     void SetSimilarityThreshold(float threshold);
+    void SetPythonExecutable(const std::string& execute);
 
     // === Validation ===
     bool ValidateConfiguration() const;
@@ -76,6 +77,12 @@ private:
     std::string ResolvePath(const std::string& path) const;
     std::wstring ConvertToWideString(const std::string& str) const;
     std::string ConvertToUtf8(const std::wstring& wstr) const;
+    
+    // Internal helper methods (without locking) for use within locked sections
+    std::string GetEmbeddingModelPathUtf8_Unlocked() const;
+    std::string GetTokenizerPath_Unlocked() const;
+    int GetCompressionThreshold_Unlocked() const;
+    float GetSimilarityThreshold_Unlocked() const;
 
     mutable std::mutex mutex_;
     Json config_;

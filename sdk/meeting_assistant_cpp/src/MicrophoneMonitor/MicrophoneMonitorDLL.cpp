@@ -20,7 +20,7 @@ DLL_EXPORT MicrophoneMonitorHandle MicrophoneMonitor_Create() {
         // Initialize logger if not already initialized
         static bool loggerInitialized = false;
         if (!loggerInitialized) {
-            Logger::GetInstance().Initialize("MicrophoneMonitor.log", LogLevel::INFO_L);
+            Logger::GetInstance().Initialize("MicrophoneMonitor.log", LogLevel::ERROR_L);
             loggerInitialized = true;
         }
 

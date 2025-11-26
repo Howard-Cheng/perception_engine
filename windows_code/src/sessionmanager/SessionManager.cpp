@@ -403,22 +403,20 @@ int SessionManager::CompareContentMLBased(const Json& record1, const Json& recor
     if (E5_GetSimilarChunks(chunks, 5, &num_chunks) == 0 && num_chunks > 0) {
         // Build Content A summary
         std::ostringstream contentA;
-        contentA << "Similarity: " << similarity << "%\n";
-        contentA << "Top " << num_chunks << " matching sections (Previous Content):\n\n";
+        //contentA << "Similarity: " << similarity << "%\n";
+        //contentA << "Top " << num_chunks << " matching sections (Previous Content):\n\n";
         
         for (int i = 0; i < num_chunks && i < 3; i++) {
-            contentA << (i + 1) << ". Score: " << chunks[i].similarity_score << "\n";
-            contentA << "   Content: " << std::string(chunks[i].text_A) << "...\n\n";
+            contentA << (i + 1) << ":" << std::string(chunks[i].text_A) << ".\n\n";
         }
         
         // Build Content B summary
         std::ostringstream contentB;
-        contentB << "Similarity: " << similarity << "%\n";
-        contentB << "Top " << num_chunks << " matching sections (Current Content):\n\n";
+        //contentB << "Similarity: " << similarity << "%\n";
+        //contentB << "Top " << num_chunks << " matching sections (Current Content):\n\n";
         
         for (int i = 0; i < num_chunks && i < 3; i++) {
-            contentB << (i + 1) << ". Score: " << chunks[i].similarity_score << "\n";
-            contentB << "   Content: " << std::string(chunks[i].text_B) << "...\n\n";
+            contentB << (i + 1) << ":" << std::string(chunks[i].text_B) << ".\n\n";
         }
         
         // Store separated content

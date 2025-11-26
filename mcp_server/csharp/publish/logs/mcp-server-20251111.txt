@@ -1,0 +1,31 @@
+[2025-11-11 22:46:23.361] [INF] [] === MCP Server Starting ===
+[2025-11-11 22:46:23.414] [INF] [] Server Name: perception-engine-context
+[2025-11-11 22:46:23.416] [INF] [] Perception Engine URI: "http://localhost:8777/"
+[2025-11-11 22:46:23.416] [INF] [] Log Directory: C:\Users\hc001\Downloads\perception_engine\mcp_server\csharp\publish\logs
+[2025-11-11 22:46:24.443] [INF] [] Registering MCP Server with tools...
+[2025-11-11 22:46:24.444] [INF] [] MCP Server registration completed successfully
+[2025-11-11 22:46:24.444] [INF] [] Tools registered: get_perception_context, query_perception_history
+[2025-11-11 22:46:24.445] [INF] [] Transport: stdio (stdin/stdout)
+[2025-11-11 22:46:24.458] [INF] [] === MCP Server Started Successfully ===
+[2025-11-11 22:46:24.458] [INF] [] Waiting for MCP client connections via stdio...
+[2025-11-11 22:46:24.640] [INF] [] MCP Server configured: perception-engine-context v0.1.0
+[2025-11-11 22:48:14.107] [INF] [PerceptionMcpBridge.PerceptionTools] [github:24] Tool 'query_perception_history' called with keyword='{Keyword}', hours={Hours}, maxcount={MaxCount}
+[2025-11-11 22:48:17.064] [ERR] [PerceptionMcpBridge.PerceptionTools] [Program.cs:216] Perception Engine HTTP request failed. Is the service running?
+System.Net.Http.HttpRequestException: Response status code does not indicate success: 404 (Not Found).
+   at System.Net.Http.HttpResponseMessage.EnsureSuccessStatusCode()
+   at System.Net.Http.HttpClient.GetStringAsyncCore(HttpRequestMessage request, CancellationToken cancellationToken)
+   at PerceptionMcpBridge.PerceptionContextClient.QueryPerceptionHistoryAsync(String keyword, Int32 hours, Int32 maxcount, CancellationToken cancellationToken) in C:\Users\hc001\Downloads\perception_engine\mcp_server\csharp\Program.cs:line 278
+   at PerceptionMcpBridge.PerceptionTools.QueryPerceptionHistoryAsync(String keyword, Int32 hours, Int32 maxcount, CancellationToken cancellationToken) in C:\Users\hc001\Downloads\perception_engine\mcp_server\csharp\Program.cs:line 201
+[2025-11-11 23:21:05.409] [INF] [] === MCP Server Starting ===
+[2025-11-11 23:21:05.460] [INF] [] Server Name: perception-engine-context
+[2025-11-11 23:21:05.461] [INF] [] Perception Engine URI: "http://localhost:8777/"
+[2025-11-11 23:21:05.462] [INF] [] Log Directory: C:\Users\hc001\Downloads\perception_engine\mcp_server\csharp\publish\logs
+[2025-11-11 23:21:05.819] [INF] [] Registering MCP Server with tools...
+[2025-11-11 23:21:05.820] [INF] [] MCP Server registration completed successfully
+[2025-11-11 23:21:05.821] [INF] [] Tools registered: get_perception_context, query_perception_history
+[2025-11-11 23:21:05.821] [INF] [] Transport: stdio (stdin/stdout)
+[2025-11-11 23:21:05.835] [INF] [] === MCP Server Started Successfully ===
+[2025-11-11 23:21:05.835] [INF] [] Waiting for MCP client connections via stdio...
+[2025-11-11 23:21:05.932] [INF] [] MCP Server configured: perception-engine-context v0.1.0
+[2025-11-11 23:21:42.245] [INF] [PerceptionMcpBridge.PerceptionTools] [github:1] Tool 'query_perception_history' called with keyword='{Keyword}', hours={Hours}, maxcount={MaxCount}
+[2025-11-11 23:21:45.203] [INF] [PerceptionMcpBridge.PerceptionTools] [Program.cs:203] Successfully retrieved perception history, length: 5154 chars

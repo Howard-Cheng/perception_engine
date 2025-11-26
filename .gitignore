@@ -40,10 +40,12 @@ windows_code/third-party/llama.cpp/
 
 # Windows build artifacts
 windows_code/build/
+windows_code/buildnew
 windows_code/.vs/
 windows_code/x64/
 windows_code/Debug/
 windows_code/Release/
+windows_code/vcpkg_installed/
 *.exe
 *.dll
 *.lib
@@ -81,3 +83,10 @@ lpt[1-9]
 
 # database
 database/perception_data/
+
+# tests
+llm_summary/tests/
+vectordb/tests/
+
+# vector db
+vectordb/cpp_lib/build/

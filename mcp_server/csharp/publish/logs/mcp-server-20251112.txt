@@ -1,0 +1,11 @@
+[2025-11-12 14:55:58.216] [INF] [] === MCP Server Starting ===
+[2025-11-12 14:55:58.277] [INF] [] Server Name: perception-engine-context
+[2025-11-12 14:55:58.278] [INF] [] Perception Engine URI: "http://localhost:8777/"
+[2025-11-12 14:55:58.279] [INF] [] Log Directory: C:\Users\hc001\Downloads\perception_engine\mcp_server\csharp\publish\logs
+[2025-11-12 14:55:58.756] [INF] [] Registering MCP Server with tools...
+[2025-11-12 14:55:58.758] [INF] [] MCP Server registration completed successfully
+[2025-11-12 14:55:58.758] [INF] [] Tools registered: get_perception_context, query_perception_history
+[2025-11-12 14:55:58.758] [INF] [] Transport: stdio (stdin/stdout)
+[2025-11-12 14:55:58.778] [INF] [] === MCP Server Started Successfully ===
+[2025-11-12 14:55:58.778] [INF] [] Waiting for MCP client connections via stdio...
+[2025-11-12 14:55:58.961] [INF] [] MCP Server configured: perception-engine-context v0.1.0

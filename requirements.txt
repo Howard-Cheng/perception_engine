@@ -18,6 +18,15 @@ requests==2.32.3
 # NumPy (MUST use <2.0 for OpenCV compatibility)
 numpy>=1.24.0,<2.0
 
+# Sentence transformers for lightweight embeddings
+sentence-transformers>=2.2.0
+
+# Vector database client
+qdrant-client>=1.7.0
+
+# LLM inference (llama.cpp Python bindings)
+llama-cpp-python>=0.2.0
+
 # ============================================================================
 # Installation Instructions
 # ============================================================================

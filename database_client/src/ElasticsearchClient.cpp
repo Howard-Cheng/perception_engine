@@ -541,6 +541,48 @@ bool ElasticsearchClient::markEventsAsCompressed(const std::string& indexName,
     return pImpl_->httpRequest("POST", "/_bulk", bulk.str(), response);
 }
 
+bool ElasticsearchClient::markEventsAsCompressedWithSimilarity(
+    const std::string& indexName,
+    const std::vector<std::string>& eventIds,
+    const std::string& sessionId,
+    const std::string& similarScreenContent) {
+    
+    if (eventIds.empty()) return true;
+    
+    std::ostringstream bulk;
+    for (const auto& eventId : eventIds) {
+        json action = {
+            {"update", {
+                {"_index", indexName},
+                {"_id", eventId}
+            }}
+        };
+        bulk << action.dump() << "\n";
+        
+        json doc = {
+            {"doc", {
+                {"compressed", true},
+                {"session_id", sessionId},
+                {"similar_screen_content", similarScreenContent}
+            }}
+        };
+        bulk << doc.dump() << "\n";
+    }
+    
+    std::string response;
+    bool success = pImpl_->httpRequest("POST", "/_bulk", bulk.str(), response);
+    
+    if (success) {
+        std::cout << "[ElasticsearchClient] Updated " << eventIds.size() 
+                  << " events with session_id=" << sessionId 
+                  << " and similarity info" << std::endl;
+    } else {
+        std::cerr << "[ElasticsearchClient] Failed to update events with similarity info" << std::endl;
+    }
+    
+    return success;
+}
+
 int ElasticsearchClient::deleteOlderThan(const std::string& indexName,
                                         std::time_t cutoffTime) {
     std::string cutoffStr = timestampToISO8601(cutoffTime);

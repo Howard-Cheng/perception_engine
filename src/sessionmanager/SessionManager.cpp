@@ -2,6 +2,7 @@
 #include "E5EmbeddingDLL.h"
 #include "utils/Logger.h"
 #include "config/ConfigManager.h"
+#include "ElasticsearchClient.h"
 #include <iostream>
 #include <sstream>
 #include <iomanip>
@@ -215,7 +216,7 @@ void SessionManager::ProcessCompressionBatch() {
                  << " uncompressed records" << std::endl;
         
         // Process records into sessions
-        std::vector<std::string> currentSession;
+        std::vector<SessionContent> currentSession;
         Json previousRecord;
         bool firstRecord = true;
         int sessionsCreated = 0;
@@ -226,7 +227,7 @@ void SessionManager::ProcessCompressionBatch() {
             
             if (firstRecord) {
                 // First record starts a new session
-                currentSession.push_back(event.eventId);
+                currentSession.push_back(SessionContent(event.eventId));
                 previousRecord = currentRecord;
                 firstRecord = false;
             } else {
@@ -237,8 +238,15 @@ void SessionManager::ProcessCompressionBatch() {
                          << " (threshold: " << config_.similarityThreshold << ")" << std::endl;
                 
                 if (similarity > config_.similarityThreshold) {
-                    // Add to current session
-                    currentSession.push_back(event.eventId);
+                    // Add to current session with similarity info
+                    SessionContent content(event.eventId);
+                    
+                    // If using ML-based algorithm, attach similarity summary
+                    if (algorithm_ == SimilarityAlgorithm::ML_BASED && !lastSimilaritySummary_.empty()) {
+                        content.similarScreenContent = lastSimilaritySummary_;
+                    }
+                    
+                    currentSession.push_back(content);
                     previousRecord = currentRecord;
                 } else {
                     // End current session and start new one
@@ -255,7 +263,7 @@ void SessionManager::ProcessCompressionBatch() {
                     
                     // Start new session
                     currentSession.clear();
-                    currentSession.push_back(event.eventId);
+                    currentSession.push_back(SessionContent(event.eventId));
                     previousRecord = currentRecord;
                 }
             }
@@ -341,26 +349,54 @@ int SessionManager::CompareContent(const Json& record1, const Json& record2) {
 
 int SessionManager::CompareContentMLBased(const Json& record1, const Json& record2) {
 
-    std::cout << "Model loaded successfully!\n" << std::endl;
+    std::cout << "=== ML-Based Similarity Comparison ===" << std::endl;
 
-    // Test Case 1: Similar documents (sample text)
-    std::cout << "=== Test Case 1: Similar Documents ===" << std::endl;
     std::string content1 = record1.getString("screen_content", "");
     std::string content2 = record2.getString("screen_content", "");
-    LOG_INFO(std::string("content1:").append(content1));
-    LOG_INFO(std::string("content2:").append(content2));
+    
+    // Check if content is empty
+    if (content1.empty() || content2.empty()) {
+        LOG_WARN("One or both screen contents are empty, falling back to simple comparison");
+        return CompareContentSimple(record1, record2);
+    }
+    
+    LOG_INFO(std::string("Comparing content1 (").append(std::to_string(content1.length())).append(" chars)"));
+    LOG_INFO(std::string("Comparing content2 (").append(std::to_string(content2.length())).append(" chars)"));
 
     float similarity;
     auto result = E5_CompareDocumentsSimple(content1.c_str(), content2.c_str(), &similarity);
+    
     if (result != 0) {
         std::cerr << "Comparison failed: " << E5_GetLastError() << std::endl;
-        LOG_INFO("Comparison failed:");
+        LOG_ERROR(std::string("E5 comparison failed: ") + E5_GetLastError());
         return 0;
     }
-    else {
-        LOG_INFO(std::string("Similarity: ").append(std::to_string(similarity).c_str()));
+    
+    LOG_INFO(std::string("Similarity score: ").append(std::to_string(similarity)));
+    
+    // Get similar chunks for detailed information
+    E5_SimilarChunkPair chunks[5];
+    int num_chunks = 0;
+    
+    if (E5_GetSimilarChunks(chunks, 5, &num_chunks) == 0 && num_chunks > 0) {
+        std::ostringstream summary;
+        summary << "Similarity: " << similarity << "%\n";
+        summary << "Top " << num_chunks << " matching sections:\n\n";
+        
+        for (int i = 0; i < num_chunks && i < 3; i++) {
+            summary << (i + 1) << ". Score: " << chunks[i].similarity_score << "\n";
+            summary << "   Content A: " << std::string(chunks[i].text_A).substr(0, 100) << "...\n";
+            summary << "   Content B: " << std::string(chunks[i].text_B).substr(0, 100) << "...\n\n";
+        }
+        
+        // Store similarity summary for later use
+        lastSimilaritySummary_ = summary.str();
+        LOG_INFO(std::string("Generated similarity summary (").append(std::to_string(lastSimilaritySummary_.length())).append(" chars)"));
+    } else {
+        lastSimilaritySummary_.clear();
     }
-    return similarity;
+    
+    return static_cast<int>(similarity);
 }
 
 int SessionManager::CompareContentSimple(const Json& record1, const Json& record2) {
@@ -433,23 +469,69 @@ std::string SessionManager::GenerateSessionId() {
 }
 
 bool SessionManager::MarkRecordsCompressed(
-    const std::vector<std::string>& recordIds,
+    const std::vector<SessionContent>& sessionContents,
     const std::string& sessionId)
 {
-    if (recordIds.empty()) {
+    if (sessionContents.empty()) {
         return true;
     }
     
     try {
-        bool success = dbClient_->markEventsAsCompressed(
-            indexName_, 
-            recordIds, 
-            sessionId
-        );
+        // Extract event IDs for the operation
+        std::vector<std::string> recordIds;
+        recordIds.reserve(sessionContents.size());
+        for (const auto& content : sessionContents) {
+            recordIds.push_back(content.eventId);
+        }
+        
+        // Build similarity summary from all session contents
+        std::ostringstream similaritySummary;
+        bool hasSimilarityInfo = false;
+        
+        for (const auto& content : sessionContents) {
+            if (!content.similarScreenContent.empty()) {
+                similaritySummary << content.similarScreenContent << "\n";
+                hasSimilarityInfo = true;
+            }
+        }
+        
+        bool success;
+        
+        // Use new API if we have similarity information
+        if (hasSimilarityInfo) {
+            // Try to cast to ElasticsearchClient to use the new method
+            auto esClient = std::dynamic_pointer_cast<database::ElasticsearchClient>(dbClient_);
+            if (esClient) {
+                success = esClient->markEventsAsCompressedWithSimilarity(
+                    indexName_,
+                    recordIds,
+                    sessionId,
+                    similaritySummary.str()
+                );
+            } else {
+                // Fallback to old method if not Elasticsearch
+                success = dbClient_->markEventsAsCompressed(
+                    indexName_,
+                    recordIds,
+                    sessionId
+                );
+            }
+        } else {
+            // No similarity info, use standard method
+            success = dbClient_->markEventsAsCompressed(
+                indexName_,
+                recordIds,
+                sessionId
+            );
+        }
         
         if (success) {
             std::cout << "[SessionManager] Marked " << recordIds.size() 
-                     << " records as compressed with session: " << sessionId << std::endl;
+                     << " records as compressed with session: " << sessionId;
+            if (hasSimilarityInfo) {
+                std::cout << " (with similarity info)";
+            }
+            std::cout << std::endl;
         } else {
             std::cerr << "[SessionManager] Failed to mark records as compressed" << std::endl;
         }

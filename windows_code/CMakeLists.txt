@@ -81,13 +81,13 @@ message(STATUS "Database client enabled (built from subdirectory)")
 
 # E5EmbeddingDLL source files
 set(E5_EMBEDDING_DLL_SOURCES
-    src/embeddingmodel/E5EmbeddingDLL.cpp
+    embeddingmodel/src/E5EmbeddingDLL.cpp
     src/config/ConfigManager.cpp        # NEW: Add ConfigManager
     src/utils/Logger.cpp                # NEW: Add Logger (ConfigManager depends on it)
 )
 
 set(E5_EMBEDDING_DLL_HEADERS
-    include/embeddingmodel/E5EmbeddingDLL.h
+    embeddingmodel/include/E5EmbeddingDLL.h
     include/config/ConfigManager.h      # NEW: Add ConfigManager header
     include/utils/Logger.h              # NEW: Add Logger header
 )
@@ -153,6 +153,18 @@ set(DATAPROCESS_SERVER_HEADERS
     include/utils/Logger.h
 )
 
+# Test Embedding Comparison source files
+set(TEST_EMBEDDING_COMPARISON_SOURCES
+    embeddingmodel/tests/test_document_comparison.cpp
+    src/config/ConfigManager.cpp        # Add ConfigManager
+    src/utils/Logger.cpp                # Add Logger (ConfigManager depends on it)
+)
+
+set(TEST_EMBEDDING_COMPARISON_HEADERS
+    include/config/ConfigManager.h
+    include/utils/Logger.h
+)
+
 # ============================================================================
 
 # Executables
@@ -165,7 +177,7 @@ add_library(E5EmbeddingDLL SHARED ${E5_EMBEDDING_DLL_SOURCES} ${E5_EMBEDDING_DLL
 target_include_directories(E5EmbeddingDLL PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/embeddingmodel
+    ${CMAKE_CURRENT_SOURCE_DIR}/embeddingmodel/include
     ${ONNXRUNTIME_INCLUDE_DIR}
 )
 
@@ -196,8 +208,14 @@ add_executable(PerceptionEngine ${PERCEPTION_ENGINE_SOURCES} ${PERCEPTION_ENGINE
 # DataProcessServer executable
 add_executable(DataProcessServer ${DATAPROCESS_SERVER_SOURCES} ${DATAPROCESS_SERVER_HEADERS})
 
+# Test Embedding Comparison executable
+add_executable(test_embedding_comparison ${TEST_EMBEDDING_COMPARISON_SOURCES} ${TEST_EMBEDDING_COMPARISON_HEADERS})
+
 # Add dependency: PerceptionEngine depends on E5EmbeddingDLL
 add_dependencies(PerceptionEngine E5EmbeddingDLL)
+
+# Add dependency: test_embedding_comparison depends on E5EmbeddingDLL
+add_dependencies(test_embedding_comparison E5EmbeddingDLL)
 
 # ============================================================================
 # Visual Studio Source Groups (organize files in Solution Explorer)
@@ -218,7 +236,7 @@ source_group("Source Files\\config" FILES
 )
 
 source_group("Source Files\\embeddingmodel" FILES
-    src/embeddingmodel/E5EmbeddingDLL.cpp
+    embeddingmodel/src/E5EmbeddingDLL.cpp
 )
 
 source_group("Source Files\\context" FILES
@@ -323,6 +341,27 @@ source_group("Header Files" FILES
     include/utils/Logger.h
 )
 
+# Test Embedding Comparison source groups
+source_group("Source Files\\tests" FILES
+    embeddingmodel/tests/test_document_comparison.cpp
+)
+
+source_group("Source Files\\config" FILES
+    src/config/ConfigManager.cpp
+)
+
+source_group("Source Files\\utils" FILES
+    src/utils/Logger.cpp
+)
+
+source_group("Header Files\\config" FILES
+    include/config/ConfigManager.h
+)
+
+source_group("Header Files\\utils" FILES
+    include/utils/Logger.h
+)
+
 # ============================================================================
 
 # Include Directories
@@ -331,7 +370,7 @@ source_group("Header Files" FILES
 target_include_directories(PerceptionEngine PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/embeddingmodel
+    ${CMAKE_CURRENT_SOURCE_DIR}/embeddingmodel/include
     ${WHISPER_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/ggml/include
     ${JSON_INCLUDE_DIR}
@@ -349,6 +388,15 @@ endif()
 target_include_directories(DataProcessServer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Test Embedding Comparison include directories
+target_include_directories(test_embedding_comparison PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/embeddingmodel/include
+    ${JSON_INCLUDE_DIR}
+    ${ONNXRUNTIME_INCLUDE_DIR}
 )
 
 # Add Elasticsearch include directory (from subdirectory target)
@@ -404,6 +452,12 @@ target_link_libraries(DataProcessServer PRIVATE
     # No external dependencies needed
 )
 
+# Test Embedding Comparison link libraries
+target_link_libraries(test_embedding_comparison PRIVATE
+    E5EmbeddingDLL  # Link to our built DLL
+    ${ONNXRUNTIME_LIB_DIR}/onnxruntime.lib
+)
+
 # Link Elasticsearch client library (from subdirectory target)
 if(ELASTICSEARCH_AVAILABLE)
     target_link_libraries(PerceptionEngine PRIVATE
@@ -432,13 +486,26 @@ if(MSVC)
         _WIN32_WINNT=0x0A00
     )
 
+    # Test Embedding Comparison compiler flags
+    target_compile_options(test_embedding_comparison PRIVATE
+        /W3                 # Warning level 3
+        /permissive-        # Standards conformance
+        /Zc:__cplusplus     # Enable __cplusplus macro
+        /EHsc               # Exception handling
+    )
+
+    target_compile_definitions(test_embedding_comparison PRIVATE
+        _CRT_SECURE_NO_WARNINGS
+    )
+
 endif()
 
 # ============================================================================
 
-# Post-build: Copy models and DLLs to output directory
+# Post-build: Copy dependencies for all targets
 # ============================================================================
 
+# Post-build commands for PerceptionEngine
 add_custom_command(TARGET PerceptionEngine POST_BUILD
     # Copy config files to bin/
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -503,23 +570,13 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-cpu.dll
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml-cpu.dll
+    
     # Copy ggml-cuda.dll if it exists (CUDA support may not be built)
     COMMAND ${CMAKE_COMMAND} -E echo "Checking for CUDA support..."
     COMMAND ${CMAKE_COMMAND} -E true
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-cuda.dll
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml-cuda.dll || ${CMAKE_COMMAND} -E echo "Warning: ggml-cuda.dll not found, CUDA acceleration may not be available"
-
-    # Copy CUDA runtime DLLs to bin/ (required for GPU acceleration)
-    # COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    #     "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cudart64_13.dll"
-    #     ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/cudart64_13.dll
-    # COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    #     "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cublas64_13.dll"
-    #     ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/cublas64_13.dll
-    # COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    #     "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.0/bin/x64/cublasLt64_13.dll"
-    #     ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/cublasLt64_13.dll
 
     # Copy dashboard.html to bin/
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -532,7 +589,7 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
         $<TARGET_FILE:DataProcessServer>
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/DataProcessServer.exe
 
-    # For MSVC multi-config: also copy to bin/Release/
+    # For MSVC multi-config: also copy to bin/$<CONFIG>/
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/config.ini
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/config.ini
@@ -571,36 +628,59 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
         ${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/onnxruntime.dll
 
-    COMMENT "Copying models, scripts, and DLLs to output directory"
+    COMMENT "Copying models, scripts, and DLLs for PerceptionEngine"
 )
 
-# ============================================================================
+# Post-build commands for test_embedding_comparison
+add_custom_command(TARGET test_embedding_comparison POST_BUILD
+    # Copy config files to bin/
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/config.ini
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/config.ini
 
-# Installation (optional)
-# ============================================================================
+    # Copy E5EmbeddingDLL to bin/
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying E5EmbeddingDLL for test_embedding_comparison..."
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:E5EmbeddingDLL>
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/E5EmbeddingDLL.dll
 
-install(TARGETS PerceptionEngine
-    RUNTIME DESTINATION bin
+    # Copy ONNX Runtime DLL to bin/
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/onnxruntime.dll
+
+    # Copy models folder (for embedding model)
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying embedding models for test_embedding_comparison..."
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/models
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models
+
+    # Copy scripts folder (for chunking scripts)
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying scripts for test_embedding_comparison..."
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/scripts
+
+    # For MSVC multi-config: also copy to bin/$<CONFIG>/
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/config.ini
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/config.ini
+
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:E5EmbeddingDLL>
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/E5EmbeddingDLL.dll
+
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/onnxruntime.dll
+
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/models
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models
+
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/scripts
+
+    COMMENT "Copying dependencies for test_embedding_comparison"
 )
-
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/models/
-    DESTINATION bin/models
-)
-
-# ============================================================================
-
-# Print Configuration
-# ============================================================================
-
-message(STATUS "")
-message(STATUS "=== PerceptionEngine Configuration ===")
-message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
-message(STATUS "C++ standard: ${CMAKE_CXX_STANDARD}")
-message(STATUS "Whisper include: ${WHISPER_INCLUDE_DIR}")
-message(STATUS "Whisper library: ${WHISPER_LIB_DIR}/whisper.lib")
-message(STATUS "GGML libraries: ${GGML_LIB_DIR}/")
-message(STATUS "E5 Embedding: ${E5_EMBEDDING_AVAILABLE}")
-message(STATUS "Elasticsearch: ${ELASTICSEARCH_AVAILABLE}")
-message(STATUS "Output directory: ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
-message(STATUS "=====================================")
-message(STATUS "")

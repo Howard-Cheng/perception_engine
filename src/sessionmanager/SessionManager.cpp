@@ -242,8 +242,25 @@ void SessionManager::ProcessCompressionBatch() {
                     SessionContent content(event.eventId);
                     
                     // If using ML-based algorithm, attach similarity summary
-                    if (algorithm_ == SimilarityAlgorithm::ML_BASED && !lastSimilaritySummary_.empty()) {
-                        content.similarScreenContent = lastSimilaritySummary_;
+                    if (algorithm_ == SimilarityAlgorithm::ML_BASED) {
+                        // Update the last element in currentSession with Content A
+                        if (!currentSession.empty() && !lastContentA_.empty()) {
+                            currentSession.back().similarScreenContent = lastContentA_;
+                            LOG_INFO(std::string("Updated previous event with Content A (")
+                                    .append(std::to_string(lastContentA_.length())).append(" chars)"));
+                        }
+                        
+                        // Assign Content B to current element
+                        if (!lastContentB_.empty()) {
+                            content.similarScreenContent = lastContentB_;
+                            LOG_INFO(std::string("Assigned Content B to current event (")
+                                    .append(std::to_string(lastContentB_.length())).append(" chars)"));
+                        }
+                        
+                        // Clear the content after use to prevent reuse
+                        lastContentA_.clear();
+                        lastContentB_.clear();
+                        lastSimilaritySummary_.clear();
                     }
                     
                     currentSession.push_back(content);
@@ -260,6 +277,11 @@ void SessionManager::ProcessCompressionBatch() {
                                      << " records)" << std::endl;
                         }
                     }
+                    
+                    // Clear similarity content when starting new session
+                    lastContentA_.clear();
+                    lastContentB_.clear();
+                    lastSimilaritySummary_.clear();
                     
                     // Start new session
                     currentSession.clear();
@@ -379,21 +401,50 @@ int SessionManager::CompareContentMLBased(const Json& record1, const Json& recor
     int num_chunks = 0;
     
     if (E5_GetSimilarChunks(chunks, 5, &num_chunks) == 0 && num_chunks > 0) {
-        std::ostringstream summary;
-        summary << "Similarity: " << similarity << "%\n";
-        summary << "Top " << num_chunks << " matching sections:\n\n";
+        // Build Content A summary
+        std::ostringstream contentA;
+        contentA << "Similarity: " << similarity << "%\n";
+        contentA << "Top " << num_chunks << " matching sections (Previous Content):\n\n";
         
         for (int i = 0; i < num_chunks && i < 3; i++) {
-            summary << (i + 1) << ". Score: " << chunks[i].similarity_score << "\n";
-            summary << "   Content A: " << std::string(chunks[i].text_A).substr(0, 100) << "...\n";
-            summary << "   Content B: " << std::string(chunks[i].text_B).substr(0, 100) << "...\n\n";
+            contentA << (i + 1) << ". Score: " << chunks[i].similarity_score << "\n";
+            contentA << "   Content: " << std::string(chunks[i].text_A) << "...\n\n";
         }
         
-        // Store similarity summary for later use
-        lastSimilaritySummary_ = summary.str();
-        LOG_INFO(std::string("Generated similarity summary (").append(std::to_string(lastSimilaritySummary_.length())).append(" chars)"));
+        // Build Content B summary
+        std::ostringstream contentB;
+        contentB << "Similarity: " << similarity << "%\n";
+        contentB << "Top " << num_chunks << " matching sections (Current Content):\n\n";
+        
+        for (int i = 0; i < num_chunks && i < 3; i++) {
+            contentB << (i + 1) << ". Score: " << chunks[i].similarity_score << "\n";
+            contentB << "   Content: " << std::string(chunks[i].text_B) << "...\n\n";
+        }
+        
+        // Store separated content
+        lastContentA_ = contentA.str();
+        lastContentB_ = contentB.str();
+        
+        // Also keep combined summary for compatibility
+        std::ostringstream combined;
+        combined << "Similarity: " << similarity << "%\n";
+        combined << "Top " << num_chunks << " matching sections:\n\n";
+        
+        for (int i = 0; i < num_chunks && i < 3; i++) {
+            combined << (i + 1) << ". Score: " << chunks[i].similarity_score << "\n";
+            combined << "   Content A: " << std::string(chunks[i].text_A).substr(0, 100) << "...\n";
+            combined << "   Content B: " << std::string(chunks[i].text_B).substr(0, 100) << "...\n\n";
+        }
+        
+        lastSimilaritySummary_ = combined.str();
+        
+        LOG_INFO(std::string("Generated similarity summary - Content A (")
+                 .append(std::to_string(lastContentA_.length())).append(" chars), Content B (")
+                 .append(std::to_string(lastContentB_.length())).append(" chars)"));
     } else {
         lastSimilaritySummary_.clear();
+        lastContentA_.clear();
+        lastContentB_.clear();
     }
     
     return static_cast<int>(similarity);
@@ -477,66 +528,75 @@ bool SessionManager::MarkRecordsCompressed(
     }
     
     try {
-        // Extract event IDs for the operation
-        std::vector<std::string> recordIds;
-        recordIds.reserve(sessionContents.size());
-        for (const auto& content : sessionContents) {
-            recordIds.push_back(content.eventId);
-        }
+        auto esClient = std::dynamic_pointer_cast<database::ElasticsearchClient>(dbClient_);
         
-        // Build similarity summary from all session contents
-        std::ostringstream similaritySummary;
-        bool hasSimilarityInfo = false;
-        
-        for (const auto& content : sessionContents) {
-            if (!content.similarScreenContent.empty()) {
-                similaritySummary << content.similarScreenContent << "\n";
-                hasSimilarityInfo = true;
+        if (esClient) {
+            // Use Elasticsearch client - update each event individually with its own similarity content
+            bool allSuccess = true;
+            
+            for (const auto& content : sessionContents) {
+                std::vector<std::string> singleEventId = {content.eventId};
+                
+                if (!content.similarScreenContent.empty()) {
+                    // Update this event with its specific similarity content
+                    bool success = esClient->markEventsAsCompressedWithSimilarity(
+                        indexName_,
+                        singleEventId,
+                        sessionId,
+                        content.similarScreenContent
+                    );
+                    
+                    if (!success) {
+                        std::cerr << "[SessionManager] Failed to mark event " << content.eventId 
+                                  << " as compressed with similarity" << std::endl;
+                        allSuccess = false;
+                    }
+                } else {
+                    // No similarity info for this event, use standard method
+                    bool success = esClient->markEventsAsCompressed(
+                        indexName_,
+                        singleEventId,
+                        sessionId
+                    );
+                    
+                    if (!success) {
+                        std::cerr << "[SessionManager] Failed to mark event " << content.eventId 
+                                  << " as compressed" << std::endl;
+                        allSuccess = false;
+                    }
+                }
             }
-        }
-        
-        bool success;
-        
-        // Use new API if we have similarity information
-        if (hasSimilarityInfo) {
-            // Try to cast to ElasticsearchClient to use the new method
-            auto esClient = std::dynamic_pointer_cast<database::ElasticsearchClient>(dbClient_);
-            if (esClient) {
-                success = esClient->markEventsAsCompressedWithSimilarity(
-                    indexName_,
-                    recordIds,
-                    sessionId,
-                    similaritySummary.str()
-                );
-            } else {
-                // Fallback to old method if not Elasticsearch
-                success = dbClient_->markEventsAsCompressed(
-                    indexName_,
-                    recordIds,
-                    sessionId
-                );
+            
+            if (allSuccess) {
+                std::cout << "[SessionManager] Marked " << sessionContents.size() 
+                         << " records as compressed with session: " << sessionId 
+                         << " (with individual similarity info)" << std::endl;
             }
+            
+            return allSuccess;
         } else {
-            // No similarity info, use standard method
-            success = dbClient_->markEventsAsCompressed(
+            // Fallback for non-Elasticsearch clients - use bulk operation without similarity
+            std::vector<std::string> recordIds;
+            recordIds.reserve(sessionContents.size());
+            for (const auto& content : sessionContents) {
+                recordIds.push_back(content.eventId);
+            }
+            
+            bool success = dbClient_->markEventsAsCompressed(
                 indexName_,
                 recordIds,
                 sessionId
             );
-        }
-        
-        if (success) {
-            std::cout << "[SessionManager] Marked " << recordIds.size() 
-                     << " records as compressed with session: " << sessionId;
-            if (hasSimilarityInfo) {
-                std::cout << " (with similarity info)";
+            
+            if (success) {
+                std::cout << "[SessionManager] Marked " << recordIds.size() 
+                         << " records as compressed with session: " << sessionId << std::endl;
+            } else {
+                std::cerr << "[SessionManager] Failed to mark records as compressed" << std::endl;
             }
-            std::cout << std::endl;
-        } else {
-            std::cerr << "[SessionManager] Failed to mark records as compressed" << std::endl;
+            
+            return success;
         }
-        
-        return success;
         
     } catch (const std::exception& e) {
         std::cerr << "[SessionManager] MarkRecordsCompressed exception: " 

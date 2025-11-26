@@ -1,5 +1,5 @@
 ﻿#include "sessionmanager/SessionManager.h"
-#include "embeddingmodel/E5EmbeddingDLL.h"
+#include "E5EmbeddingDLL.h"
 #include "utils/Logger.h"
 #include "config/ConfigManager.h"
 #include <iostream>

@@ -1,5 +1,5 @@
 #define E5EMBEDDING_EXPORTS
-#include "embeddingmodel/E5EmbeddingDLL.h"
+#include "E5EmbeddingDLL.h"
 #include "config/ConfigManager.h"
 #include "utils/Logger.h"  // NEW: Add Logger
 

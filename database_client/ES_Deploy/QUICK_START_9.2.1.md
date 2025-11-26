@@ -1,97 +1,97 @@
-# ?? Elasticsearch 9.2.1 - 3²½¿ìËÙ²¿Êğ
+ï»¿# ğŸš€ Elasticsearch 9.2.1 - Quick 3-Step Deployment
 
-## ÌØµã
+## Features
 
-- ? **°æ±¾:** Elasticsearch 9.2.1
-- ? **µØÖ·:** localhost (127.0.0.1) only
-- ? **¶Ë¿Ú:** 9200
-- ? **Ğ­Òé:** HTTP
-- ? **ÈÏÖ¤:** ÎŞĞè (¿ª·¢Ä£Ê½)
+- ğŸ“¦ **Version:** Elasticsearch 9.2.1
+- ğŸŒ **Address:** localhost (127.0.0.1) only
+- ğŸ”Œ **Port:** 9200
+- ğŸ“¡ **Protocol:** HTTP
+- ğŸ”“ **Authentication:** None (development mode)
 
 ---
 
-## µÚ 1 ²½: ²¿Êğ
+## Step 1: Deploy
 
-**Ë«»÷ÔËĞĞ:**
-```
+**Double-click to run:**
+`
 deploy_elasticsearch_dev.bat
-```
+`
 
-Õâ»áÏÂÔØ¡¢½âÑ¹²¢ÅäÖÃ Elasticsearch¡£
+This will download, extract and configure Elasticsearch.
 
-**Ê±¼ä:** 5-10 ·ÖÖÓ
+**Time:** 5-10 minutes
 
 ---
 
-## µÚ 2 ²½: Æô¶¯
+## Step 2: Start
 
-**Ë«»÷ÔËĞĞ:**
-```
+**Double-click to run:**
+`
 start_elasticsearch_dev.bat
-```
+`
 
-**Ê±¼ä:** 30-60 Ãë
+**Time:** 30-60 seconds
 
 ---
 
-## µÚ 3 ²½: ²âÊÔ
+## Step 3: Test
 
-**ÔÚä¯ÀÀÆ÷´ò¿ª:**
-```
+**Open in browser:**
+`
 http://localhost:9200
-```
+`
 
-**»òÔËĞĞ²âÊÔ½Å±¾:**
-```
+**Or run test script:**
+`
 test_elasticsearch_dev.ps1
-```
+`
 
-**ÆÚÍû¿´µ½:**
-```json
+**Expected output:**
+`json
 {
   "cluster_name" : "elasticsearch-dev",
   "version" : { "number" : "9.2.1" }
 }
-```
+`
 
 ---
 
-## ? Íê³É£¡
+## âœ… Done!
 
-ÏÖÔÚ¿ÉÒÔÔÚ C++ Ó¦ÓÃÖĞÊ¹ÓÃ£º
+Now you can use it in your C++ application:
 
-```ini
+`ini
 # config.ini
 [Database]
 elasticsearch_url=http://localhost:9200
 elasticsearch_index=perception_context
-```
+`
 
-Æô¶¯Ó¦ÓÃ£º
-```powershell
+Start your application:
+`powershell
 cd D:\PerceiptionEngine_Howard\perception_engine\windows_code\buildnew
 .\PerceptionEngine.exe --console
-```
+`
 
 ---
 
-## ?? ÏêÏ¸ÎÄµµ
+## ğŸ“š Detailed Documentation
 
-²é¿´ `README_ES_9.2.1_DEV.md`
+See `README_ES_9.2.1_DEV.md`
 
 ---
 
-## ?? Í£Ö¹
+## ğŸ›‘ Stop
 
-**Ë«»÷ÔËĞĞ:**
-```
+**Double-click to run:**
+`
 stop_elasticsearch_dev.ps1
-```
+`
 
 ---
 
-**ÅäÖÃ:**
-- °ó¶¨µØÖ·: 127.0.0.1 ?
-- ÎŞĞèÈÏÖ¤: ?
-- HTTP only: ?
-- ¿ª·¢Ä£Ê½: ?
+**Configuration:**
+- Bind address: 127.0.0.1 âœ“
+- No authentication: âœ“
+- HTTP only: âœ“
+- Development mode: âœ“

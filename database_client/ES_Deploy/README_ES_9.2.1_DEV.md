@@ -1,73 +1,73 @@
-# ?? Elasticsearch 9.2.1 ¿ª·¢²¿ÊğÖ¸ÄÏ
+ï»¿# ğŸ“˜ Elasticsearch 9.2.1 Development Deployment Guide
 
-## ?? ¸ÅÊö
+## ğŸ¯ Overview
 
-ÕâÊÇÒ»Ì×Îª¿ª·¢»·¾³ÓÅ»¯µÄ Elasticsearch 9.2.1 ²¿Êğ½Å±¾£¬ÌØµã£º
+This is an Elasticsearch 9.2.1 deployment script optimized for development environments. Key features:
 
-- ? **°æ±¾:** Elasticsearch 9.2.1
-- ? **°ó¶¨µØÖ·:** 127.0.0.1 (localhost only)
-- ? **Ğ­Òé:** HTTP (ÎŞ SSL)
-- ? **ÈÏÖ¤:** ½ûÓÃ (ÎŞĞèÓÃ»§ÃûÃÜÂë)
-- ? **ÅäÖÃ:** ×Ô¶¯»¯£¬¿ªÏä¼´ÓÃ
+- ğŸ“¦ **Version:** Elasticsearch 9.2.1
+- ğŸ”’ **Bind Address:** 127.0.0.1 (localhost only)
+- ğŸ“¡ **Protocol:** HTTP (no SSL)
+- ğŸ”“ **Authentication:** Disabled (no username/password)
+- âš¡ **Automation:** Auto-download and configuration
 
-## ? ¿ìËÙ¿ªÊ¼
+## ğŸš€ Quick Start
 
-### ²½Öè 1: ²¿Êğ Elasticsearch
+### Step 1: Deploy Elasticsearch
 
-**Ë«»÷ÔËĞĞ:**
-```
+**Double-click to run:**
+`
 deploy_elasticsearch_dev.bat
-```
+`
 
-**»òÕß PowerShell:**
-```powershell
+**Using PowerShell:**
+`powershell
 .\deploy_elasticsearch_dev.ps1
-```
+`
 
-Õâ¸ö½Å±¾»á£º
-1. ¼ì²â Java »·¾³ (ĞèÒª Java 17+)
-2. ÏÂÔØ Elasticsearch 9.2.1 (~400 MB)
-3. ½âÑ¹µ½µ±Ç°Ä¿Â¼
-4. ×Ô¶¯ÅäÖÃÎª¿ª·¢Ä£Ê½
-   - °ó¶¨µ½ localhost (127.0.0.1)
-   - ½ûÓÃ°²È«¹¦ÄÜ
-   - µ¥½ÚµãÄ£Ê½
+This script will:
+1. Check Java version (requires Java 17+)
+2. Download Elasticsearch 9.2.1 (~400 MB)
+3. Extract to current directory
+4. Auto-configure for development mode
+   - Bind to localhost (127.0.0.1)
+   - Disable security settings
+   - Single-node mode
 
-**Ê±¼ä:** 5-10 ·ÖÖÓ£¨È¡¾öÓÚÍøÂçËÙ¶È£©
+**Time:** 5-10 minutes (depending on network speed)
 
-### ²½Öè 2: Æô¶¯ Elasticsearch
+### Step 2: Start Elasticsearch
 
-**Ë«»÷ÔËĞĞ:**
-```
+**Double-click to run:**
+`
 start_elasticsearch_dev.bat
-```
+`
 
-**»òÕß PowerShell:**
-```powershell
+**Using PowerShell:**
+`powershell
 .\start_elasticsearch_dev.ps1
-```
+`
 
-**Æô¶¯Ê±¼ä:** 30-60 Ãë£¨Ê×´ÎÆô¶¯£©
+**Startup time:** 30-60 seconds (first time)
 
-### ²½Öè 3: ²âÊÔÁ¬½Ó
+### Step 3: Verify Connection
 
-**Ë«»÷ÔËĞĞ:**
-```
+**Double-click to run:**
+`
 test_elasticsearch_dev.ps1
-```
+`
 
-**»òÕßÔÚä¯ÀÀÆ÷ÖĞ´ò¿ª:**
-```
+**Or open in browser:**
+`
 http://localhost:9200
-```
+`
 
-**»òÕß PowerShell:**
-```powershell
+**Using PowerShell:**
+`powershell
 Invoke-WebRequest http://localhost:9200
-```
+`
 
-**ÆÚÍû½á¹û:**
-```json
+**Expected output:**
+`json
 {
   "name" : "node-1",
   "cluster_name" : "elasticsearch-dev",
@@ -76,28 +76,28 @@ Invoke-WebRequest http://localhost:9200
   },
   "tagline" : "You Know, for Search"
 }
-```
+`
 
 ---
 
-## ?? ÎÄ¼şËµÃ÷
+## ğŸ“‹ File Description
 
-| ÎÄ¼ş | ÓÃÍ¾ |
-|------|------|
-| `deploy_elasticsearch_dev.ps1` | ²¿Êğ½Å±¾£¨Ö÷Òª£© |
-| `deploy_elasticsearch_dev.bat` | ²¿Êğ½Å±¾£¨Ë«»÷ÔËĞĞ£© |
-| `start_elasticsearch_dev.ps1` | Æô¶¯½Å±¾ |
-| `start_elasticsearch_dev.bat` | Æô¶¯½Å±¾£¨Ë«»÷ÔËĞĞ£© |
-| `stop_elasticsearch_dev.ps1` | Í£Ö¹½Å±¾ |
-| `test_elasticsearch_dev.ps1` | ²âÊÔ½Å±¾ |
+| File | Purpose |
+|------|---------|
+| `deploy_elasticsearch_dev.ps1` | Deployment script (main) |
+| `deploy_elasticsearch_dev.bat` | Deployment script (double-click to run) |
+| `start_elasticsearch_dev.ps1` | Start script |
+| `start_elasticsearch_dev.bat` | Start script (double-click to run) |
+| `stop_elasticsearch_dev.ps1` | Stop script |
+| `test_elasticsearch_dev.ps1` | Test script |
 
 ---
 
-## ?? ÅäÖÃËµÃ÷
+## âš™ï¸ Configuration
 
-### ×Ô¶¯Éú³ÉµÄÅäÖÃ (elasticsearch.yml)
+### Auto-generated Configuration (elasticsearch.yml)
 
-```yaml
+`yaml
 # Cluster settings
 cluster.name: elasticsearch-dev
 node.name: node-1
@@ -114,287 +114,287 @@ xpack.security.enabled: false
 xpack.security.enrollment.enabled: false
 xpack.security.http.ssl.enabled: false
 xpack.security.transport.ssl.enabled: false
-```
+`
 
-### ¹Ø¼üÅäÖÃ½âÊÍ
+### Key Configuration Explanation
 
-- **`network.host: 127.0.0.1`** - Ö»°ó¶¨µ½ localhost£¬ÎŞ·¨´ÓÍâÍø·ÃÎÊ
-- **`discovery.type: single-node`** - µ¥½ÚµãÄ£Ê½£¬ÎŞĞè¼¯ÈºÅäÖÃ
-- **`xpack.security.enabled: false`** - ½ûÓÃ°²È«£¬ÎŞĞèÈÏÖ¤
+- **`network.host: 127.0.0.1`** - Bind to localhost only, cannot be accessed from network
+- **`discovery.type: single-node`** - Single-node mode, no cluster configuration
+- **`xpack.security.enabled: false`** - Disable security, no authentication required
 
 ---
 
-## ?? C++ Ó¦ÓÃ¼¯³É
+## ğŸ”— C++ Application Integration
 
-### ¸üĞÂ config.ini
+### Configure config.ini
 
-```ini
+`ini
 [Database]
 elasticsearch_url=http://localhost:9200
 elasticsearch_index=perception_context
-# ²»ĞèÒª username/password
-```
+# No username/password needed
+`
 
-### Æô¶¯Ó¦ÓÃ
+### Start Application
 
-```powershell
+`powershell
 cd D:\PerceiptionEngine_Howard\perception_engine\windows_code\buildnew
 .\PerceptionEngine.exe --console
-```
+`
 
-### ÆÚÍûÈÕÖ¾
+### Check Logs
 
-```
-[INFO] ? Elasticsearch initialized - auto storage every 5 seconds
-```
-
----
-
-## ? ÑéÖ¤Çåµ¥
-
-²¿ÊğÍê³Éºó£¬È·ÈÏÒÔÏÂÄÚÈİ£º
-
-- [ ] Java 17+ ÒÑ°²×°
-- [ ] Elasticsearch 9.2.1 ÒÑÏÂÔØ²¢½âÑ¹
-- [ ] ÅäÖÃÎÄ¼şÒÑ¸üĞÂ£¨localhost °ó¶¨£©
-- [ ] Elasticsearch Æô¶¯³É¹¦
-- [ ] ¶Ë¿Ú 9200 ¼àÌıÖĞ
-- [ ] HTTP Á¬½Ó³É¹¦ (http://localhost:9200)
-- [ ] ¼¯Èº½¡¿µ×´Ì¬Îª green »ò yellow
-- [ ] C++ Ó¦ÓÃ¿ÉÒÔÁ¬½Ó
+`
+[INFO] âœ“ Elasticsearch initialized - auto storage every 5 seconds
+`
 
 ---
 
-## ?? ¹ÊÕÏÅÅ³ı
+## âœ… Verification Checklist
 
-### ÎÊÌâ 1: Java Î´¼ì²âµ½
+After deployment, confirm the following:
 
-**Ö¢×´:**
-```
-? Java not detected
-```
+- [ ] Java 17+ installed
+- [ ] Elasticsearch 9.2.1 downloaded and extracted
+- [ ] Configuration file updated (localhost binding)
+- [ ] Elasticsearch started successfully
+- [ ] Port 9200 listening
+- [ ] HTTP connection successful (http://localhost:9200)
+- [ ] Cluster health status is green or yellow
+- [ ] C++ application can connect
 
-**½â¾ö:**
-```powershell
-# ¼ì²é Java °æ±¾
+---
+
+## ğŸ”§ Troubleshooting
+
+### Issue 1: Java Not Detected
+
+**Symptom:**
+`
+âŒ Java not detected
+`
+
+**Solution:**
+`powershell
+# Check Java version
 java -version
 
-# Èç¹ûÎ´°²×°£¬ÏÂÔØ Java 17+
+# If not installed, download Java 17+
 # https://adoptium.net/
-```
+`
 
-### ÎÊÌâ 2: ¶Ë¿Ú 9200 ±»Õ¼ÓÃ
+### Issue 2: Port 9200 Already in Use
 
-**Ö¢×´:**
-```
+**Symptom:**
+`
 Port 9200 already in use
-```
+`
 
-**½â¾ö:**
-```powershell
-# ²é¿´Õ¼ÓÃ½ø³Ì
+**Solution:**
+`powershell
+# Check which process is using the port
 Get-NetTCPConnection -LocalPort 9200
 
-# Í£Ö¹¾ÉµÄ ES ÊµÀı
+# Stop old ES instance
 .\stop_elasticsearch_dev.ps1
 
-# »òÍ£Ö¹Õ¼ÓÃ¶Ë¿ÚµÄÆäËû³ÌĞò
-```
+# Or stop other process using port 9200
+`
 
-### ÎÊÌâ 3: ÏÂÔØÊ§°Ü
+### Issue 3: Download Failed
 
-**Ö¢×´:**
-```
+**Symptom:**
+`
 Download failed: Connection timeout
-```
+`
 
-**½â¾ö:**
-1. ¼ì²éÍøÂçÁ¬½Ó
-2. Ê¹ÓÃä¯ÀÀÆ÷ÊÖ¶¯ÏÂÔØ£º
-   ```
+**Solution:**
+1. Check network connection
+2. Manually download using browser:
+   `
    https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-9.2.1-windows-x86_64.zip
-   ```
-3. ½« ZIP ÎÄ¼ş·Åµ½½Å±¾Ä¿Â¼
-4. ÖØĞÂÔËĞĞ½Å±¾£¨»á×Ô¶¯¼ì²âÒÑÏÂÔØµÄÎÄ¼ş£©
+   `
+3. Place ZIP file in script directory
+4. Re-run script, it will automatically detect and use downloaded file
 
-### ÎÊÌâ 4: Æô¶¯ºóÎŞ·¨Á¬½Ó
+### Issue 4: Service Not Responding
 
-**¼ì²é²½Öè:**
+**Troubleshooting steps:**
 
-```powershell
-# 1. ¼ì²é½ø³Ì
+`powershell
+# 1. Check process
 Get-Process java | Where-Object { $_.WorkingSet64 -gt 100MB }
 
-# 2. ¼ì²é¶Ë¿Ú
+# 2. Check port
 Get-NetTCPConnection -LocalPort 9200
 
-# 3. ²é¿´ÈÕÖ¾
+# 3. View logs
 Get-Content .\elasticsearch-9.2.1\logs\elasticsearch.log -Tail 50
 
-# 4. ¼ì²éÅäÖÃ
+# 4. Check configuration
 Get-Content .\elasticsearch-9.2.1\config\elasticsearch.yml | Select-String "network.host"
-```
+`
 
-**ÆÚÍû¿´µ½:**
-```
+**Expected output:**
+`
 network.host: 127.0.0.1
-```
+`
 
-### ÎÊÌâ 5: °ó¶¨µ½´íÎóµÄµØÖ·
+### Issue 5: Bound to Wrong Address
 
-**Ö¢×´:**
-ÈÕÖ¾ÏÔÊ¾ `publish_address {198.18.0.1:9200}` ¶ø²»ÊÇ `127.0.0.1`
+**Symptom:**
+Logs show `publish_address {198.18.0.1:9200}` instead of `127.0.0.1`
 
-**½â¾ö:**
-```powershell
-# 1. Í£Ö¹ ES
+**Solution:**
+`powershell
+# 1. Stop ES
 .\stop_elasticsearch_dev.ps1
 
-# 2. ÖØĞÂ²¿Êğ£¨»áÖØĞÂÉú³ÉÅäÖÃ£©
+# 2. Re-deploy (will regenerate configuration)
 .\deploy_elasticsearch_dev.ps1
 
-# 3. È·ÈÏÅäÖÃ
+# 3. Verify configuration
 Get-Content .\elasticsearch-9.2.1\config\elasticsearch.yml | Select-String "network"
 
-# 4. ÖØĞÂÆô¶¯
+# 4. Restart
 .\start_elasticsearch_dev.ps1
-```
+`
 
 ---
 
-## ?? ĞÔÄÜÖ¸±ê
+## ğŸ“Š Performance Metrics
 
-- **ÄÚ´æÊ¹ÓÃ:** Ô¼ 1-2 GB (Ä¬ÈÏ)
-- **´ÅÅÌ¿Õ¼ä:** Ô¼ 500 MB (°²×°) + Êı¾İ´óĞ¡
-- **Æô¶¯Ê±¼ä:** 30-60 Ãë
-- **ÏìÓ¦Ê±¼ä:** < 100ms (localhost)
-
----
-
-## ?? ÖØÒªÌáÊ¾
-
-### ½öÓÃÓÚ¿ª·¢»·¾³
-
-Õâ¸öÅäÖÃ**²»ÊÊºÏÉú²ú»·¾³**£¬ÒòÎª£º
-
-- ? °²È«¹¦ÄÜÒÑ½ûÓÃ
-- ? ÎŞÈÏÖ¤»úÖÆ
-- ? Ö»ÄÜ localhost ·ÃÎÊ
-- ? µ¥½ÚµãÄ£Ê½£¨ÎŞ¸ß¿ÉÓÃ£©
-
-### Éú²ú»·¾³½¨Òé
-
-¶ÔÓÚÉú²ú»·¾³£¬Ó¦¸Ã£º
-
-- ? ÆôÓÃ HTTPS/SSL
-- ? ÅäÖÃÈÏÖ¤ (ÓÃ»§Ãû/ÃÜÂë)
-- ? Ê¹ÓÃ¼¯ÈºÄ£Ê½
-- ? ÅäÖÃ·À»ğÇ½¹æÔò
-- ? ¶¨ÆÚ±¸·İÊı¾İ
-- ? ¼à¿ØºÍÈÕÖ¾·ÖÎö
+- **Memory usage:** ~1-2 GB (default)
+- **Disk space:** ~500 MB (installation) + data size
+- **Startup time:** 30-60 seconds
+- **Response time:** < 100ms (localhost)
 
 ---
 
-## ?? ³£ÓÃÃüÁî
+## âš ï¸ Important Notes
 
-### ¹ÜÀíÃüÁî
+### For Development Use Only
 
-```powershell
-# Æô¶¯
+This configuration is **NOT suitable for production** because:
+
+- ğŸ”“ Security disabled
+- ğŸ”“ No authentication
+- ğŸ”“ Localhost only access
+- ğŸ”“ Single-node mode (no high availability)
+
+### For Production Deployment
+
+You should enable:
+
+- ğŸ”’ HTTPS/SSL
+- ğŸ”’ User authentication (username/password)
+- ğŸ”’ Use cluster mode
+- ğŸ”’ Configure firewall rules
+- ğŸ”’ Enable backup rotation
+- ğŸ”’ Set up log monitoring
+
+---
+
+## ğŸ“ Common Commands
+
+### Service Management
+
+`powershell
+# Start
 .\start_elasticsearch_dev.ps1
 
-# Í£Ö¹
+# Stop
 .\stop_elasticsearch_dev.ps1
 
-# ²âÊÔ
+# Test
 .\test_elasticsearch_dev.ps1
 
-# ²é¿´ÈÕÖ¾
+# View logs
 Get-Content .\elasticsearch-9.2.1\logs\elasticsearch.log -Tail 50 -Wait
-```
+`
 
-### API ²âÊÔ
+### API Examples
 
-```powershell
-# »ù±¾ĞÅÏ¢
+`powershell
+# Cluster info
 Invoke-WebRequest http://localhost:9200
 
-# ¼¯Èº½¡¿µ
+# Cluster health
 Invoke-WebRequest http://localhost:9200/_cluster/health
 
-# ÁĞ³öË÷Òı
+# List indices
 Invoke-WebRequest http://localhost:9200/_cat/indices?v
 
-# ¼¯ÈºÍ³¼Æ
+# Cluster statistics
 Invoke-WebRequest http://localhost:9200/_cluster/stats
-```
+`
 
-### Êı¾İ²Ù×÷
+### Data Operations
 
-```powershell
-# ´´½¨ÎÄµµ
-$body = '{"message":"Hello ES 9.2.1","timestamp":"2024-01-XX"}' 
+`powershell
+# Create document
+$body = '{\"message\":\"Hello ES 9.2.1\",\"timestamp\":\"2024-01-XX\"}' 
 Invoke-WebRequest -Method POST http://localhost:9200/test/_doc -ContentType "application/json" -Body $body
 
-# ËÑË÷
-Invoke-WebRequest -Method POST http://localhost:9200/test/_search -ContentType "application/json" -Body '{"query":{"match_all":{}}}'
+# Search
+Invoke-WebRequest -Method POST http://localhost:9200/test/_search -ContentType "application/json" -Body '{\"query\":{\"match_all\":{}}}'
 
-# É¾³ıË÷Òı
+# Delete index
 Invoke-WebRequest -Method DELETE http://localhost:9200/test
-```
+`
 
 ---
 
-## ?? Ñ§Ï°×ÊÔ´
+## ğŸ“š Learning Resources
 
-- [Elasticsearch ¹Ù·½ÎÄµµ](https://www.elastic.co/guide/en/elasticsearch/reference/9.2/index.html)
-- [REST API ²Î¿¼](https://www.elastic.co/guide/en/elasticsearch/reference/9.2/rest-apis.html)
-- [²éÑ¯ DSL](https://www.elastic.co/guide/en/elasticsearch/reference/9.2/query-dsl.html)
+- [Elasticsearch Official Documentation](https://www.elastic.co/guide/en/elasticsearch/reference/9.2/index.html)
+- [REST API Reference](https://www.elastic.co/guide/en/elasticsearch/reference/9.2/rest-apis.html)
+- [Query DSL](https://www.elastic.co/guide/en/elasticsearch/reference/9.2/query-dsl.html)
 
 ---
 
-## ?? °æ±¾ÀúÊ·
+## ğŸ“… Version History
 
 ### Version 2.0 (2024-01-XX)
-- ? Éı¼¶µ½ Elasticsearch 9.2.1
-- ? Ç¿ÖÆ°ó¶¨µ½ localhost (127.0.0.1)
-- ? ×Ô¶¯»¯ÅäÖÃÉú³É
-- ? ¸Ä½øµÄ½ø³Ì¼ì²â
-- ? ÍêÕûµÄ²âÊÔ½Å±¾
+- ğŸ†• Upgrade to Elasticsearch 9.2.1
+- ğŸ”’ Force bind to localhost (127.0.0.1)
+- âš¡ Automated download and configuration
+- ğŸ“ Improved progress monitoring
+- ğŸ§ª Enhanced test scripts
 
 ### Version 1.0
-- ³õÊ¼°æ±¾ (Elasticsearch 8.12.1)
+- Initial version (Elasticsearch 8.12.1)
 
 ---
 
-## ?? »ñÈ¡°ïÖú
+## ğŸ†˜ Getting Help
 
-Èç¹ûÓöµ½ÎÊÌâ£º
+If you encounter issues:
 
-1. **²é¿´ÈÕÖ¾:**
-   ```powershell
+1. **View logs:**
+   `powershell
    Get-Content .\elasticsearch-9.2.1\logs\elasticsearch.log -Tail 100
-   ```
+   `
 
-2. **ÔËĞĞÕï¶Ï:**
-   ```powershell
+2. **Run tests:**
+   `powershell
    .\test_elasticsearch_dev.ps1
-   ```
+   `
 
-3. **¼ì²éÅäÖÃ:**
-   ```powershell
+3. **Check configuration:**
+   `powershell
    Get-Content .\elasticsearch-9.2.1\config\elasticsearch.yml
-   ```
+   `
 
-4. **ÍêÈ«ÖØĞÂ²¿Êğ:**
-   ```powershell
+4. **Complete clean reinstall:**
+   `powershell
    .\stop_elasticsearch_dev.ps1
    Remove-Item .\elasticsearch-9.2.1 -Recurse -Force
    .\deploy_elasticsearch_dev.ps1
-   ```
+   `
 
 ---
 
-**×îºó¸üĞÂ:** 2024-01-XX  
-**Elasticsearch °æ±¾:** 9.2.1  
-**×´Ì¬:** ? Éú²ú¾ÍĞ÷£¨¿ª·¢ÅäÖÃ£©
+**Last Updated:** 2024-01-XX  
+**Elasticsearch Version:** 9.2.1  
+**Status:** âœ… Ready for development use (not for production)

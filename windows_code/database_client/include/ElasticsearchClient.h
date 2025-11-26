@@ -48,6 +48,28 @@ public:
     bool markEventsAsCompressed(const std::string& collectionName,
                                const std::vector<std::string>& eventIds,
                                const std::string& sessionId) override;
+    
+    /**
+     * @brief Mark events as compressed and update similar screen content
+     * 
+     * Updates multiple events with compressed status, session ID, and similar screen content.
+     * This is useful when grouping events into sessions and storing similarity information.
+     * 
+     * @param collectionName Name of the collection
+     * @param eventIds Vector of event IDs to update
+     * @param sessionId Session ID to assign to all events
+     * @param similarScreenContent Similar screen content summary to store
+     * @return true if successful, false otherwise
+     * 
+     * @note Uses bulk update API for efficiency
+     * @note All events in the batch receive the same similarScreenContent
+     */
+    bool markEventsAsCompressedWithSimilarity(
+        const std::string& collectionName,
+        const std::vector<std::string>& eventIds,
+        const std::string& sessionId,
+        const std::string& similarScreenContent);
+    
     int deleteOlderThan(const std::string& collectionName, 
                        std::time_t cutoffTime) override;
     bool refreshCollection(const std::string& collectionName) override;

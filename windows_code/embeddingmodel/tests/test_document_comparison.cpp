@@ -159,6 +159,25 @@ and self-driving cars, demonstrating the versatility and power of these techniqu
         } else {
             std::cout << "  X Result: NOT similar documents" << std::endl;
         }
+        
+        // NEW: Retrieve and display similar chunks
+        std::cout << "\n  Retrieving most similar chunks..." << std::endl;
+        E5_SimilarChunkPair similar_chunks[5];  // Get top 5
+        int num_chunks = 0;
+        
+        result = E5_GetSimilarChunks(similar_chunks, 5, &num_chunks);
+        if (result == 0 && num_chunks > 0) {
+            std::cout << "  Found " << num_chunks << " similar chunk pairs:" << std::endl;
+            for (int i = 0; i < num_chunks; i++) {
+                std::cout << "\n  --- Pair " << (i + 1) << " (Score: " << similar_chunks[i].similarity_score << ") ---" << std::endl;
+                std::cout << "  Doc A [chunk " << similar_chunks[i].chunk_index_A << "]: " << std::endl;
+                std::cout << "    " << std::string(similar_chunks[i].text_A).substr(0, 200) << "..." << std::endl;
+                std::cout << "  Doc B [chunk " << similar_chunks[i].chunk_index_B << "]: " << std::endl;
+                std::cout << "    " << std::string(similar_chunks[i].text_B).substr(0, 200) << "..." << std::endl;
+            }
+        } else if (result != 0) {
+            std::cout << "  Note: Could not retrieve chunks: " << E5_GetLastError() << std::endl;
+        }
     }
 
     std::cout << std::endl;
@@ -195,6 +214,25 @@ influences.
         } else {
             std::cout << "  V Result: NOT similar documents (threshold: 70)" << std::endl;
         }
+        
+        // NEW: Retrieve and display similar chunks
+        std::cout << "\n  Retrieving most similar chunks..." << std::endl;
+        E5_SimilarChunkPair similar_chunks[5];  // Get top 5
+        int num_chunks = 0;
+        
+        result = E5_GetSimilarChunks(similar_chunks, 5, &num_chunks);
+        if (result == 0 && num_chunks > 0) {
+            std::cout << "  Found " << num_chunks << " similar chunk pairs:" << std::endl;
+            for (int i = 0; i < num_chunks; i++) {
+                std::cout << "\n  --- Pair " << (i + 1) << " (Score: " << similar_chunks[i].similarity_score << ") ---" << std::endl;
+                std::cout << "  Doc A [chunk " << similar_chunks[i].chunk_index_A << "]: " << std::endl;
+                std::cout << "    " << std::string(similar_chunks[i].text_A).substr(0, 200) << "..." << std::endl;
+                std::cout << "  Doc B [chunk " << similar_chunks[i].chunk_index_B << "]: " << std::endl;
+                std::cout << "    " << std::string(similar_chunks[i].text_B).substr(0, 200) << "..." << std::endl;
+            }
+        } else if (result != 0) {
+            std::cout << "  Note: Could not retrieve chunks: " << E5_GetLastError() << std::endl;
+        }
     }
 
     std::cout << std::endl;
@@ -229,6 +267,39 @@ influences.
                 } else {
                     std::cout << "  X Result: NOT similar documents" << std::endl;
                 }
+                
+                // NEW: Retrieve and display similar chunks
+                std::cout << "\n  Retrieving most similar chunks..." << std::endl;
+                E5_SimilarChunkPair similar_chunks[10];  // Get top 10 for file comparison
+                int num_chunks = 0;
+                
+                result = E5_GetSimilarChunks(similar_chunks, 10, &num_chunks);
+                if (result == 0 && num_chunks > 0) {
+                    std::cout << "  Found " << num_chunks << " similar chunk pairs:" << std::endl;
+                    
+                    // Show top 5 in detail
+                    int show_count = (num_chunks < 5) ? num_chunks : 5;
+                    for (int i = 0; i < show_count; i++) {
+                        std::cout << "\n  --- Pair " << (i + 1) << " (Score: " 
+                                 << similar_chunks[i].similarity_score << ") ---" << std::endl;
+                        std::cout << "  File A [chunk " << similar_chunks[i].chunk_index_A << "]: " << std::endl;
+                        std::cout << "    " << std::string(similar_chunks[i].text_A).substr(0, 200) << "..." << std::endl;
+                        std::cout << "  File B [chunk " << similar_chunks[i].chunk_index_B << "]: " << std::endl;
+                        std::cout << "    " << std::string(similar_chunks[i].text_B).substr(0, 200) << "..." << std::endl;
+                    }
+                    
+                    // Show summary of all
+                    if (num_chunks > 5) {
+                        std::cout << "\n  (Showing top 5 of " << num_chunks << " total pairs)" << std::endl;
+                        std::cout << "  Other similarity scores: ";
+                        for (int i = 5; i < num_chunks && i < 10; i++) {
+                            std::cout << similar_chunks[i].similarity_score << " ";
+                        }
+                        std::cout << std::endl;
+                    }
+                } else if (result != 0) {
+                    std::cout << "  Note: Could not retrieve chunks: " << E5_GetLastError() << std::endl;
+                }
             }
         } else {
             std::cerr << "X Failed to read one or both files" << std::endl;
@@ -244,6 +315,11 @@ influences.
     // Cleanup
     std::cout << "========================================" << std::endl;
     std::cout << "Cleaning up..." << std::endl;
+    
+    // Clear comparison results
+    E5_ClearComparisonResults();
+    std::cout << "V Comparison results cleared" << std::endl;
+    
     E5_Cleanup();
     std::cout << "V Cleanup complete" << std::endl;
 

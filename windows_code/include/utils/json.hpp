@@ -27,6 +27,12 @@ public:
         isRawValue[key] = false;
     }
     
+    // Overload for C-string literals to prevent ambiguity with bool
+    void set(const std::string& key, const char* value) {
+        data[key] = std::string(value);
+        isRawValue[key] = false;
+    }
+    
     void set(const std::string& key, int value) {
         data[key] = std::to_string(value);
         isRawValue[key] = true; // Numbers don't need quotes

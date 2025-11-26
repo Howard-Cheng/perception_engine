@@ -11,6 +11,7 @@
 #include "communication/HttpServer.h"
 #include "context/ContextCollector.h"  // UPDATED: Use context folder
 #include "audio/AudioCaptureEngine.h"
+#include "config/ConfigManager.h"      // NEW: Add ConfigManager
 
 // #include "CameraVisionEngine.h"  // Removed - using Python client instead
 
@@ -364,6 +365,26 @@ int main(int argc, char* argv[]) {
     LOG_INFO("=====================================");
     LOG_INFO("Perception Engine v1.0");
     LOG_INFO("=====================================");
+
+    // =========================================
+    // Load Configuration
+    // =========================================
+    LOG_INFO("Loading configuration from config.ini...");
+    if (!ConfigManager::GetInstance().LoadConfig("config.ini")) {
+        LOG_WARN("Failed to load config.ini, using default values");
+        LOG_WARN(std::string("Error: ") + ConfigManager::GetInstance().GetLastError());
+    } else {
+        LOG_INFO("Configuration loaded successfully");
+    }
+
+    // Validate configuration
+    if (!ConfigManager::GetInstance().ValidateConfiguration()) {
+        LOG_ERROR("Configuration validation failed:");
+        LOG_ERROR(ConfigManager::GetInstance().GetLastError());
+        LOG_WARN("Continuing with best-effort configuration...");
+    } else {
+        LOG_INFO("Configuration validated successfully");
+    }
 
     // Parse command line arguments
     bool screenOnlyMode = false;

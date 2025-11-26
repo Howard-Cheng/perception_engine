@@ -1,5 +1,6 @@
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 #include "communication/HttpServer.h"
+#include "utils/Logger.h"  // NEW: Add Logger first
 #include <thread>
 #include <iostream>
 #include <sstream>
@@ -203,7 +204,7 @@ void HttpServer::HandleClient(SOCKET clientSocket) {
         if (requestHandler) {
             requestHandler(request, response);
         } else {
-            std::cout << "[ERROR] No request handler set!" << std::endl;
+            LOG_INFO("[ERROR] No request handler set!");
         }
         
         std::string httpResponse = BuildHttpResponse(response);
@@ -214,6 +215,7 @@ void HttpServer::HandleClient(SOCKET clientSocket) {
         if (bytesSent == SOCKET_ERROR) {
             std::cout << "[ERROR] Failed to send response. WSA Error: " << WSAGetLastError() << std::endl;
         } else {
+            LOG_INFO(std::string("[DEBUG] Response sent successfully! bytes:").append(std::to_string(bytesSent)));
             if (HTTP_DEBUG_LOGS) std::cout << "[DEBUG] Response sent successfully (" << bytesSent << " bytes)" << std::endl;
         }
     } else {

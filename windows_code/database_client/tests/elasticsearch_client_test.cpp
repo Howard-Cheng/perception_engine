@@ -64,7 +64,7 @@ RawEvent createTestEvent(const std::string& id, const std::string& appName, cons
     event.compressed = false;
     
     // Add some optional fields
-    event.contentType = ContentType::CODE;
+    event.contentType = ContentType::TEXT;  // Changed from CODE
     event.domain = Domain::WORK;
     
     return event;

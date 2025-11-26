@@ -17,7 +17,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
     switch (fdwReason) {
     case DLL_PROCESS_ATTACH:
         // Initialize logger when DLL loads
-        Logger::GetInstance().Initialize("ConnectMeetingAssistant.log", LogLevel::DEBUG_L);
+        Logger::GetInstance().Initialize("ConnectMeetingAssistant.log", LogLevel::ERROR_L);
         LOG_INFO("ConnectMeetingAssistant DLL loaded");
         break;
         

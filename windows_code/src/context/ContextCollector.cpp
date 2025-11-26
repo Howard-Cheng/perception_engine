@@ -1,9 +1,10 @@
-#include "context/ContextCollector.h"
+﻿#include "context/ContextCollector.h"
 #include "DatabaseClientFactory.h"
 #include <random>
 #include <iostream>
 #include <sstream>
 #include <iomanip>
+#include <condition_variable>
 
 ContextCollector::ContextCollector() {
     // Generate unique device ID
@@ -33,6 +34,14 @@ ContextCollector::ContextCollector() {
 
 ContextCollector::~ContextCollector() {
     StopPeriodicUpdate();
+    
+    // 🆕 Stop session manager
+    if (sessionManager_) {
+        sessionManager_->Stop();
+        sessionManager_.reset();
+        std::cout << "[ContextCollector] Session manager stopped" << std::endl;
+    }
+    
     ShutdownDatabase();
     
     // FIX: Clear window switch callback before shutdown
@@ -150,6 +159,21 @@ bool ContextCollector::InitializeDatabase(const std::string& esHost,
         std::cout << "[ContextCollector] Elasticsearch index initialized: " << indexName << std::endl;
         esStorageRunning_.store(true);
         std::cout << "[InitializeDatabase] ES storage flag set to true" << std::endl;
+        
+        // 🆕 Initialize SessionManager
+        sessionmanager::SessionManager::Config config;
+        config.compressionThreshold = 10;
+        config.similarityThreshold = 60;
+        config.batchSize = 100;
+        config.enabled = true;
+        
+        sessionManager_ = std::make_unique<sessionmanager::SessionManager>(
+            esClient_,
+            indexName,
+            config
+        );
+        sessionManager_->Start();
+        std::cout << "[ContextCollector] Session manager initialized and started" << std::endl;
         
         return true;
         
@@ -394,6 +418,11 @@ void ContextCollector::OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& re
         
         // Store to Elasticsearch
         StoreContextToES(context);
+        
+        // 🆕 Check if compression is needed (using SessionManager)
+        if (sessionManager_ && sessionManager_->IsRunning()) {
+            sessionManager_->CheckAndTriggerCompression();
+        }
         
         // Reset mouse records
         if (auto appProvider = contextManager_.getAppActivityProvider()) {

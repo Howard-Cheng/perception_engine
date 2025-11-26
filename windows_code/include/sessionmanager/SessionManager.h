@@ -231,6 +231,10 @@ private:
     
     // Store last similarity summary for current comparison
     std::string lastSimilaritySummary_;
+    
+    // Store separated content A and B from last comparison
+    std::string lastContentA_;
+    std::string lastContentB_;
 };
 
 } // namespace sessionmanager

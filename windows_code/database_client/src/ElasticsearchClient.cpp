@@ -154,6 +154,7 @@ public:
         if (event.url) j["url"] = *event.url;
         if (event.screenContent) j["screen_content"] = *event.screenContent;
         if (event.screenContentHash) j["screen_content_hash"] = *event.screenContentHash;
+        if (event.similarScreenContent) j["similar_screen_content"] = *event.similarScreenContent;
         if (event.voiceTranscription) j["voice_transcription"] = *event.voiceTranscription;
         if (event.cameraDescription) j["camera_description"] = *event.cameraDescription;
         if (event.sessionId) j["session_id"] = *event.sessionId;
@@ -232,6 +233,9 @@ public:
             }
             if (j.contains("screen_content_hash") && !j["screen_content_hash"].is_null()) {
                 event.screenContentHash = j["screen_content_hash"].get<std::string>();
+            }
+            if (j.contains("similar_screen_content") && !j["similar_screen_content"].is_null()) {
+                event.similarScreenContent = j["similar_screen_content"].get<std::string>();
             }
             if (j.contains("voice_transcription") && !j["voice_transcription"].is_null()) {
                 event.voiceTranscription = j["voice_transcription"].get<std::string>();
@@ -377,6 +381,7 @@ bool ElasticsearchClient::initializeCollection(const std::string& collectionName
                 "url": {"type": "keyword"},
                 "screen_content": {"type": "text"},
                 "screen_content_hash": {"type": "keyword"},
+                "similar_screen_content": {"type": "text"},
                 "voice_transcription": {"type": "text"},
                 "camera_description": {"type": "text"},
                 "session_id": {"type": "keyword"},

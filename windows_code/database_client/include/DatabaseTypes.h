@@ -90,6 +90,7 @@ struct DB_CLIENT_API RawEvent {
     // Content
     std::optional<std::string> screenContent;
     std::optional<std::string> screenContentHash;
+    std::optional<std::string> similarScreenContent;  // NEW: Similar screen content for comparison
     
     // Multimodal data
     std::optional<std::string> voiceTranscription;

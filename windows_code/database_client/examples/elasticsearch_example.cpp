@@ -15,7 +15,7 @@ int main() {
     std::cout << "==================================================" << std::endl;
     std::cout << std::endl;
     
-    std::cout << "⚠️  Make sure Elasticsearch is running!" << std::endl;
+    std::cout << "  Make sure Elasticsearch is running!" << std::endl;
     std::cout << "   Run: .\\deploy_elasticsearch.ps1" << std::endl;
     std::cout << "   Or:  docker run -p 9200:9200 -e \"discovery.type=single-node\" elasticsearch:8.11.0" << std::endl;
     std::cout << std::endl;

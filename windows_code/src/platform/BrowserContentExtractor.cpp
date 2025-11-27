@@ -1,4 +1,4 @@
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 
@@ -151,11 +151,8 @@ CComPtr<IUIAutomationElement> FindDocumentElement(IUIAutomation* pAutomation, IU
                     
                     // Skip Panes that are obviously not web content
                     if (name.find(L"Toolbar") == std::wstring::npos &&
-                        name.find(L"������") == std::wstring::npos &&
                         name.find(L"Bookmark") == std::wstring::npos &&
-                        name.find(L"��ǩ") == std::wstring::npos &&
                         name.find(L"Tab") == std::wstring::npos &&
-                        name.find(L"��ǩ") == std::wstring::npos &&
                         automationId.find(L"Toolbar") == std::wstring::npos) {
                         
                         //LOG_INFO_FMT("Found potential content Pane: %s", WStringToString(name).c_str());
@@ -283,18 +280,14 @@ void BrowserContentExtractor::ExtractElementInfo(IUIAutomationElement* pElement,
     
     std::wstring text = GetElementText(pElement);
     
-    // ? �Ľ���ȥ�ز������ı�
     if (!text.empty() && text.length() > 1) {
-        // �Ƴ�ǰ��հ�?
         size_t start = text.find_first_not_of(L" \t\n\r");
         size_t end = text.find_last_not_of(L" \t\n\r");
         
         if (start != std::wstring::npos && end != std::wstring::npos) {
             text = text.substr(start, end - start + 1);
             
-            // ? ʹ�ü��ϼ���Ƿ��Ѿ�����?
             if (info.seenTexts.find(text) == info.seenTexts.end()) {
-                // �ı�δ���������ӵ�����ͼ�����?
                 info.seenTexts.insert(text);
                 
                 if (!info.textContent.empty()) {
@@ -302,11 +295,9 @@ void BrowserContentExtractor::ExtractElementInfo(IUIAutomationElement* pElement,
                 }
                 info.textContent += text;
             }
-            // else: �ı��Ѵ��ڣ�����
         }
     }
     
-    // �������ӣ�����ȥ�أ�
     if (controlType == UIA_HyperlinkControlTypeId || 
         controlType == UIA_ButtonControlTypeId) {
         std::wstring value = GetElementProperty(pElement, UIA_ValueValuePropertyId);
@@ -324,7 +315,6 @@ void BrowserContentExtractor::ExtractElementInfo(IUIAutomationElement* pElement,
         }
     }
     
-    // ����ͼƬ������ȥ�أ�
     if (controlType == UIA_ImageControlTypeId) {
         std::wstring name = GetElementProperty(pElement, UIA_NamePropertyId);
         if (!name.empty()) {

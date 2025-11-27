@@ -64,6 +64,15 @@ void PrintUsage(const char* programName) {
     std::cout << std::endl;
 }
 
+std::string GetExePath() {
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    std::string exePathStr(exePath);
+    size_t lastSlash = exePathStr.find_last_of("\\/");
+    std::string exe_dir = exePathStr.substr(0, lastSlash);
+    return exe_dir;
+}
+
 int main(int argc, char* argv[]) {
     std::cout << "========================================" << std::endl;
     std::cout << "  E5 Embedding - Document Comparison" << std::endl;
@@ -74,9 +83,12 @@ int main(int argc, char* argv[]) {
     Logger::GetInstance().Initialize("test_embedding.log", LogLevel::DEBUG_L);
     LOG_INFO("Test embedding comparison started");
 
+
+    // Create temp files in the same directory as executable
+    std::string config_path = GetExePath() + "\\config.ini";
     // Load configuration
     std::cout << "Loading configuration..." << std::endl;
-    if (!ConfigManager::GetInstance().LoadConfig("config.ini")) {
+    if (!ConfigManager::GetInstance().LoadConfig(config_path)) {
         LOG_WARN("Failed to load config.ini, using default values");
         std::cout << "Warning: Failed to load config.ini, using default values" << std::endl;
     } else {

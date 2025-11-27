@@ -59,13 +59,16 @@ endif()
 option(BUILD_EMBEDDING_TESTS "Build embedding model tests" ON)
 
 if(BUILD_EMBEDDING_TESTS)
-    # Test executable
+    # Test executable - Document Comparison
     add_executable(test_document_comparison
         tests/test_document_comparison.cpp
+        ../src/config/ConfigManager.cpp
+        ../src/utils/Logger.cpp
     )
     
     target_include_directories(test_document_comparison PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
     )
     
     target_link_libraries(test_document_comparison PRIVATE
@@ -79,6 +82,32 @@ if(BUILD_EMBEDDING_TESTS)
     
     # Add dependency
     add_dependencies(test_document_comparison E5EmbeddingDLL)
+    
+    # Test executable - Elasticsearch Similarity Integration
+    add_executable(test_elasticsearch_similarity
+        tests/test_elasticsearch_similarity.cpp
+        ../src/config/ConfigManager.cpp
+        ../src/utils/Logger.cpp
+    )
+    
+    target_include_directories(test_elasticsearch_similarity PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../database_client/include
+    )
+    
+    target_link_libraries(test_elasticsearch_similarity PRIVATE
+        E5EmbeddingDLL
+        database_client
+    )
+    
+    # Copy test executable to bin directory
+    set_target_properties(test_elasticsearch_similarity PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+    )
+    
+    # Add dependencies
+    add_dependencies(test_elasticsearch_similarity E5EmbeddingDLL database_client)
 endif()
 
 # ============================================================================

@@ -42,17 +42,32 @@ std::vector<TestContent> GenerateTestContents() {
     return {
         // Group 1: Similar ML/AI content (events 0-2)
         {
-            "Machine learning is a subset of artificial intelligence that focuses on developing "
-            "algorithms that enable computers to learn from data. Deep learning uses neural networks "
-            "with multiple layers to extract features and make predictions. Common applications include "
-            "image recognition, natural language processing, and recommendation systems.",
+           R"(
+            Machine learning is a subset of artificial intelligence that focuses on the development
+            of algorithms and statistical models that enable computer systems to improve their
+            performance on a specific task through experience. Deep learning, a subfield of machine
+            learning, uses neural networks with multiple layers to progressively extract higher-level
+            features from raw input. These deep neural networks have revolutionized computer vision,
+            natural language processing, and speech recognition. The success of deep learning can be
+            attributed to the availability of large datasets, powerful GPUs for parallel computation,
+            and innovations in network architectures such as convolutional neural networks (CNNs) and
+            recurrent neural networks (RNNs). Modern applications of deep learning include image
+            classification, object detection, machine translation, and autonomous driving systems.
+            )",
             "ML/AI Overview 1"
         },
         {
-            "Deep learning represents a powerful approach in artificial intelligence, utilizing "
-            "multi-layer neural networks to learn complex patterns from large datasets. This technology "
-            "has revolutionized computer vision, speech recognition, and language understanding tasks. "
-            "Modern deep learning frameworks like TensorFlow and PyTorch are widely used in industry.",
+            R"(
+            Deep learning represents a powerful approach within the field of artificial intelligence,
+            utilizing artificial neural networks with multiple hidden layers to learn complex patterns
+            from data. This technology has achieved remarkable success in various domains including
+            computer vision, where convolutional neural networks excel at image recognition tasks,
+            and natural language processing, where transformer architectures have enabled breakthrough
+            performance in language understanding. The recent advances in deep learning are driven by
+            the combination of massive datasets, GPU-accelerated computing, and novel network designs.
+            Applications range from facial recognition and medical image analysis to language translation
+            and self-driving cars, demonstrating the versatility and power of these techniques.
+            )",
             "ML/AI Overview 2"
         },
         {
@@ -149,6 +164,15 @@ RawEvent CreateTestEvent(int index, const TestContent& content, std::time_t base
     return event;
 }
 
+std::string GetExePath() {
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    std::string exePathStr(exePath);
+    size_t lastSlash = exePathStr.find_last_of("\\/");
+    std::string exe_dir = exePathStr.substr(0, lastSlash);
+    return exe_dir;
+}
+
 // Main test function
 int main() {
     std::cout << "===============================================" << std::endl;
@@ -159,10 +183,11 @@ int main() {
     // Initialize Logger
     Logger::GetInstance().Initialize("test_es_similarity.log", LogLevel::INFO_L);
     LOG_INFO("Test started");
-    
+
+    std::string config_path = GetExePath() + "\\config.ini";
     // Load configuration
     std::cout << "[1/6] Loading configuration..." << std::endl;
-    if (!ConfigManager::GetInstance().LoadConfig("config.json")) {
+    if (!ConfigManager::GetInstance().LoadConfig(config_path)) {
         std::cerr << "    X Failed to load config.json" << std::endl;
         LOG_ERROR("Failed to load configuration");
         return 1;
@@ -279,7 +304,7 @@ int main() {
     // Compare consecutive events and update
     int similarPairs = 0;
     int dissimilarPairs = 0;
-    float similarityThreshold = 70.0f;
+    float similarityThreshold = 60.0f;
     
     for (size_t i = 0; i < searchResult.events.size() - 1; i++) {
         const auto& event1 = searchResult.events[i];

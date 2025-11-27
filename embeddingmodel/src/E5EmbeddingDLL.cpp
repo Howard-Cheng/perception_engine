@@ -100,6 +100,15 @@ float DotProduct(const float* a, const float* b) {
 
 // API Implementation
 
+std::string GetExePath() {
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    std::string exePathStr(exePath);
+    size_t lastSlash = exePathStr.find_last_of("\\/");
+    std::string exe_dir = exePathStr.substr(0, lastSlash);
+    return exe_dir;
+}
+
 E5_API int E5_Initialize(const wchar_t* model_path) {
     std::lock_guard<std::mutex> lock(g_mutex);
     Logger::GetInstance().Initialize("Embedding.log", LogLevel::DEBUG_L);
@@ -114,7 +123,8 @@ E5_API int E5_Initialize(const wchar_t* model_path) {
     // Load Configuration
     // =========================================
     LOG_INFO("Loading configuration from config.ini...");
-    if (!ConfigManager::GetInstance().LoadConfig("config.ini")) {
+    std::string config_path = GetExePath() + "\\config.ini";
+    if (!ConfigManager::GetInstance().LoadConfig(config_path)) {
         LOG_WARN("Failed to load config.ini, using default values");
         LOG_WARN(std::string("Error: ") + ConfigManager::GetInstance().GetLastError());
     }

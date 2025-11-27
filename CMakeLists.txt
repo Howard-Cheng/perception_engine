@@ -167,7 +167,9 @@ add_executable(DataProcessServer ${DATAPROCESS_SERVER_SOURCES} ${DATAPROCESS_SER
 # Visual Studio Source Groups (organize files in Solution Explorer)
 # ============================================================================
 
-# Group source files by directory structure
+# ========== PerceptionEngine Source Groups ==========
+
+# Source files for PerceptionEngine
 source_group("Source Files\\core" FILES
     src/core/PerceptionEngine.cpp
     src/core/WindowsService.cpp
@@ -208,10 +210,10 @@ source_group("Source Files\\audio" FILES
 
 source_group("Source Files\\providers" FILES
     src/providers/SystemContextProvider.cpp
-    src.providers/VoiceContextProvider.cpp
-    src.providers/CameraContextProvider.cpp
-    src.providers/AppActivityContextProvider.cpp
-    src.providers/CompositeContextManager.cpp
+    src/providers/VoiceContextProvider.cpp
+    src/providers/CameraContextProvider.cpp
+    src/providers/AppActivityContextProvider.cpp
+    src/providers/CompositeContextManager.cpp
 )
 
 source_group("Source Files\\dataprocess" FILES
@@ -221,7 +223,8 @@ source_group("Source Files\\dataprocess" FILES
 source_group("Source Files\\sessionmanager" FILES
     src/sessionmanager/SessionManager.cpp
 )
-# Group header files by directory structure
+
+# Header files for PerceptionEngine
 source_group("Header Files\\core" FILES
     include/core/WindowsService.h
 )
@@ -274,14 +277,16 @@ source_group("Header Files\\sessionmanager" FILES
     include/sessionmanager/SessionManager.h
 )
 
-# DataProcessServer source groups
-source_group("Source Files" FILES
+# ========== DataProcessServer Source Groups ==========
+
+# Source files for DataProcessServer
+source_group("Source Files\\dataprocess" FILES
     src/dataprocess/DataProcessServerMain.cpp
     src/dataprocess/TaskQueue.cpp
-    src/utils/Logger.cpp
 )
 
-source_group("Header Files" FILES
+# Header files for DataProcessServer
+source_group("Header Files\\dataprocess" FILES
     include/dataprocess/DataProcessProtocol.h
     include/dataprocess/TaskQueue.h
     include/utils/Logger.h

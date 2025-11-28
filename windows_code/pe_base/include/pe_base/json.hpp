@@ -1,11 +1,11 @@
-// This is a simplified JSON implementation for C++14 compatibility
-// In a real project, you would use nlohmann/json library
 #pragma once
 #include <string>
 #include <map>
 #include <vector>
 #include <sstream>
 #include <iomanip>
+
+namespace pe_base {
 
 class Json {
 private:
@@ -143,3 +143,5 @@ public:
         return oss.str();
     }
 };
+
+} // namespace pe_base

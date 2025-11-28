@@ -1,6 +1,6 @@
 #define E5EMBEDDING_EXPORTS
 #include "E5EmbeddingDLL.h"
-#include "config/ConfigManager.h"
+#include "pe_base/config_manager.h"
 #include "pe_base/logger.h"  // NEW: Add Logger
 
 #include <onnxruntime_cxx_api.h>
@@ -131,18 +131,18 @@ E5_API int E5_Initialize(const wchar_t* model_path) {
     // =========================================
     PE_INFO("Loading configuration from config.ini...");
     std::string config_path = GetExePath() + "\\config.ini";
-    if (!ConfigManager::GetInstance().LoadConfig(config_path)) {
+    if (!pe_base::ConfigManager::GetInstance().LoadConfig(config_path)) {
         PE_WARN("Failed to load config.ini, using default values");
-        PE_WARN(std::string("Error: ") + ConfigManager::GetInstance().GetLastError());
+        PE_WARN(std::string("Error: ") + pe_base::ConfigManager::GetInstance().GetLastError());
     }
     else {
         PE_INFO("Configuration loaded successfully");
     }
 
     // Validate configuration
-    if (!ConfigManager::GetInstance().ValidateConfiguration()) {
+    if (!pe_base::ConfigManager::GetInstance().ValidateConfiguration()) {
         PE_ERROR("Configuration validation failed:");
-        PE_ERROR(ConfigManager::GetInstance().GetLastError());
+        PE_ERROR(pe_base::ConfigManager::GetInstance().GetLastError());
         PE_WARN("Continuing with best-effort configuration...");
     }
     else {
@@ -548,9 +548,9 @@ E5_API int E5_CompareDocuments(
             g_last_doc_B_text = doc_B_text;
         }
 
-        // Get paths from ConfigManager
-        std::string python_executable = ConfigManager::GetInstance().GetPythonExecutable();
-        std::string chunk_script = ConfigManager::GetInstance().GetChunkDocumentScript();
+        // Get paths from pe_base::ConfigManager
+        std::string python_executable = pe_base::ConfigManager::GetInstance().GetPythonExecutable();
+        std::string chunk_script = pe_base::ConfigManager::GetInstance().GetChunkDocumentScript();
 
         // Normalize paths: replace forward slashes with backslashes for Windows
         std::replace(chunk_script.begin(), chunk_script.end(), '/', '\\');

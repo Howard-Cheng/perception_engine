@@ -6,7 +6,7 @@
 
 #include "pe_base/pe_exports.h"
 namespace pe_base {
-class pe_base_API ThreadHelper {
+class PE_BASE_API ThreadHelper {
  public:
   static void sleep(uint64_t ms);
 

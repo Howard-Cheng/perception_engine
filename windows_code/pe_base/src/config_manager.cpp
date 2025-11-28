@@ -1,4 +1,4 @@
-#include "config/ConfigManager.h"
+#include "pe_base/config_manager.h"
 #include "pe_base/logger.h"
 #include <iostream>
 #include <fstream>
@@ -6,6 +6,8 @@
 #include <filesystem>
 #include <windows.h>
 #include <algorithm>
+
+namespace pe_base {
 
 ConfigManager& ConfigManager::GetInstance() {
     static ConfigManager instance;
@@ -398,3 +400,5 @@ std::string ConfigManager::ConvertToUtf8(const std::wstring& wstr) const {
                        &str[0], size_needed, NULL, NULL);
     return str;
 }
+
+} // namespace pe_base

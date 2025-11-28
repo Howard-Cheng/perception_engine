@@ -5,7 +5,7 @@
 #include "pe_base/task_queue/task.h"
 namespace pe_base {
 class Task;
-class pe_base_API TaskQueue {
+class PE_BASE_API TaskQueue {
  public:
   typedef std::shared_ptr<TaskQueue> Ptr_t;
   static Ptr_t Create(size_t thread_num, const char* queue_name);
@@ -35,6 +35,6 @@ class pe_base_API TaskQueue {
   }
 };
 
-void pe_base_API WaitAllTaskQueueExit();
+void PE_BASE_API WaitAllTaskQueueExit();
 }  // namespace pe_base
 

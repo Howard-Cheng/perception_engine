@@ -100,7 +100,6 @@ message(STATUS "Database client enabled (built from subdirectory)")
 set(PERCEPTION_ENGINE_SOURCES
     src/core/PerceptionEngine.cpp
     src/core/WindowsService.cpp
-    src/config/ConfigManager.cpp
     src/context/ContextCollector.cpp
     src/communication/HttpServer.cpp
     src/platform/WindowsAPIs.cpp
@@ -121,7 +120,6 @@ set(PERCEPTION_ENGINE_SOURCES
 
 set(PERCEPTION_ENGINE_HEADERS
     include/core/WindowsService.h
-    include/config/ConfigManager.h
     include/context/ContextCollector.h
     include/communication/HttpServer.h
     include/platform/WindowsAPIs.h
@@ -183,7 +181,6 @@ source_group("Source Files\\utils" FILES
 )
 
 source_group("Source Files\\config" FILES
-    src/config/ConfigManager.cpp
 )
 
 source_group("Source Files\\embeddingmodel" FILES
@@ -236,7 +233,6 @@ source_group("Header Files\\utils" FILES
 )
 
 source_group("Header Files\\config" FILES
-    include/config/ConfigManager.h
 )
 
 source_group("Header Files\\context" FILES

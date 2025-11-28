@@ -1,7 +1,7 @@
 ﻿#include "sessionmanager/SessionManager.h"
 #include "E5EmbeddingDLL.h"
 #include "pe_base/logger.h"
-#include "config/ConfigManager.h"
+#include "pe_base/config_manager.h"
 #include "ElasticsearchClient.h"
 #include <iostream>
 #include <sstream>
@@ -24,8 +24,8 @@ SessionManager::SessionManager(
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> dis(100000, 999999);
     deviceId_ = "device_" + std::to_string(dis(gen));
-    // Initialize E5 Embedding using ConfigManager
-    std::wstring modelPath = ConfigManager::GetInstance().GetEmbeddingModelPath();
+    // Initialize E5 Embedding using pe_base::ConfigManager
+    std::wstring modelPath = pe_base::ConfigManager::GetInstance().GetEmbeddingModelPath();
     int result = E5_Initialize(modelPath.c_str());
     if (result != 0) {
         std::cerr << "[SessionManager] E5 initialization failed: " << E5_GetLastError() << std::endl;
@@ -217,13 +217,13 @@ void SessionManager::ProcessCompressionBatch() {
         
         // Process records into sessions
         std::vector<SessionContent> currentSession;
-        Json previousRecord;
+        pe_base::Json previousRecord;
         bool firstRecord = true;
         int sessionsCreated = 0;
         int recordsProcessed = 0;
         
         for (const auto& event : result.events) {
-            Json currentRecord = ConvertEventToJson(event);
+            pe_base::Json currentRecord = ConvertEventToJson(event);
             
             if (firstRecord) {
                 // First record starts a new session
@@ -328,8 +328,8 @@ void SessionManager::ProcessCompressionBatch() {
     }
 }
 
-Json SessionManager::ConvertEventToJson(const database::RawEvent& event) {
-    Json record;
+pe_base::Json SessionManager::ConvertEventToJson(const database::RawEvent& event) {
+    pe_base::Json record;
     record.set("app_name", event.appName);
     record.set("window_title", event.windowTitle.value_or(""));
     record.set("screen_content", event.screenContent.value_or(""));
@@ -354,7 +354,7 @@ Json SessionManager::ConvertEventToJson(const database::RawEvent& event) {
     return record;
 }
 
-int SessionManager::CompareContent(const Json& record1, const Json& record2) {
+int SessionManager::CompareContent(const pe_base::Json& record1, const pe_base::Json& record2) {
     switch (algorithm_) {
         case SimilarityAlgorithm::SIMPLE:
             return CompareContentSimple(record1, record2);
@@ -369,7 +369,7 @@ int SessionManager::CompareContent(const Json& record1, const Json& record2) {
     }
 }
 
-int SessionManager::CompareContentMLBased(const Json& record1, const Json& record2) {
+int SessionManager::CompareContentMLBased(const pe_base::Json& record1, const pe_base::Json& record2) {
 
     std::cout << "=== ML-Based Similarity Comparison ===" << std::endl;
 
@@ -448,7 +448,7 @@ int SessionManager::CompareContentMLBased(const Json& record1, const Json& recor
     return static_cast<int>(similarity);
 }
 
-int SessionManager::CompareContentSimple(const Json& record1, const Json& record2) {
+int SessionManager::CompareContentSimple(const pe_base::Json& record1, const pe_base::Json& record2) {
     std::string app1 = record1.getString("app_name", "");
     std::string app2 = record2.getString("app_name", "");
     std::string window1 = record1.getString("window_title", "");
@@ -465,7 +465,7 @@ int SessionManager::CompareContentSimple(const Json& record1, const Json& record
     return 0;  // Different app
 }
 
-int SessionManager::CompareContentWithText(const Json& record1, const Json& record2) {
+int SessionManager::CompareContentWithText(const pe_base::Json& record1, const pe_base::Json& record2) {
     // TODO: Implement text-based similarity
     // For now, fall back to simple comparison
     int baseSimilarity = CompareContentSimple(record1, record2);
@@ -482,7 +482,7 @@ int SessionManager::CompareContentWithText(const Json& record1, const Json& reco
     return baseSimilarity;
 }
 
-int SessionManager::CompareContentWithTime(const Json& record1, const Json& record2) {
+int SessionManager::CompareContentWithTime(const pe_base::Json& record1, const pe_base::Json& record2) {
     int baseSimilarity = CompareContentSimple(record1, record2);
     
     if (baseSimilarity == 0) {

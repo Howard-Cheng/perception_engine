@@ -158,8 +158,4 @@ namespace WindowsAPIs {
 
     // Timestamp
     std::string GetCurrentTimestamp();
-
-    // Helper functions for Unicode/UTF-8 conversion
-    std::string WideStringToUtf8(const std::wstring& wstr);
-    std::string WideStringToUtf8(const wchar_t* wstr);
 }

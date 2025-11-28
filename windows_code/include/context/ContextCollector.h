@@ -1,6 +1,6 @@
 #pragma once
 
-#include "utils/json.hpp"
+#include "pe_base/json.hpp"
 #include "platform/WindowsAPIs.h"
 #include "providers/CompositeContextManager.h"
 #include "IDatabaseClient.h"
@@ -35,7 +35,7 @@ public:
     /**
      * @brief Collect current context from all providers
      */
-    Json CollectCurrentContext();
+    pe_base::Json CollectCurrentContext();
     
     /**
      * @brief Start periodic update thread
@@ -91,7 +91,7 @@ public:
     /**
      * @brief Query Elasticsearch data
      */
-    Json GetESDBData(const std::string& keyword,
+    pe_base::Json GetESDBData(const std::string& keyword,
                     std::time_t startTime,
                     std::time_t endTime,
                     int maxResults = 100);
@@ -104,7 +104,7 @@ public:
     /**
      * @brief Store context to Elasticsearch
      */
-    void StoreContextToES(const Json& context);
+    void StoreContextToES(const pe_base::Json& context);
     
     /**
      * @brief Window switch event callback
@@ -118,9 +118,9 @@ private:
     void updateCacheThread();
     
     /**
-     * @brief Convert Json context to RawEvent for Elasticsearch
+     * @brief Convert pe_base::Json context to RawEvent for Elasticsearch
      */
-    database::RawEvent jsonContextToRawEvent(const Json& context);
+    database::RawEvent jsonContextToRawEvent(const pe_base::Json& context);
     
     // ========================================
     // Core Components

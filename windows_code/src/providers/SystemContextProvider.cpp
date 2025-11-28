@@ -23,7 +23,7 @@ void SystemContextProvider::update() {
     timestamp_ = std::time(nullptr);
 }
 
-void SystemContextProvider::collectContext(Json& context) const {
+void SystemContextProvider::collectContext(pe_base::Json& context) const {
     std::lock_guard<std::mutex> lock(mutex_);
     
     // Battery

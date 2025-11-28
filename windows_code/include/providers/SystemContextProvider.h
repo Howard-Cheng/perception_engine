@@ -23,7 +23,7 @@ public:
     
     bool initialize() override;
     void update() override;
-    void collectContext(Json& context) const override;
+    void collectContext(pe_base::Json& context) const override;
     std::string getName() const override;
     bool isAvailable() const override;
     void shutdown() override;

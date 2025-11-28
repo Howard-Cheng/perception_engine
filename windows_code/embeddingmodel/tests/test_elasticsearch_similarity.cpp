@@ -18,7 +18,7 @@
  */
 
 #include "E5EmbeddingDLL.h"
-#include "config/ConfigManager.h"
+#include "pe_base/config_manager.h"
 #include "pe_base/logger.h"
 #include "ElasticsearchClient.h"
 #include "DatabaseTypes.h"
@@ -195,7 +195,7 @@ int main() {
     std::string config_path = GetExePath() + "\\config.ini";
     // Load configuration
     std::cout << "[1/6] Loading configuration..." << std::endl;
-    if (!ConfigManager::GetInstance().LoadConfig(config_path)) {
+    if (!pe_base::ConfigManager::GetInstance().LoadConfig(config_path)) {
         std::cerr << "    X Failed to load config.json" << std::endl;
         PE_ERROR("Failed to load configuration");
         return 1;
@@ -205,7 +205,7 @@ int main() {
     
     // Initialize E5 model
     std::cout << "\n[2/6] Initializing E5 embedding model..." << std::endl;
-    std::wstring modelPath = ConfigManager::GetInstance().GetEmbeddingModelPath();
+    std::wstring modelPath = pe_base::ConfigManager::GetInstance().GetEmbeddingModelPath();
     std::wcout << L"    Model path: " << modelPath << std::endl;
     
     int result = E5_Initialize(modelPath.c_str());

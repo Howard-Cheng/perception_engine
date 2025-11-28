@@ -12,7 +12,7 @@
 #include "communication/HttpServer.h"
 #include "context/ContextCollector.h"  // UPDATED: Use context folder
 #include "audio/AudioCaptureEngine.h"
-#include "config/ConfigManager.h"      // NEW: Add ConfigManager
+#include "pe_base/config_manager.h"      // NEW: Add pe_base::ConfigManager
 
 // #include "CameraVisionEngine.h"  // Removed - using Python client instead
 
@@ -243,7 +243,7 @@ private:
 
             if (request.path == "/context" && request.method == "GET") {
                 if (contextCollector) {
-                    Json context = contextCollector->CollectCurrentContext();
+                    pe_base::Json context = contextCollector->CollectCurrentContext();
                     response.SetHeader("Content-Type", "application/json");
                     response.SetBody(context.toString());
                     response.status = 200;
@@ -323,7 +323,7 @@ private:
                     std::time_t startTime = endTime - (hours * 3600);
 
                     // Query ES
-                    Json results = contextCollector->GetESDBData(keyword, startTime, endTime, maxResults);
+                    pe_base::Json results = contextCollector->GetESDBData(keyword, startTime, endTime, maxResults);
 
                     response.SetHeader("Content-Type", "application/json");
                     response.SetBody(results.toString());
@@ -387,18 +387,18 @@ int main(int argc, char* argv[]) {
     // Load Configuration
     // =========================================
     PE_INFO("Loading configuration from config.ini...");
-    if (!ConfigManager::GetInstance().LoadConfig("config.ini")) {
+    if (!pe_base::ConfigManager::GetInstance().LoadConfig("config.ini")) {
         PE_WARN("Failed to load config.ini, using default values");
-        PE_WARN(std::string("Error: ") + ConfigManager::GetInstance().GetLastError());
+        PE_WARN(std::string("Error: ") + pe_base::ConfigManager::GetInstance().GetLastError());
     }
     else {
         PE_INFO("Configuration loaded successfully");
     }
 
     // Validate configuration
-    if (!ConfigManager::GetInstance().ValidateConfiguration()) {
+    if (!pe_base::ConfigManager::GetInstance().ValidateConfiguration()) {
         PE_ERROR("Configuration validation failed:");
-        PE_ERROR(ConfigManager::GetInstance().GetLastError());
+        PE_ERROR(pe_base::ConfigManager::GetInstance().GetLastError());
         PE_WARN("Continuing with best-effort configuration...");
     }
     else {
@@ -546,7 +546,7 @@ int main(int argc, char* argv[]) {
                     PE_DEBUG("Received request:" << request.method.c_str() << request.path.c_str())
 
                     if (request.path == "/context" && request.method == "GET") {
-                        Json context = collector.CollectCurrentContext();
+                        pe_base::Json context = collector.CollectCurrentContext();
                         response.SetHeader("Content-Type", "application/json");
                         response.SetBody(context.toString());
                         response.status = 200;
@@ -613,7 +613,7 @@ int main(int argc, char* argv[]) {
                             std::time_t startTime = endTime - (hours * 3600);
 
                             // Query ES
-                            Json results = collector.GetESDBData(keyword, startTime, endTime, maxResults);
+                            pe_base::Json results = collector.GetESDBData(keyword, startTime, endTime, maxResults);
 
                             response.SetHeader("Content-Type", "application/json");
                             response.SetBody(results.toString());

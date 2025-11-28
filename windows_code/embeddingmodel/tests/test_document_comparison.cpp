@@ -19,7 +19,7 @@
  */
 
 #include "E5EmbeddingDLL.h"
-#include "config/ConfigManager.h"  // Add ConfigManager
+#include "pe_base/config_manager.h"  // Add pe_base::ConfigManager
 #include "pe_base/logger.h"          // Add Logger
 #include <iostream>
 #include <string>
@@ -95,7 +95,7 @@ int main(int argc, char* argv[]) {
     std::string config_path = GetExePath() + "\\config.ini";
     // Load configuration
     std::cout << "Loading configuration..." << std::endl;
-    if (!ConfigManager::GetInstance().LoadConfig(config_path)) {
+    if (!pe_base::ConfigManager::GetInstance().LoadConfig(config_path)) {
         PE_WARN("Failed to load config.ini, using default values");
         std::cout << "Warning: Failed to load config.ini, using default values" << std::endl;
     } else {
@@ -103,7 +103,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Configuration loaded from config.ini" << std::endl;
     }
 
-    // Get model path from command line or ConfigManager
+    // Get model path from command line or pe_base::ConfigManager
     std::wstring modelPath;
     if (argc >= 2) {
         // Convert first argument to wide string
@@ -112,10 +112,10 @@ int main(int argc, char* argv[]) {
         std::wcout << L"Model path (from command line): " << modelPath << std::endl;
         PE_INFO(std::string("Using model path from command line: ") + pathArg);
     } else {
-        // Use ConfigManager to get model path
-        modelPath = ConfigManager::GetInstance().GetEmbeddingModelPath();
+        // Use pe_base::ConfigManager to get model path
+        modelPath = pe_base::ConfigManager::GetInstance().GetEmbeddingModelPath();
         std::wcout << L"Model path (from config.ini): " << modelPath << std::endl;
-        PE_INFO("Using model path from ConfigManager");
+        PE_INFO("Using model path from pe_base::ConfigManager");
         PrintUsage(argv[0]);
     }
 

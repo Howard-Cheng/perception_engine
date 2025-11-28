@@ -66,7 +66,7 @@ void TaskQueue::WorkerThread() {
             } catch (const std::exception& e) {
                 PE_ERROR_THIS("TaskQueue '" << name_.c_str() << " ' task exception: %s" << e.what())
             } catch (...) {
-                PE_ERROR_THIS("TaskQueue '%s' task unknown exception", name_.c_str());
+                PE_ERROR_THIS("TaskQueue '%s' task unknown exception" << name_.c_str());
             }
         }
     }

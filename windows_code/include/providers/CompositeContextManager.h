@@ -24,7 +24,7 @@ public:
     
     bool initialize();
     void updateAll();
-    Json collectAllContext();
+    pe_base::Json collectAllContext();
     
     // Get specific provider (type-safe)
     std::shared_ptr<SystemContextProvider> getSystemProvider() const;

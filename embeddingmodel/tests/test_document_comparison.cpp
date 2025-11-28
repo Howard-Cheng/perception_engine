@@ -20,12 +20,13 @@
 
 #include "E5EmbeddingDLL.h"
 #include "config/ConfigManager.h"  // Add ConfigManager
-#include "utils/Logger.h"          // Add Logger
+#include "pe_base/logger.h"          // Add Logger
 #include <iostream>
 #include <string>
 #include <fstream>
 #include <sstream>
 #include <Windows.h>
+#include <filesystem>
 
 // Helper: Read file to string
 std::string ReadFile(const char* filename) {
@@ -80,8 +81,14 @@ int main(int argc, char* argv[]) {
     std::cout << std::endl;
 
     // Initialize Logger
-    Logger::GetInstance().Initialize("test_embedding.log", LogLevel::DEBUG_L);
-    LOG_INFO("Test embedding comparison started");
+    std::filesystem::path log_path = "";
+     if (auto* p_appdata = getenv("APPDATA")) {
+        log_path =
+            std::filesystem::path(p_appdata) / "Lenovo" / "PerceptionEngine" / "logs";
+    }
+    pe_base::LogWriter::SetLogFilePrefix(
+        (log_path / "test_doc_compare").generic_string());
+    PE_INFO("Test embedding comparison started");
 
 
     // Create temp files in the same directory as executable
@@ -89,10 +96,10 @@ int main(int argc, char* argv[]) {
     // Load configuration
     std::cout << "Loading configuration..." << std::endl;
     if (!ConfigManager::GetInstance().LoadConfig(config_path)) {
-        LOG_WARN("Failed to load config.ini, using default values");
+        PE_WARN("Failed to load config.ini, using default values");
         std::cout << "Warning: Failed to load config.ini, using default values" << std::endl;
     } else {
-        LOG_INFO("Configuration loaded successfully");
+        PE_INFO("Configuration loaded successfully");
         std::cout << "Configuration loaded from config.ini" << std::endl;
     }
 
@@ -103,30 +110,30 @@ int main(int argc, char* argv[]) {
         std::string pathArg(argv[1]);
         modelPath = StringToWString(pathArg);
         std::wcout << L"Model path (from command line): " << modelPath << std::endl;
-        LOG_INFO(std::string("Using model path from command line: ") + pathArg);
+        PE_INFO(std::string("Using model path from command line: ") + pathArg);
     } else {
         // Use ConfigManager to get model path
         modelPath = ConfigManager::GetInstance().GetEmbeddingModelPath();
         std::wcout << L"Model path (from config.ini): " << modelPath << std::endl;
-        LOG_INFO("Using model path from ConfigManager");
+        PE_INFO("Using model path from ConfigManager");
         PrintUsage(argv[0]);
     }
 
     // Initialize the model
     std::cout << "\nInitializing E5 embedding model..." << std::endl;
-    LOG_INFO("Initializing E5 embedding model...");
+    PE_INFO("Initializing E5 embedding model...");
     int result = E5_Initialize(modelPath.c_str());
     if (result != 0) {
         std::cerr << "X Initialization failed: " << E5_GetLastError() << std::endl;
         std::cerr << "  Make sure the model file exists at the specified path" << std::endl;
-        LOG_ERROR(std::string("Initialization failed: ") + E5_GetLastError());
+        PE_ERROR(std::string("Initialization failed: ") + E5_GetLastError());
         return 1;
     }
     std::cout << "V Model loaded successfully!" << std::endl;
     std::cout << "  Embedding dimension: " << E5_GetEmbeddingDimension() << std::endl;
     std::cout << "  Max sequence length: " << E5_GetMaxSequenceLength() << std::endl;
     std::cout << std::endl;
-    LOG_INFO("Model loaded successfully");
+    PE_INFO("Model loaded successfully");
 
     // Test Case 1: Similar documents (sample text about AI/ML)
     std::cout << "========================================" << std::endl;

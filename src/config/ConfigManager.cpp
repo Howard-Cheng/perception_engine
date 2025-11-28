@@ -1,5 +1,5 @@
 #include "config/ConfigManager.h"
-#include "utils/Logger.h"
+#include "pe_base/logger.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -51,7 +51,7 @@ bool ConfigManager::LoadConfig(const std::string& configPath) {
         std::ifstream file(configPath);
         if (!file.is_open()) {
             lastError_ = "Failed to open config file: " + configPath;
-            LOG_WARN(lastError_);
+            PE_WARN(lastError_);
             return false;
         }
         
@@ -106,12 +106,12 @@ bool ConfigManager::LoadConfig(const std::string& configPath) {
         }
         
         loaded_ = true;
-        LOG_INFO("Configuration loaded successfully from: " + configPath);
+        PE_INFO("Configuration loaded successfully from: " + configPath);
         return true;
         
     } catch (const std::exception& e) {
         lastError_ = std::string("Exception loading config: ") + e.what();
-        LOG_ERROR(lastError_);
+        PE_ERROR(lastError_);
         return false;
     }
 }
@@ -123,7 +123,7 @@ bool ConfigManager::SaveConfig(const std::string& configPath) {
         std::ofstream file(configPath);
         if (!file.is_open()) {
             lastError_ = "Failed to open config file for writing: " + configPath;
-            LOG_ERROR(lastError_);
+            PE_ERROR(lastError_);
             return false;
         }
         
@@ -156,12 +156,12 @@ bool ConfigManager::SaveConfig(const std::string& configPath) {
         
         file.close();
         
-        LOG_INFO("Configuration saved to: " + configPath);
+        PE_INFO("Configuration saved to: " + configPath);
         return true;
         
     } catch (const std::exception& e) {
         lastError_ = std::string("Exception saving config: ") + e.what();
-        LOG_ERROR(lastError_);
+        PE_ERROR(lastError_);
         return false;
     }
 }
@@ -313,28 +313,28 @@ bool ConfigManager::ValidateConfiguration() const {
     std::string modelPath = GetEmbeddingModelPathUtf8_Unlocked();
     if (!std::filesystem::exists(modelPath)) {
         lastError_ = "Embedding model not found: " + modelPath;
-        LOG_ERROR(lastError_);
+        PE_ERROR(lastError_);
         return false;
     }
     
     std::string tokenizerPath = GetTokenizerPath_Unlocked();
     if (!std::filesystem::exists(tokenizerPath)) {
         lastError_ = "Tokenizer not found: " + tokenizerPath;
-        LOG_WARN(lastError_ + " (may be acceptable if not using document comparison)");
+        PE_WARN(lastError_ + " (may be acceptable if not using document comparison)");
     }
     
     // Check thresholds are reasonable - use unlocked internal methods
     int compressionThreshold = GetCompressionThreshold_Unlocked();
     if (compressionThreshold < 1 || compressionThreshold > 10000) {
         lastError_ = "Invalid compression threshold: " + std::to_string(compressionThreshold);
-        LOG_ERROR(lastError_);
+        PE_ERROR(lastError_);
         return false;
     }
     
     float similarityThreshold = GetSimilarityThreshold_Unlocked();
     if (similarityThreshold < 0.0f || similarityThreshold > 100.0f) {
         lastError_ = "Invalid similarity threshold: " + std::to_string(similarityThreshold);
-        LOG_ERROR(lastError_);
+        PE_ERROR(lastError_);
         return false;
     }
     

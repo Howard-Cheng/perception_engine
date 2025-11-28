@@ -1,12 +1,12 @@
 #include "dataprocess/TaskQueue.h"
-#include "utils/Logger.h"
+#include "pe_base/logger.h"
 
 namespace dataprocess {
 
 TaskQueue::TaskQueue(const std::string& name)
     : name_(name), running_(true) {
     worker_ = std::make_unique<std::thread>(&TaskQueue::WorkerThread, this);
-    LOG_INFO_FMT("TaskQueue '%s' started", name_.c_str());
+    PE_INFO_THIS("TaskQueue " << name_.c_str() << " started")
 }
 
 TaskQueue::~TaskQueue() {
@@ -15,7 +15,7 @@ TaskQueue::~TaskQueue() {
 
 void TaskQueue::PostTask(Task task) {
     if (!running_.load()) {
-        LOG_WARN_FMT("TaskQueue '%s' is not running, task ignored", name_.c_str());
+        PE_INFO_THIS("TaskQueue" << name_.c_str() <<  " is not running, task ignored")
         return;
     }
 
@@ -31,14 +31,14 @@ void TaskQueue::Stop() {
         return;
     }
 
-    LOG_INFO_FMT("Stopping TaskQueue '%s'...", name_.c_str());
+    PE_INFO_THIS("Stopping TaskQueue '" << name_.c_str() << "  '...")
     running_.store(false);
     cv_.notify_all();
 
     if (worker_ && worker_->joinable()) {
         worker_->join();
     }
-    LOG_INFO_FMT("TaskQueue '%s' stopped", name_.c_str());
+    PE_INFO_THIS("TaskQueue  '" << name_.c_str() << "  ' stopped")
 }
 
 void TaskQueue::WorkerThread() {
@@ -64,14 +64,14 @@ void TaskQueue::WorkerThread() {
             try {
                 task();
             } catch (const std::exception& e) {
-                LOG_ERROR_FMT("TaskQueue '%s' task exception: %s", name_.c_str(), e.what());
+                PE_ERROR_THIS("TaskQueue '" << name_.c_str() << " ' task exception: %s" << e.what())
             } catch (...) {
-                LOG_ERROR_FMT("TaskQueue '%s' task unknown exception", name_.c_str());
+                PE_ERROR_THIS("TaskQueue '%s' task unknown exception", name_.c_str());
             }
         }
     }
 
-    LOG_INFO_FMT("TaskQueue '%s' worker thread exiting", name_.c_str());
+    PE_INFO("TaskQueue '" << name_.c_str() << "' worker thread exiting")
 }
 
 } // namespace dataprocess

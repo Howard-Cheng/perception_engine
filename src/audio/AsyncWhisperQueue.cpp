@@ -1,6 +1,7 @@
 #include "audio/AsyncWhisperQueue.h"
 #include <iostream>
 #include "whisper.h"
+#include "pe_base/time_util.h"
 
 AsyncWhisperQueue::AsyncWhisperQueue(whisper_context* ctx)
     : whisperContext(ctx)
@@ -104,11 +105,11 @@ void AsyncWhisperQueue::WorkerThread() {
         // Transcribe (this takes 6+ seconds, but doesn't block main thread!)
         processing.store(true);
 
-        auto startTime = std::chrono::high_resolution_clock::now();
+        auto startTime = pe_base::TimeUtil::TimestampMs();
         std::string transcription = TranscribeAudio(audioToProcess);
-        auto endTime = std::chrono::high_resolution_clock::now();
+        auto endTime = pe_base::TimeUtil::TimestampMs();
 
-        float latencyMs = std::chrono::duration<float, std::milli>(endTime - startTime).count();
+        float latencyMs = endTime - startTime;
         lastLatencyMs.store(latencyMs);
 
         processing.store(false);

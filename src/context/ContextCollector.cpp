@@ -53,12 +53,12 @@ ContextCollector::~ContextCollector() {
     contextManager_.shutdown();
 }
 
-Json ContextCollector::CollectCurrentContext() {
+pe_base::Json ContextCollector::CollectCurrentContext() {
     // Trigger all providers to update
     contextManager_.updateAll();
     
     // Collect all context data
-    Json context = contextManager_.collectAllContext();
+    pe_base::Json context = contextManager_.collectAllContext();
     
     // Add fused context summary
     context.set("fusedContext", GenerateFusedContext());
@@ -195,7 +195,7 @@ void ContextCollector::ShutdownDatabase() {
     esClient_.reset();
 }
 
-void ContextCollector::StoreContextToES(const Json& context) {
+void ContextCollector::StoreContextToES(const pe_base::Json& context) {
     std::lock_guard<std::mutex> lock(esClientMutex_);
     
     if (!esClient_) {
@@ -222,7 +222,7 @@ void ContextCollector::StoreContextToES(const Json& context) {
     }
 }
 
-database::RawEvent ContextCollector::jsonContextToRawEvent(const Json& context) {
+database::RawEvent ContextCollector::jsonContextToRawEvent(const pe_base::Json& context) {
     database::RawEvent event;
     
     // Generate unique event ID
@@ -302,11 +302,11 @@ database::RawEvent ContextCollector::jsonContextToRawEvent(const Json& context) 
     return event;
 }
 
-Json ContextCollector::GetESDBData(const std::string& keyword,
+pe_base::Json ContextCollector::GetESDBData(const std::string& keyword,
                                     std::time_t startTime,
                                     std::time_t endTime,
                                     int maxResults) {
-    Json result;
+    pe_base::Json result;
     
     std::lock_guard<std::mutex> lock(esClientMutex_);
     
@@ -331,7 +331,7 @@ Json ContextCollector::GetESDBData(const std::string& keyword,
         if (!keyword.empty()) {
             queryBuilder << "      {"
                          << "        \"multi_match\":{"
-                         << "          \"query\":\"" << Json::escapeJsonString(keyword) << "\","
+                         << "          \"query\":\"" << pe_base::Json::escapeJsonString(keyword) << "\","
                          << "          \"fields\":[\"screen_content\",\"voice_transcription\","
                          << "                     \"camera_description\",\"app_name\","
                          << "                     \"window_title\"],"
@@ -360,7 +360,7 @@ Json ContextCollector::GetESDBData(const std::string& keyword,
         std::string query = queryBuilder.str();
         database::SearchResult searchResult = esClient_->search(esIndexName_, query, 0, maxResults);
         
-        // Convert to Json
+        // Convert to pe_base::Json
         std::ostringstream resultsArray;
         resultsArray << "[";
         
@@ -370,17 +370,17 @@ Json ContextCollector::GetESDBData(const std::string& keyword,
             first = false;
             
             resultsArray << "{"
-                         << "\"eventId\":\"" << Json::escapeJsonString(event.eventId) << "\","
+                         << "\"eventId\":\"" << pe_base::Json::escapeJsonString(event.eventId) << "\","
                          << "\"timestamp\":" << event.timestamp << ","
-                         << "\"deviceId\":\"" << Json::escapeJsonString(event.deviceId) << "\","
-                         << "\"appName\":\"" << Json::escapeJsonString(event.appName) << "\"";
+                         << "\"deviceId\":\"" << pe_base::Json::escapeJsonString(event.deviceId) << "\","
+                         << "\"appName\":\"" << pe_base::Json::escapeJsonString(event.appName) << "\"";
             
             if (event.windowTitle.has_value()) {
-                resultsArray << ",\"windowTitle\":\"" << Json::escapeJsonString(event.windowTitle.value()) << "\"";
+                resultsArray << ",\"windowTitle\":\"" << pe_base::Json::escapeJsonString(event.windowTitle.value()) << "\"";
             }
             
             if (event.screenContent.has_value()) {
-                resultsArray << ",\"screenContent\":\"" << Json::escapeJsonString(event.screenContent.value()) << "\"";
+                resultsArray << ",\"screenContent\":\"" << pe_base::Json::escapeJsonString(event.screenContent.value()) << "\"";
             }
             
             resultsArray << "}";
@@ -396,7 +396,7 @@ Json ContextCollector::GetESDBData(const std::string& keyword,
         
     } catch (const std::exception& e) {
         std::cerr << "[GetESDBData] Exception: " << e.what() << std::endl;
-        result.setRaw("error", "\"" + Json::escapeJsonString(e.what()) + "\"");
+        result.setRaw("error", "\"" + pe_base::Json::escapeJsonString(e.what()) + "\"");
         result.setRaw("results", "[]");
         return result;
     }
@@ -414,7 +414,7 @@ void ContextCollector::OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& re
     
     try {
         // Collect current context
-        Json context = CollectCurrentContext();
+        pe_base::Json context = CollectCurrentContext();
         
         // Store to Elasticsearch
         StoreContextToES(context);

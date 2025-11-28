@@ -9,7 +9,7 @@ void CameraContextProvider::update() {
     // Camera context is updated via updateDescription(), not via polling
 }
 
-void CameraContextProvider::collectContext(Json& context) const {
+void CameraContextProvider::collectContext(pe_base::Json& context) const {
     std::lock_guard<std::mutex> lock(mutex_);
     
     if (!description_.empty()) {

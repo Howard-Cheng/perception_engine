@@ -52,6 +52,7 @@ set(PE_BASE_SOURCES
     src/time_util.cpp
     src/transport/data_buffer.cpp
     src/windows_helper.cpp
+    src/config_manager.cpp
 )
 
 # Add Library
@@ -69,8 +70,8 @@ target_include_directories(pe_base
 # Compile Definitions
 target_compile_definitions(pe_base
     PRIVATE
-        pe_base_EXPORTS
-        pe_base_LIB_SHARED
+        PE_BASE_EXPORTS
+        PE_BASE_LIB_SHARED
         _WIN32_WINNT=0x0A00
         BOOST_ASIO_NO_DEPRECATED
 )

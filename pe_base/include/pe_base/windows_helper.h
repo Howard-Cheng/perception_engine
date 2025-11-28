@@ -7,7 +7,7 @@
 #include "pe_base/pe_exports.h"
 #include "pe_base/transport/data_buffer.h"
 namespace pe_base {
-class pe_base_API WindowsHelper {
+class PE_BASE_API WindowsHelper {
  public:
   static DataBuffer ToString(HRESULT hr);
   static DataBuffer ToString(const _com_error& error);

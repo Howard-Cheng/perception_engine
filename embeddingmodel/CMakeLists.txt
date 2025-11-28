@@ -11,12 +11,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Source files
 set(E5_EMBEDDING_SOURCES
     src/E5EmbeddingDLL.cpp
-    ../src/config/ConfigManager.cpp
 )
 
 set(E5_EMBEDDING_HEADERS
     include/E5EmbeddingDLL.h
-    ../include/config/ConfigManager.h
 )
 
 # Create shared library
@@ -62,7 +60,6 @@ if(BUILD_EMBEDDING_TESTS)
     # Test executable - Document Comparison
     add_executable(test_document_comparison
         tests/test_document_comparison.cpp
-        ../src/config/ConfigManager.cpp
     )
     
     target_include_directories(test_document_comparison PRIVATE
@@ -87,7 +84,6 @@ if(BUILD_EMBEDDING_TESTS)
     # Test executable - Elasticsearch Similarity Integration
     add_executable(test_elasticsearch_similarity
         tests/test_elasticsearch_similarity.cpp
-        ../src/config/ConfigManager.cpp
     )
     
     target_include_directories(test_elasticsearch_similarity PRIVATE

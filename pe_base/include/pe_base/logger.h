@@ -21,7 +21,7 @@ enum class LogLevel {
 //
 // brief: Log message wrapper. Should not be used directly.
 //
-class pe_base_API LogMessage {
+class PE_BASE_API LogMessage {
  public:
   static std::shared_ptr<LogMessage> Create(const std::string& file, long line,
                                             LogLevel type,
@@ -34,7 +34,7 @@ class pe_base_API LogMessage {
   virtual ~LogMessage(){};
 };
 
-class pe_base_API LogWriter {
+class PE_BASE_API LogWriter {
  public:
   typedef void (*CustomLogFunctionPtr)(LogMessage&);
   //

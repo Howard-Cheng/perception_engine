@@ -8,7 +8,7 @@ namespace pe_base {
 // Note(by Hanson Drew): Attention!!! If not expected to copy buffer,
 //                     Please use std::move to construct new DataBuffer,
 //                     just like this - DataBuffer data(std::move(old_data));
-class pe_base_API DataBuffer {
+class PE_BASE_API DataBuffer {
  public:
   typedef std::shared_ptr<DataBuffer> Ptr_t;
   DataBuffer();

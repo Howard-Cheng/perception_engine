@@ -3,7 +3,7 @@
 #endif
 
 #include "platform/BrowserContentExtractor.h"
-#include "utils/Logger.h"  // Correct path - same directory as BrowserContentExtractor.cpp
+#include "pe_base/logger.h"  // Correct path - same directory as BrowserContentExtractor.cpp
 #include <algorithm>
 #include <iomanip>
 #include <iostream>
@@ -35,7 +35,7 @@ bool BrowserContentExtractor::InitializeUIAutomation() {
         (void**)&pAutomation);
     
     if (FAILED(hr) || !pAutomation) {
-        LOG_ERROR_FMT("Initialize UI Automation failed! HRESULT: 0x%lX", hr);
+        PE_ERROR_THIS("Initialize UI Automation failed! HRESULT" << hr)
         return false;
     }
     return true;
@@ -124,7 +124,7 @@ CComPtr<IUIAutomationElement> FindDocumentElement(IUIAutomation* pAutomation, IU
     hr = pRootElement->FindFirst(TreeScope_Descendants, pCondition, &pDocElement);
     
     if (SUCCEEDED(hr) && pDocElement) {
-        //LOG_DEBUG("Found Document element (web content area)");
+        //PE_DEBUG("Found Document element (web content area)");
         return pDocElement;
     }
     
@@ -169,7 +169,7 @@ CComPtr<IUIAutomationElement> FindDocumentElement(IUIAutomation* pAutomation, IU
 bool BrowserContentExtractor::GetActiveBrowserContent(BrowserContentInfo& outInfo) {
     HWND hwnd = GetForegroundWindow();
     if (!hwnd) {
-        LOG_ERROR("Cannot get foreground window!");
+        PE_ERROR("Cannot get foreground window!");
         return false;
     }
     
@@ -178,7 +178,7 @@ bool BrowserContentExtractor::GetActiveBrowserContent(BrowserContentInfo& outInf
 
 bool BrowserContentExtractor::GetBrowserContentByHWND(HWND hwnd, BrowserContentInfo& outInfo) {
     if (!pAutomation) {
-        LOG_ERROR("UI Automation not initialized!");
+        PE_ERROR("UI Automation not initialized!");
         return false;
     }
     
@@ -188,22 +188,22 @@ bool BrowserContentExtractor::GetBrowserContentByHWND(HWND hwnd, BrowserContentI
     GetWindowTextW(hwnd, windowTitle, 512);
     outInfo.title = windowTitle;
     
-    //LOG_DEBUG("Detected browser type:");
+    //PE_DEBUG("Detected browser type:");
     switch (browserType) {
         case BrowserType::Chrome:
-            LOG_DEBUG("Chrome");
+            PE_DEBUG("Chrome");
             break;
         case BrowserType::Edge:
-            LOG_DEBUG("Edge");
+            PE_DEBUG("Edge");
             break;
         case BrowserType::Firefox:
-            LOG_DEBUG("Firefox");
+            PE_DEBUG("Firefox");
             break;
         case BrowserType::Teams:
-            LOG_DEBUG("Teams");
+            PE_DEBUG("Teams");
             break;
         default:
-            //LOG_DEBUG("Unknown (will try generic parsing)");
+            //PE_DEBUG("Unknown (will try generic parsing)");
             break;
     }
     
@@ -211,7 +211,7 @@ bool BrowserContentExtractor::GetBrowserContentByHWND(HWND hwnd, BrowserContentI
     HRESULT hr = pAutomation->ElementFromHandle(hwnd, &pRootElement);
     
     if (FAILED(hr) || !pRootElement) {
-        LOG_ERROR("Cannot get UI element from window handle!");
+        PE_ERROR("Cannot get UI element from window handle!");
         return false;
     }
     
@@ -225,17 +225,17 @@ bool BrowserContentExtractor::GetBrowserContentByHWND(HWND hwnd, BrowserContentI
     
     outInfo.elementCount = 0;
 
-    //LOG_DEBUG("Searching for web content area...");
+    //PE_DEBUG("Searching for web content area...");
 
     // KEY CHANGE: Only traverse web content area, not entire browser window
     CComPtr<IUIAutomationElement> pContentElement = FindDocumentElement(pAutomation, pRootElement);
 
     if (pContentElement) {
-        //LOG_DEBUG("Starting element traversal from content area...");
+        //PE_DEBUG("Starting element traversal from content area...");
         TraverseElementTree(pContentElement, outInfo, 0);
     } else {
-        LOG_WARN("Could not find content area, parsing entire window...");
-        LOG_WARN("(This may include toolbar, tabs, and other UI elements)");
+        PE_WARN("Could not find content area, parsing entire window...");
+        PE_WARN("(This may include toolbar, tabs, and other UI elements)");
         TraverseElementTree(pRootElement, outInfo, 0);
     }
 
@@ -490,37 +490,37 @@ std::wstring BrowserContentExtractor::GetControlTypeName(long controlType) {
 }
 
 void BrowserContentExtractor::PrintBrowserContent(const BrowserContentInfo& info) {
-    LOG_INFO("========== Browser Content Info ==========");
-    LOG_INFO_FMT("Title: %s", WStringToString(info.title).c_str());
-    LOG_INFO_FMT("URL: %s", info.url.empty() ? "(not found)" : WStringToString(info.url).c_str());
-    LOG_INFO_FMT("Element count: %d", info.elementCount);
+    PE_INFO("========== Browser Content Info ==========");
+    PE_INFO_THIS("Title:" << WStringToString(info.title).c_str())
+    PE_INFO_THIS("URL:" << (info.url.empty() ? "(not found)" : WStringToString(info.url).c_str()))
+    PE_INFO_THIS("Element count: %d", info.elementCount);
     
-    LOG_INFO_FMT("Links found: %zu", info.links.size());
+    PE_INFO_THIS("Links found:" << info.links.size())
     if (!info.links.empty()) {
-        LOG_INFO("Link list (first 10):");
+        PE_INFO("Link list (first 10):");
         size_t maxLinks = (info.links.size() < 10) ? info.links.size() : 10;
         for (size_t i = 0; i < maxLinks; i++) {
-            LOG_INFO_FMT("  %zu. %s", i + 1, WStringToString(info.links[i]).c_str());
+            PE_INFO_THIS(i + 1 << "," << WStringToString(info.links[i]).c_str())
         }
     }
     
-    LOG_INFO_FMT("Images found: %zu", info.images.size());
+    PE_INFO_THIS("Images found:" << info.images.size())
     if (!info.images.empty()) {
-        LOG_INFO("Image list (first 10):");
+        PE_INFO("Image list (first 10):");
         size_t maxImages = (info.images.size() < 10) ? info.images.size() : 10;
         for (size_t i = 0; i < maxImages; i++) {
-            LOG_INFO_FMT("  %zu. %s", i + 1, WStringToString(info.images[i]).c_str());
+            PE_INFO_THIS(i + 1 << "," << WStringToString(info.links[i]).c_str())
         }
     }
     
-    LOG_INFO("Page text content (first 2000 chars):");
-    LOG_INFO("-----------------------------------");
+    PE_INFO("Page text content (first 2000 chars):");
+    PE_INFO("-----------------------------------");
     if (info.textContent.length() > 2000) {
-        LOG_INFO_FMT("%s...", WStringToString(info.textContent.substr(0, 2000)).c_str());
+        PE_INFO_THIS(WStringToString(info.textContent.substr(0, 2000)).c_str() << "...")
     }
     else {
-        LOG_INFO(WStringToString(info.textContent).c_str());
+        PE_INFO(WStringToString(info.textContent).c_str());
     }
-    LOG_INFO("-----------------------------------");
-    LOG_INFO("========== End of Info ==========");
+    PE_INFO("-----------------------------------");
+    PE_INFO("========== End of Info ==========");
 }

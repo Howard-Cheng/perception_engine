@@ -1,5 +1,5 @@
 #include "dataprocess/DataProcessClient.h"
-#include "utils/Logger.h"
+#include "pe_base/logger.h"
 #include <chrono>
 #include <iostream>
 #include <filesystem>
@@ -38,23 +38,23 @@ namespace dataprocess {
 
     bool DataProcessClient::Start(const std::string& serverExePath) {
         if (isRunning_.load()) {
-            LOG_WARN("DataProcessClient already running");
+            PE_WARN("DataProcessClient already running");
             return false;
         }
 
-        LOG_INFO_FMT("Starting DataProcessServer from: %s", serverExePath.c_str());
+        PE_INFO_THIS("Starting DataProcessServer from: " << serverExePath.c_str())
 
-        if (!CreateServerProcess(serverExePath)) {
-            LOG_ERROR("Failed to create server process");
-            return false;
-        }
+            if (!CreateServerProcess(serverExePath)) {
+                PE_ERROR("Failed to create server process");
+                return false;
+            }
 
         isRunning_.store(true);
 
         // Start receive thread
         receiveThread_ = std::make_unique<std::thread>(&DataProcessClient::ReceiveThread, this);
 
-        LOG_INFO("DataProcessClient started successfully");
+        PE_INFO("DataProcessClient started successfully");
         return true;
     }
 
@@ -63,7 +63,7 @@ namespace dataprocess {
             return;
         }
 
-        LOG_INFO("Stopping DataProcessClient...");
+        PE_INFO("Stopping DataProcessClient...");
 
         // Send shutdown command
         SendCommand(kCommandShutdown, nullptr, 0);
@@ -76,7 +76,7 @@ namespace dataprocess {
         // Wait for receive thread
         if (receiveThread_ && receiveThread_->joinable()) {
             receiveThread_->join();
-            LOG_INFO("Receive thread joined");
+            PE_INFO("Receive thread joined");
         }
 
         // Close handles
@@ -93,7 +93,7 @@ namespace dataprocess {
         if (processInfo_.hProcess) {
             DWORD exitCode;
             if (GetExitCodeProcess(processInfo_.hProcess, &exitCode) && exitCode == STILL_ACTIVE) {
-                LOG_WARN("Process still running, terminating...");
+                PE_WARN("Process still running, terminating...");
                 TerminateProcess(processInfo_.hProcess, 1);
             }
             CloseHandle(processInfo_.hProcess);
@@ -101,7 +101,7 @@ namespace dataprocess {
             processInfo_ = { 0 };
         }
 
-        LOG_INFO("DataProcessClient stopped");
+        PE_INFO("DataProcessClient stopped");
     }
 
     bool DataProcessClient::CreateServerProcess(const std::string& serverExePath) {
@@ -115,30 +115,30 @@ namespace dataprocess {
 
         // Create pipes for stdin
         if (!CreatePipe(&hChildStdinRead, &hChildStdinWrite_, &sa, 1024 * 1024)) {
-            LOG_ERROR_FMT("CreatePipe for stdin failed: %lu", GetLastError());
-            return false;
+            PE_ERROR_THIS("CreatePipe for stdin failed: " << GetLastError())
+                return false;
         }
 
         // Ensure write handle is not inherited
         if (!SetHandleInformation(hChildStdinWrite_, HANDLE_FLAG_INHERIT, 0)) {
-            LOG_ERROR_FMT("SetHandleInformation for stdin failed: %lu", GetLastError());
-            CloseHandle(hChildStdinRead);
+            PE_ERROR_THIS("SetHandleInformation for stdin failed:  " << GetLastError())
+                CloseHandle(hChildStdinRead);
             CloseHandle(hChildStdinWrite_);
             return false;
         }
 
         // Create pipes for stdout
         if (!CreatePipe(&hChildStdoutRead_, &hChildStdoutWrite, &sa, 1024 * 1024)) {
-            LOG_ERROR_FMT("CreatePipe for stdout failed: %lu", GetLastError());
-            CloseHandle(hChildStdinRead);
+            PE_ERROR_THIS("CreatePipe for stdout failed:  " << GetLastError())
+                CloseHandle(hChildStdinRead);
             CloseHandle(hChildStdinWrite_);
             return false;
         }
 
         // Ensure read handle is not inherited
         if (!SetHandleInformation(hChildStdoutRead_, HANDLE_FLAG_INHERIT, 0)) {
-            LOG_ERROR_FMT("SetHandleInformation for stdout failed: %lu", GetLastError());
-            CloseHandle(hChildStdinRead);
+            PE_ERROR_THIS("SetHandleInformation for stdout failed:  " << GetLastError())
+                CloseHandle(hChildStdinRead);
             CloseHandle(hChildStdinWrite_);
             CloseHandle(hChildStdoutRead_);
             CloseHandle(hChildStdoutWrite);
@@ -177,16 +177,16 @@ namespace dataprocess {
 
         if (!success) {
             DWORD error = GetLastError();
-            LOG_ERROR_FMT("CreateProcess failed: %lu", error);
-            CloseHandle(hChildStdinWrite_);
+            PE_ERROR_THIS("CreateProcess failed:  " << error)
+                CloseHandle(hChildStdinWrite_);
             CloseHandle(hChildStdoutRead_);
             hChildStdinWrite_ = nullptr;
             hChildStdoutRead_ = nullptr;
             return false;
         }
 
-        LOG_INFO_FMT("DataProcessServer process created, PID: %lu", processInfo_.dwProcessId);
-        return true;
+        PE_INFO_THIS("DataProcessServer process created, PID: " << processInfo_.dwProcessId)
+            return true;
     }
 
     bool DataProcessClient::SendCommand(DataProcessCommand cmd, const void* data, size_t dataSize) {
@@ -201,19 +201,19 @@ namespace dataprocess {
 
         // Write header
         if (!WriteToChildStdin(reinterpret_cast<const uint8_t*>(&header), sizeof(header))) {
-            LOG_ERROR("Failed to write command header");
+            PE_ERROR("Failed to write command header");
             return false;
         }
 
         // Write payload if present
         if (dataSize > 0 && data != nullptr) {
             if (!WriteToChildStdin(reinterpret_cast<const uint8_t*>(data), dataSize)) {
-                LOG_ERROR("Failed to write command payload");
+                PE_ERROR("Failed to write command payload");
                 return false;
             }
         }
 
-        LOG_DEBUG_FMT("Sent command: %u, size: %zu", cmd, dataSize);
+        PE_DEBUG_THIS("Sent command: " << cmd << ", size: " << dataSize);
         return true;
     }
 
@@ -222,8 +222,8 @@ namespace dataprocess {
         while (totalWritten < size) {
             DWORD bytesWritten = 0;
             if (!WriteFile(hChildStdinWrite_, buffer + totalWritten, size - totalWritten, &bytesWritten, nullptr)) {
-                LOG_ERROR_FMT("WriteFile failed: %lu", GetLastError());
-                return false;
+                PE_ERROR_THIS("WriteFile failed: " << GetLastError())
+                    return false;
             }
             totalWritten += bytesWritten;
         }
@@ -237,14 +237,14 @@ namespace dataprocess {
             if (!ReadFile(hChildStdoutRead_, buffer + totalRead, size - totalRead, &bytesRead, nullptr)) {
                 DWORD error = GetLastError();
                 if (error == ERROR_BROKEN_PIPE) {
-                    LOG_INFO("Server closed pipe");
+                    PE_INFO("Server closed pipe");
                     return false;
                 }
-                LOG_ERROR_FMT("ReadFile failed: %lu", error);
-                return false;
+                PE_ERROR_THIS("ReadFile failed: " << error)
+                    return false;
             }
             if (bytesRead == 0) {
-                LOG_WARN("ReadFile returned 0 bytes");
+                PE_WARN("ReadFile returned 0 bytes");
                 return false;
             }
             totalRead += bytesRead;
@@ -253,13 +253,13 @@ namespace dataprocess {
     }
 
     void DataProcessClient::ReceiveThread() {
-        LOG_INFO("Receive thread started");
+        PE_INFO("Receive thread started");
 
         while (isRunning_.load()) {
             // Read header
             MessageHeader header;
             if (!ReadFromChildStdout(reinterpret_cast<uint8_t*>(&header), sizeof(header))) {
-                LOG_INFO("Failed to read header, exiting receive thread");
+                PE_INFO("Failed to read header, exiting receive thread");
                 break;
             }
 
@@ -268,12 +268,12 @@ namespace dataprocess {
             if (header.dataSize > 0) {
                 payload.resize(header.dataSize);
                 if (!ReadFromChildStdout(payload.data(), header.dataSize)) {
-                    LOG_ERROR("Failed to read payload");
+                    PE_ERROR("Failed to read payload");
                     break;
                 }
             }
 
-            LOG_DEBUG_FMT("Received response: cmd=%u, size=%u", header.command, header.dataSize);
+            PE_DEBUG_THIS("Received response: cmd= " << header.command << ", size = " << header.dataSize);
 
             // Call callback if set
             {
@@ -285,7 +285,7 @@ namespace dataprocess {
             }
         }
 
-        LOG_INFO("Receive thread exiting");
+        PE_INFO("Receive thread exiting");
     }
 
     bool DataProcessClient::SendPing() {
@@ -294,7 +294,7 @@ namespace dataprocess {
 
     bool DataProcessClient::SendProcessText(const char* text, ResponseCallback callback) {
         if (!isRunning_.load()) {
-            LOG_ERROR("Client not running");
+            PE_ERROR("Client not running");
             return false;
         }
 
@@ -313,7 +313,7 @@ namespace dataprocess {
         const uint8_t* imageData, size_t imageSize,
         ResponseCallback callback) {
         if (!isRunning_.load()) {
-            LOG_ERROR("Client not running");
+            PE_ERROR("Client not running");
             return false;
         }
 
@@ -336,7 +336,7 @@ namespace dataprocess {
         uint32_t numSamples, const float* audioData,
         ResponseCallback callback) {
         if (!isRunning_.load()) {
-            LOG_ERROR("Client not running");
+            PE_ERROR("Client not running");
             return false;
         }
 

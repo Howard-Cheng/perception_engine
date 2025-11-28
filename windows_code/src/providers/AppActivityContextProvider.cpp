@@ -1,7 +1,7 @@
 #include "providers/AppActivityContextProvider.h"
-#include "utils/Logger.h"
+#include "pe_base/logger.h"
 
-// Windows headers±ØĞëÔÚÇ°Ãæ
+// Windows headerså¿…é¡»åœ¨å‰é¢
 #include <Windows.h>
 #include <iostream>
 // UI Automation headers

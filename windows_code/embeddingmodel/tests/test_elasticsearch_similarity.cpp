@@ -19,9 +19,10 @@
 
 #include "E5EmbeddingDLL.h"
 #include "config/ConfigManager.h"
-#include "utils/Logger.h"
+#include "pe_base/logger.h"
 #include "ElasticsearchClient.h"
 #include "DatabaseTypes.h"
+#include <Windows.h>
 #include <iostream>
 #include <vector>
 #include <string>
@@ -29,6 +30,7 @@
 #include <chrono>
 #include <thread>
 #include <memory>
+#include <filesystem>
 
 using namespace database;
 
@@ -181,19 +183,25 @@ int main() {
     std::cout << std::endl;
     
     // Initialize Logger
-    Logger::GetInstance().Initialize("test_es_similarity.log", LogLevel::INFO_L);
-    LOG_INFO("Test started");
+    std::filesystem::path log_path = "";
+    if (auto* p_appdata = getenv("APPDATA")) {
+        log_path =
+            std::filesystem::path(p_appdata) / "Lenovo" / "PerceptionEngine" / "logs";
+    }
+    pe_base::LogWriter::SetLogFilePrefix(
+        (log_path / "test_es_similarity").generic_string());
+    PE_INFO("Test started");
 
     std::string config_path = GetExePath() + "\\config.ini";
     // Load configuration
     std::cout << "[1/6] Loading configuration..." << std::endl;
     if (!ConfigManager::GetInstance().LoadConfig(config_path)) {
         std::cerr << "    X Failed to load config.json" << std::endl;
-        LOG_ERROR("Failed to load configuration");
+        PE_ERROR("Failed to load configuration");
         return 1;
     }
     std::cout << "    V Configuration loaded" << std::endl;
-    LOG_INFO("Configuration loaded successfully");
+    PE_INFO("Configuration loaded successfully");
     
     // Initialize E5 model
     std::cout << "\n[2/6] Initializing E5 embedding model..." << std::endl;
@@ -203,11 +211,11 @@ int main() {
     int result = E5_Initialize(modelPath.c_str());
     if (result != 0) {
         std::cerr << "    X Initialization failed: " << E5_GetLastError() << std::endl;
-        LOG_ERROR(std::string("E5 initialization failed: ") + E5_GetLastError());
+        PE_ERROR(std::string("E5 initialization failed: ") + E5_GetLastError());
         return 1;
     }
     std::cout << "    V Model loaded (dim=" << E5_GetEmbeddingDimension() << ")" << std::endl;
-    LOG_INFO("E5 model initialized successfully");
+    PE_INFO("E5 model initialized successfully");
     
     // Initialize Elasticsearch client
     std::cout << "\n[3/6] Initializing Elasticsearch client..." << std::endl;
@@ -220,12 +228,12 @@ int main() {
     if (!esClient->testConnection()) {
         std::cerr << "    X Failed to connect to Elasticsearch" << std::endl;
         std::cerr << "    Make sure Elasticsearch is running at: " << esUrl << std::endl;
-        LOG_ERROR("Failed to connect to Elasticsearch");
+        PE_ERROR("Failed to connect to Elasticsearch");
         E5_Cleanup();
         return 1;
     }
     std::cout << "    V Connected to Elasticsearch" << std::endl;
-    LOG_INFO("Connected to Elasticsearch");
+    PE_INFO("Connected to Elasticsearch");
     
     // Create test index
     std::string testIndex = "test_similarity_" + std::to_string(std::time(nullptr));
@@ -233,12 +241,12 @@ int main() {
     
     if (!esClient->initializeCollection(testIndex)) {
         std::cerr << "    X Failed to create test index" << std::endl;
-        LOG_ERROR("Failed to create test index");
+        PE_ERROR("Failed to create test index");
         E5_Cleanup();
         return 1;
     }
     std::cout << "    V Test index created" << std::endl;
-    LOG_INFO(std::string("Test index created: ") + testIndex);
+    PE_INFO(std::string("Test index created: ") + testIndex);
     
     // Insert test data
     std::cout << "\n[4/6] Inserting test data (10 events)..." << std::endl;
@@ -253,10 +261,10 @@ int main() {
         std::string eventId = esClient->indexDocument(testIndex, event);
         if (eventId.empty()) {
             std::cerr << "    X Failed to insert event " << i << std::endl;
-            LOG_ERROR(std::string("Failed to insert event ") + std::to_string(i));
+            PE_ERROR(std::string("Failed to insert event ") + std::to_string(i));
         } else {
             std::cout << "    V Event " << i << " inserted: " << testContents[i].description << std::endl;
-            LOG_INFO(std::string("Event inserted: ") + eventId);
+            PE_INFO(std::string("Event inserted: ") + eventId);
         }
         
         // Small delay to ensure ordering
@@ -291,11 +299,11 @@ int main() {
     
     SearchResult searchResult = esClient->search(testIndex, query, 0, 100);
     std::cout << "    Retrieved " << searchResult.events.size() << " uncompressed events" << std::endl;
-    LOG_INFO(std::string("Retrieved ") + std::to_string(searchResult.events.size()) + " events");
+    PE_INFO(std::string("Retrieved ") + std::to_string(searchResult.events.size()) + " events");
     
     if (searchResult.events.empty()) {
         std::cerr << "    X No events found" << std::endl;
-        LOG_ERROR("No events found");
+        PE_ERROR("No events found");
         esClient->deleteCollection(testIndex);
         E5_Cleanup();
         return 1;
@@ -329,7 +337,7 @@ int main() {
         
         if (result != 0) {
             std::cerr << "    X Comparison failed: " << E5_GetLastError() << std::endl;
-            LOG_ERROR(std::string("Comparison failed: ") + E5_GetLastError());
+            PE_ERROR(std::string("Comparison failed: ") + E5_GetLastError());
             continue;
         }
         
@@ -382,7 +390,7 @@ int main() {
                 
                 if (success1 && success2) {
                     std::cout << "    V Updated both events with similarity info" << std::endl;
-                    LOG_INFO(std::string("Updated events ") + event1.eventId + " and " + event2.eventId);
+                    PE_INFO(std::string("Updated events ") + event1.eventId + " and " + event2.eventId);
                     
                     // Display first chunk pair
                     std::cout << "    Top match (score: " << chunks[0].similarity_score << "):" << std::endl;
@@ -478,7 +486,7 @@ int main() {
     std::cout << "===============================================" << std::endl;
     
     // Cleanup
-    LOG_INFO("Test completed successfully");
+    PE_INFO("Test completed successfully");
     E5_Cleanup();
     
     std::cout << "\nNote: To delete the test index, run:" << std::endl;

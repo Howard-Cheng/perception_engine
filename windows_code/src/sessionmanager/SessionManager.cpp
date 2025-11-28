@@ -1,6 +1,6 @@
 ﻿#include "sessionmanager/SessionManager.h"
 #include "E5EmbeddingDLL.h"
-#include "utils/Logger.h"
+#include "pe_base/logger.h"
 #include "config/ConfigManager.h"
 #include "ElasticsearchClient.h"
 #include <iostream>
@@ -29,11 +29,11 @@ SessionManager::SessionManager(
     int result = E5_Initialize(modelPath.c_str());
     if (result != 0) {
         std::cerr << "[SessionManager] E5 initialization failed: " << E5_GetLastError() << std::endl;
-        LOG_ERROR(std::string("E5 initialization failed: ") + E5_GetLastError());
+        PE_ERROR(std::string("E5 initialization failed: ") + E5_GetLastError());
     }
     else {
         std::cout << "[SessionManager] E5 model loaded successfully" << std::endl;
-        LOG_INFO("E5 model loaded successfully");
+        PE_INFO("E5 model loaded successfully");
     }
     
     std::cout << "[SessionManager] Created with device ID: " << deviceId_ << std::endl;
@@ -246,14 +246,14 @@ void SessionManager::ProcessCompressionBatch() {
                         // Update the last element in currentSession with Content A
                         if (!currentSession.empty() && !lastContentA_.empty()) {
                             currentSession.back().similarScreenContent = lastContentA_;
-                            LOG_INFO(std::string("Updated previous event with Content A (")
+                            PE_INFO(std::string("Updated previous event with Content A (")
                                     .append(std::to_string(lastContentA_.length())).append(" chars)"));
                         }
                         
                         // Assign Content B to current element
                         if (!lastContentB_.empty()) {
                             content.similarScreenContent = lastContentB_;
-                            LOG_INFO(std::string("Assigned Content B to current event (")
+                            PE_INFO(std::string("Assigned Content B to current event (")
                                     .append(std::to_string(lastContentB_.length())).append(" chars)"));
                         }
                         
@@ -378,23 +378,23 @@ int SessionManager::CompareContentMLBased(const Json& record1, const Json& recor
     
     // Check if content is empty
     if (content1.empty() || content2.empty()) {
-        LOG_WARN("One or both screen contents are empty, falling back to simple comparison");
+        PE_WARN("One or both screen contents are empty, falling back to simple comparison");
         return CompareContentSimple(record1, record2);
     }
     
-    LOG_INFO(std::string("Comparing content1 (").append(std::to_string(content1.length())).append(" chars)"));
-    LOG_INFO(std::string("Comparing content2 (").append(std::to_string(content2.length())).append(" chars)"));
+    PE_INFO(std::string("Comparing content1 (").append(std::to_string(content1.length())).append(" chars)"));
+    PE_INFO(std::string("Comparing content2 (").append(std::to_string(content2.length())).append(" chars)"));
 
     float similarity;
     auto result = E5_CompareDocumentsSimple(content1.c_str(), content2.c_str(), &similarity);
     
     if (result != 0) {
         std::cerr << "Comparison failed: " << E5_GetLastError() << std::endl;
-        LOG_ERROR(std::string("E5 comparison failed: ") + E5_GetLastError());
+        PE_ERROR(std::string("E5 comparison failed: ") + E5_GetLastError());
         return 0;
     }
     
-    LOG_INFO(std::string("Similarity score: ").append(std::to_string(similarity)));
+    PE_INFO(std::string("Similarity score: ").append(std::to_string(similarity)));
     
     // Get similar chunks for detailed information
     E5_SimilarChunkPair chunks[5];
@@ -436,7 +436,7 @@ int SessionManager::CompareContentMLBased(const Json& record1, const Json& recor
         
         lastSimilaritySummary_ = combined.str();
         
-        LOG_INFO(std::string("Generated similarity summary - Content A (")
+        PE_INFO(std::string("Generated similarity summary - Content A (")
                  .append(std::to_string(lastContentA_.length())).append(" chars), Content B (")
                  .append(std::to_string(lastContentB_.length())).append(" chars)"));
     } else {

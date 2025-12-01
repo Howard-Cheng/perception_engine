@@ -1,7 +1,10 @@
-#include "platform/WindowEventMonitor.h"
+﻿#include "platform/WindowEventMonitor.h"
+#include "pe_base/windows_helper.h"
+#include <pe_base/logger.h>
 #include <iostream>
 #include <sstream>
 #include <iomanip>
+#include <mutex>
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "kernel32.lib")
@@ -10,7 +13,7 @@
 // Static member initialization
 WindowEventMonitor* WindowEventMonitor::s_instance = nullptr;
 
-WindowEventMonitor::WindowEventMonitor() 
+WindowEventMonitor::WindowEventMonitor()
     : m_hook(nullptr), m_shellHook(nullptr), m_isRunning(false), m_messageWindow(nullptr) {
     s_instance = this;
 }
@@ -30,7 +33,7 @@ bool WindowEventMonitor::Start() {
 
     // Start message loop thread
     m_messageThread = std::thread(&WindowEventMonitor::MessageLoopThread, this);
-    
+
     // Wait for thread initialization to complete
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
@@ -84,7 +87,7 @@ void WindowEventMonitor::MessageLoopThread() {
     }
 
     m_messageWindow = CreateWindowExW(0, className, L"", 0, 0, 0, 0, 0, // Unicode version
-                                     HWND_MESSAGE, nullptr, GetModuleHandle(nullptr), nullptr);
+        HWND_MESSAGE, nullptr, GetModuleHandle(nullptr), nullptr);
 
     if (!m_messageWindow) {
         m_lastError = L"Failed to create message window";
@@ -124,8 +127,8 @@ void WindowEventMonitor::MessageLoopThread() {
 }
 
 void CALLBACK WindowEventMonitor::WinEventProc(HWINEVENTHOOK hWinEventHook, DWORD event,
-                                               HWND hwnd, LONG idObject, LONG idChild,
-                                               DWORD eventThread, DWORD eventTime) {
+    HWND hwnd, LONG idObject, LONG idChild,
+    DWORD eventThread, DWORD eventTime) {
     if (!s_instance || !s_instance->m_isRunning) {
         return;
     }
@@ -141,28 +144,34 @@ void CALLBACK WindowEventMonitor::WinEventProc(HWINEVENTHOOK hWinEventHook, DWOR
     }
 
     WindowInfo info = GetWindowInfo(hwnd);
-    
+
     // Set event type based on event type
     switch (event) {
-        case EVENT_SYSTEM_FOREGROUND:
-        case EVENT_OBJECT_FOCUS:
-            info.eventType = WindowEventType::WINDOW_ACTIVATED;
-            break;
-        case EVENT_OBJECT_NAMECHANGE:
-            // Check if it's a Chrome/Edge browser window title change (may indicate tab switch)
-            if (s_instance->IsChromeWindow(hwnd)) {
-                std::wstring tabTitle;
-                if (s_instance->TryGetChromeTabInfo(hwnd, tabTitle)) {
-                    info.tabTitle = tabTitle;
-                    info.eventType = WindowEventType::TAB_ACTIVATED;
-                }
-            } else {
-                // Window title changes of other programs also trigger events
-                info.eventType = WindowEventType::WINDOW_ACTIVATED;
+    case EVENT_SYSTEM_FOREGROUND:
+    case EVENT_OBJECT_FOCUS:
+        info.eventType = WindowEventType::WINDOW_ACTIVATED;
+        break;
+    case EVENT_OBJECT_NAMECHANGE:
+        // Check if it's a Chrome/Edge browser window title change (may indicate tab switch)
+        if (s_instance->IsChromeWindow(hwnd)) {
+            std::wstring tabTitle;
+            if (s_instance->TryGetChromeTabInfo(hwnd, tabTitle)) {
+                info.tabTitle = tabTitle;
+                info.eventType = WindowEventType::TAB_ACTIVATED;
             }
-            break;
-        default:
-            return;  // Ignore other events
+        }
+        else {
+            // Window title changes of other programs also trigger events
+            info.eventType = WindowEventType::WINDOW_ACTIVATED;
+        }
+        break;
+    default:
+        return;  // Ignore other events
+    }
+
+    // Check if this event should be triggered (debounce duplicate events)
+    if (!s_instance->ShouldTriggerEvent(hwnd, info.eventType, info.windowTitle)) {
+        return;  // Skip duplicate event
     }
 
     // Trigger callbacks
@@ -198,7 +207,7 @@ WindowInfo WindowEventMonitor::GetWindowInfo(HWND hwnd) {
 
 std::wstring WindowEventMonitor::GetProcessName(DWORD processId) {
     std::wstring processName = L"Unknown";
-    
+
     HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processId);
     if (hProcess) {
         wchar_t buffer[MAX_PATH]; // Unicode buffer
@@ -207,13 +216,13 @@ std::wstring WindowEventMonitor::GetProcessName(DWORD processId) {
         }
         CloseHandle(hProcess);
     }
-    
+
     return processName;
 }
 
 std::wstring WindowEventMonitor::GetProcessPath(DWORD processId) {
     std::wstring processPath = L"Unknown";
-    
+
     HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processId);
     if (hProcess) {
         wchar_t buffer[MAX_PATH]; // Unicode buffer
@@ -223,7 +232,7 @@ std::wstring WindowEventMonitor::GetProcessPath(DWORD processId) {
         }
         CloseHandle(hProcess);
     }
-    
+
     return processPath;
 }
 
@@ -267,7 +276,7 @@ BOOL CALLBACK WindowEventMonitor::EnumWindowsProc(HWND hwnd, LPARAM lParam) {
     // Get window title - Use Unicode version
     wchar_t windowTitle[256];
     GetWindowTextW(hwnd, windowTitle, sizeof(windowTitle) / sizeof(wchar_t));
-    
+
     // Skip windows without titles
     if (wcslen(windowTitle) == 0) {
         return TRUE;
@@ -283,7 +292,7 @@ BOOL CALLBACK WindowEventMonitor::EnumWindowsProc(HWND hwnd, LPARAM lParam) {
 // Chrome window detection
 bool WindowEventMonitor::IsChromeWindow(HWND hwnd) {
     if (!hwnd || !IsWindow(hwnd)) return false;
-    
+
     // Get process ID
     DWORD pid = 0;
     GetWindowThreadProcessId(hwnd, &pid);
@@ -291,23 +300,23 @@ bool WindowEventMonitor::IsChromeWindow(HWND hwnd) {
 
     // Get process name
     std::wstring processName = GetProcessName(pid);
-    
+
     // Convert to lowercase for comparison
-    for (auto &ch : processName) {
+    for (auto& ch : processName) {
         ch = towlower(ch);
     }
-    
+
     // Check if it's Chrome, Edge or other browsers
     return (processName.find(L"chrome.exe") != std::wstring::npos) ||
-           (processName.find(L"msedge.exe") != std::wstring::npos) ||
-           (processName.find(L"firefox.exe") != std::wstring::npos) ||
-           (processName.find(L"opera.exe") != std::wstring::npos);
+        (processName.find(L"msedge.exe") != std::wstring::npos) ||
+        (processName.find(L"firefox.exe") != std::wstring::npos) ||
+        (processName.find(L"opera.exe") != std::wstring::npos);
 }
 
 // Try to get Chrome tab information
 bool WindowEventMonitor::TryGetChromeTabInfo(HWND hwnd, std::wstring& tabTitle) {
     // Chrome displays the current active tab's title in the window title
-    wchar_t title[1024] = {0};
+    wchar_t title[1024] = { 0 };
     if (GetWindowTextW(hwnd, title, 1023) > 0) { // Use Unicode version
         tabTitle = title;
         return true;
@@ -318,4 +327,28 @@ bool WindowEventMonitor::TryGetChromeTabInfo(HWND hwnd, std::wstring& tabTitle) 
 LRESULT CALLBACK WindowEventMonitor::WindowEventProc(int nCode, WPARAM wParam, LPARAM lParam) {
     // Shell Hook processing (if needed)
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
+}
+
+// ========================================
+// Deduplication Helper
+// ========================================
+
+bool WindowEventMonitor::ShouldTriggerEvent(HWND hwnd, WindowEventType eventType,
+    const std::wstring& title) {
+    std::lock_guard<std::mutex> lock(m_lastEventMutex);
+
+    // Check if this event is same as the last one
+    if (m_lastEvent.hwnd == hwnd && m_lastEvent.windowTitle == title) {
+        // Same window and same title as last event, skip
+        PE_INFO_THIS("[WindowEventMonitor] Skipped duplicate: "
+            << pe_base::WindowsHelper::ConvertToChar(title.c_str()).ToString()
+            << " (same as previous event)")
+            return false;
+    }
+
+    // Different event, update last event and trigger
+    m_lastEvent.hwnd = hwnd;
+    m_lastEvent.windowTitle = title;
+
+    return true;
 }

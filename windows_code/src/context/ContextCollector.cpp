@@ -35,7 +35,10 @@ ContextCollector::ContextCollector() {
 ContextCollector::~ContextCollector() {
     StopPeriodicUpdate();
     
-    // 🆕 Stop session manager
+    // Stop compression timer
+    StopCompressionTimer();
+    
+    // Stop session manager
     if (sessionManager_) {
         sessionManager_->Stop();
         sessionManager_.reset();
@@ -160,7 +163,7 @@ bool ContextCollector::InitializeDatabase(const std::string& esHost,
         esStorageRunning_.store(true);
         std::cout << "[InitializeDatabase] ES storage flag set to true" << std::endl;
         
-        // 🆕 Initialize SessionManager
+        // Initialize SessionManager
         sessionmanager::SessionManager::Config config;
         config.compressionThreshold = 10;
         config.similarityThreshold = 60;
@@ -174,6 +177,9 @@ bool ContextCollector::InitializeDatabase(const std::string& esHost,
         );
         sessionManager_->Start();
         std::cout << "[ContextCollector] Session manager initialized and started" << std::endl;
+        
+        // Start compression timer (runs every 1 minute)
+        StartCompressionTimer();
         
         return true;
         
@@ -419,10 +425,9 @@ void ContextCollector::OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& re
         // Store to Elasticsearch
         StoreContextToES(context);
         
-        // 🆕 Check if compression is needed (using SessionManager)
-        if (sessionManager_ && sessionManager_->IsRunning()) {
-            sessionManager_->CheckAndTriggerCompression();
-        }
+        // NOTE: Compression is now handled by timer (CompressionTimerCallback)
+        // No longer calling sessionManager_->CheckAndTriggerCompression() here
+        // to prevent blocking due to expensive CompareContent operations
         
         // Reset mouse records
         if (auto appProvider = contextManager_.getAppActivityProvider()) {
@@ -431,5 +436,119 @@ void ContextCollector::OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& re
         
     } catch (const std::exception& e) {
         std::cerr << "[OnUserSwitchWindow] Exception: " << e.what() << std::endl;
+    }
+}
+
+// ========================================
+//  Compression Timer Functions
+// ========================================
+
+void ContextCollector::StartCompressionTimer() {
+    if (compressionTimerRunning_.load()) {
+        std::cout << "[ContextCollector] Compression timer already running" << std::endl;
+        return;
+    }
+    
+    if (!sessionManager_) {
+        std::cerr << "[ContextCollector] Cannot start compression timer: SessionManager not initialized" << std::endl;
+        return;
+    }
+    
+    // Create threadpool timer
+    compressionTimer_ = CreateThreadpoolTimer(
+        CompressionTimerCallback,
+        this,  // Pass 'this' as context
+        nullptr  // Use default threadpool environment
+    );
+    
+    if (!compressionTimer_) {
+        std::cerr << "[ContextCollector] Failed to create compression timer" << std::endl;
+        return;
+    }
+    
+    // Set timer to fire every 1 minute
+    // First parameter: relative time (negative value = relative time)
+    // 1 minute = 60,000 ms = 60,000,000 microseconds = 600,000,000 100-nanosecond intervals
+    FILETIME dueTime;
+    ULARGE_INTEGER ulDueTime;
+    ulDueTime.QuadPart = static_cast<ULONGLONG>(-(60LL * 10000000LL)); // 1 minute in 100-nanosecond intervals (negative = relative)
+    dueTime.dwHighDateTime = ulDueTime.HighPart;
+    dueTime.dwLowDateTime = ulDueTime.LowPart;
+    
+    // Period in milliseconds (1 minute = 60,000 ms)
+    DWORD period = 60000;
+    
+    // Window length (0 = no window)
+    DWORD windowLength = 0;
+    
+    SetThreadpoolTimer(compressionTimer_, &dueTime, period, windowLength);
+    
+    compressionTimerRunning_.store(true);
+    std::cout << "[ContextCollector] Compression timer started (runs every 1 minute)" << std::endl;
+}
+
+void ContextCollector::StopCompressionTimer() {
+    if (!compressionTimerRunning_.load()) {
+        return;
+    }
+    
+    compressionTimerRunning_.store(false);
+    
+    if (compressionTimer_) {
+        // Cancel timer and wait for callbacks to complete
+        SetThreadpoolTimer(compressionTimer_, nullptr, 0, 0);
+        WaitForThreadpoolTimerCallbacks(compressionTimer_, TRUE);
+        CloseThreadpoolTimer(compressionTimer_);
+        compressionTimer_ = nullptr;
+        std::cout << "[ContextCollector] Compression timer stopped" << std::endl;
+    }
+}
+
+VOID CALLBACK ContextCollector::CompressionTimerCallback(
+    PTP_CALLBACK_INSTANCE Instance,
+    PVOID Context,
+    PTP_TIMER Timer)
+{
+    // Context is the 'this' pointer
+    ContextCollector* collector = static_cast<ContextCollector*>(Context);
+    
+    if (!collector || !collector->compressionTimerRunning_.load()) {
+        return;
+    }
+    
+    // Check if a compression task is already running
+    bool expected = false;
+    if (!collector->compressionTaskRunning_.compare_exchange_strong(expected, true)) {
+        // Another compression task is still running, skip this tick
+        std::cout << "[CompressionTimer] Previous compression task still running, skipping this tick" << std::endl;
+        return;
+    }
+    
+    // Execute the compression check
+    collector->OnCompressionTimerTick();
+    
+    // Mark task as completed
+    collector->compressionTaskRunning_.store(false);
+}
+
+void ContextCollector::OnCompressionTimerTick() {
+    if (!sessionManager_ || !sessionManager_->IsRunning()) {
+        return;
+    }
+    
+    try {
+        auto startTime = std::chrono::steady_clock::now();
+        std::cout << "[CompressionTimer] Checking compression status..." << std::endl;
+        
+        // This call is now executed asynchronously by the timer
+        // It won't block OnUserSwitchWindow anymore
+        sessionManager_->CheckAndTriggerCompression();
+        
+        auto endTime = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+        std::cout << "[CompressionTimer] Compression check completed in " << duration.count() << " ms" << std::endl;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[CompressionTimer] Exception: " << e.what() << std::endl;
     }
 }

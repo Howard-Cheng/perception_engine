@@ -5,13 +5,14 @@
 #include "providers/CompositeContextManager.h"
 #include "IDatabaseClient.h"
 #include "DatabaseTypes.h"
-#include "sessionmanager/SessionManager.h"  // ?? Add SessionManager
+#include "sessionmanager/SessionManager.h"  // Add SessionManager
 #include <chrono>
 #include <mutex>
 #include <string>
 #include <memory>
 #include <atomic>
 #include <thread>
+#include <windows.h>  // For threadpool timer
 
 /**
  * @brief ContextCollector
@@ -122,6 +123,30 @@ private:
      */
     database::RawEvent jsonContextToRawEvent(const pe_base::Json& context);
     
+    /**
+     * @brief Start compression timer (runs every 1 minute)
+     */
+    void StartCompressionTimer();
+    
+    /**
+     * @brief Stop compression timer
+     */
+    void StopCompressionTimer();
+    
+    /**
+     * @brief Timer callback for compression check (static)
+     */
+    static VOID CALLBACK CompressionTimerCallback(
+        PTP_CALLBACK_INSTANCE Instance,
+        PVOID Context,
+        PTP_TIMER Timer
+    );
+    
+    /**
+     * @brief Timer callback implementation (non-static)
+     */
+    void OnCompressionTimerTick();
+    
     // ========================================
     // Core Components
     // ========================================
@@ -145,8 +170,16 @@ private:
     mutable std::mutex esClientMutex_;
     
     // ========================================
-    // ?? Session Management (Replaces old compression code)
+    // Session Management (Replaces old compression code)
     // ========================================
     
     std::unique_ptr<sessionmanager::SessionManager> sessionManager_;
+    
+    // ========================================
+    // Compression Timer (Windows Threadpool Timer)
+    // ========================================
+    
+    PTP_TIMER compressionTimer_{nullptr};
+    std::atomic<bool> compressionTimerRunning_{false};
+    std::atomic<bool> compressionTaskRunning_{false};  // Prevent re-entry
 };

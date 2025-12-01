@@ -14,6 +14,7 @@
 #include <atomic>
 #include <map>
 #include <set>
+#include <mutex>
 #include <comdef.h>
 #include <atlbase.h>
 
@@ -140,6 +141,18 @@ private:
     std::thread m_messageThread;            // Message loop thread
     std::wstring m_lastError;               // Last error information
     HWND m_messageWindow;                   // Message window handle
+    
+    // Last event tracking (simplified - no time-based debounce)
+    struct LastEvent {
+        HWND hwnd;
+        std::wstring windowTitle;
+    };
+    
+    LastEvent m_lastEvent;
+    std::mutex m_lastEventMutex;
+    
+    // Helper: Check if event should be triggered (skip if same as last)
+    bool ShouldTriggerEvent(HWND hwnd, WindowEventType eventType, const std::wstring& title);
 };
 
 // Helper function: Convert event type to string

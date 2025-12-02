@@ -35,7 +35,10 @@ ContextCollector::ContextCollector() {
 ContextCollector::~ContextCollector() {
     StopPeriodicUpdate();
     
-    // 🆕 Stop session manager
+    // Stop compression timer
+    StopCompressionTimer();
+    
+    // Stop session manager
     if (sessionManager_) {
         sessionManager_->Stop();
         sessionManager_.reset();
@@ -53,12 +56,12 @@ ContextCollector::~ContextCollector() {
     contextManager_.shutdown();
 }
 
-Json ContextCollector::CollectCurrentContext() {
+pe_base::Json ContextCollector::CollectCurrentContext() {
     // Trigger all providers to update
     contextManager_.updateAll();
     
     // Collect all context data
-    Json context = contextManager_.collectAllContext();
+    pe_base::Json context = contextManager_.collectAllContext();
     
     // Add fused context summary
     context.set("fusedContext", GenerateFusedContext());
@@ -160,20 +163,15 @@ bool ContextCollector::InitializeDatabase(const std::string& esHost,
         esStorageRunning_.store(true);
         std::cout << "[InitializeDatabase] ES storage flag set to true" << std::endl;
         
-        // 🆕 Initialize SessionManager
-        sessionmanager::SessionManager::Config config;
-        config.compressionThreshold = 10;
-        config.similarityThreshold = 60;
-        config.batchSize = 100;
-        config.enabled = true;
-        
         sessionManager_ = std::make_unique<sessionmanager::SessionManager>(
             esClient_,
-            indexName,
-            config
+            indexName
         );
         sessionManager_->Start();
         std::cout << "[ContextCollector] Session manager initialized and started" << std::endl;
+        
+        // Start compression timer (runs every 1 minute)
+        StartCompressionTimer();
         
         return true;
         
@@ -195,7 +193,7 @@ void ContextCollector::ShutdownDatabase() {
     esClient_.reset();
 }
 
-void ContextCollector::StoreContextToES(const Json& context) {
+void ContextCollector::StoreContextToES(const pe_base::Json& context) {
     std::lock_guard<std::mutex> lock(esClientMutex_);
     
     if (!esClient_) {
@@ -222,7 +220,7 @@ void ContextCollector::StoreContextToES(const Json& context) {
     }
 }
 
-database::RawEvent ContextCollector::jsonContextToRawEvent(const Json& context) {
+database::RawEvent ContextCollector::jsonContextToRawEvent(const pe_base::Json& context) {
     database::RawEvent event;
     
     // Generate unique event ID
@@ -302,11 +300,11 @@ database::RawEvent ContextCollector::jsonContextToRawEvent(const Json& context) 
     return event;
 }
 
-Json ContextCollector::GetESDBData(const std::string& keyword,
+pe_base::Json ContextCollector::GetESDBData(const std::string& keyword,
                                     std::time_t startTime,
                                     std::time_t endTime,
                                     int maxResults) {
-    Json result;
+    pe_base::Json result;
     
     std::lock_guard<std::mutex> lock(esClientMutex_);
     
@@ -331,7 +329,7 @@ Json ContextCollector::GetESDBData(const std::string& keyword,
         if (!keyword.empty()) {
             queryBuilder << "      {"
                          << "        \"multi_match\":{"
-                         << "          \"query\":\"" << Json::escapeJsonString(keyword) << "\","
+                         << "          \"query\":\"" << pe_base::Json::escapeJsonString(keyword) << "\","
                          << "          \"fields\":[\"screen_content\",\"voice_transcription\","
                          << "                     \"camera_description\",\"app_name\","
                          << "                     \"window_title\"],"
@@ -360,7 +358,7 @@ Json ContextCollector::GetESDBData(const std::string& keyword,
         std::string query = queryBuilder.str();
         database::SearchResult searchResult = esClient_->search(esIndexName_, query, 0, maxResults);
         
-        // Convert to Json
+        // Convert to pe_base::Json
         std::ostringstream resultsArray;
         resultsArray << "[";
         
@@ -370,17 +368,17 @@ Json ContextCollector::GetESDBData(const std::string& keyword,
             first = false;
             
             resultsArray << "{"
-                         << "\"eventId\":\"" << Json::escapeJsonString(event.eventId) << "\","
+                         << "\"eventId\":\"" << pe_base::Json::escapeJsonString(event.eventId) << "\","
                          << "\"timestamp\":" << event.timestamp << ","
-                         << "\"deviceId\":\"" << Json::escapeJsonString(event.deviceId) << "\","
-                         << "\"appName\":\"" << Json::escapeJsonString(event.appName) << "\"";
+                         << "\"deviceId\":\"" << pe_base::Json::escapeJsonString(event.deviceId) << "\","
+                         << "\"appName\":\"" << pe_base::Json::escapeJsonString(event.appName) << "\"";
             
             if (event.windowTitle.has_value()) {
-                resultsArray << ",\"windowTitle\":\"" << Json::escapeJsonString(event.windowTitle.value()) << "\"";
+                resultsArray << ",\"windowTitle\":\"" << pe_base::Json::escapeJsonString(event.windowTitle.value()) << "\"";
             }
             
             if (event.screenContent.has_value()) {
-                resultsArray << ",\"screenContent\":\"" << Json::escapeJsonString(event.screenContent.value()) << "\"";
+                resultsArray << ",\"screenContent\":\"" << pe_base::Json::escapeJsonString(event.screenContent.value()) << "\"";
             }
             
             resultsArray << "}";
@@ -396,7 +394,7 @@ Json ContextCollector::GetESDBData(const std::string& keyword,
         
     } catch (const std::exception& e) {
         std::cerr << "[GetESDBData] Exception: " << e.what() << std::endl;
-        result.setRaw("error", "\"" + Json::escapeJsonString(e.what()) + "\"");
+        result.setRaw("error", "\"" + pe_base::Json::escapeJsonString(e.what()) + "\"");
         result.setRaw("results", "[]");
         return result;
     }
@@ -414,15 +412,14 @@ void ContextCollector::OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& re
     
     try {
         // Collect current context
-        Json context = CollectCurrentContext();
+        pe_base::Json context = CollectCurrentContext();
         
         // Store to Elasticsearch
         StoreContextToES(context);
         
-        // 🆕 Check if compression is needed (using SessionManager)
-        if (sessionManager_ && sessionManager_->IsRunning()) {
-            sessionManager_->CheckAndTriggerCompression();
-        }
+        // NOTE: Compression is now handled by timer (CompressionTimerCallback)
+        // No longer calling sessionManager_->CheckAndTriggerCompression() here
+        // to prevent blocking due to expensive CompareContent operations
         
         // Reset mouse records
         if (auto appProvider = contextManager_.getAppActivityProvider()) {
@@ -431,5 +428,119 @@ void ContextCollector::OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& re
         
     } catch (const std::exception& e) {
         std::cerr << "[OnUserSwitchWindow] Exception: " << e.what() << std::endl;
+    }
+}
+
+// ========================================
+//  Compression Timer Functions
+// ========================================
+
+void ContextCollector::StartCompressionTimer() {
+    if (compressionTimerRunning_.load()) {
+        std::cout << "[ContextCollector] Compression timer already running" << std::endl;
+        return;
+    }
+    
+    if (!sessionManager_) {
+        std::cerr << "[ContextCollector] Cannot start compression timer: SessionManager not initialized" << std::endl;
+        return;
+    }
+    
+    // Create threadpool timer
+    compressionTimer_ = CreateThreadpoolTimer(
+        CompressionTimerCallback,
+        this,  // Pass 'this' as context
+        nullptr  // Use default threadpool environment
+    );
+    
+    if (!compressionTimer_) {
+        std::cerr << "[ContextCollector] Failed to create compression timer" << std::endl;
+        return;
+    }
+    
+    // Set timer to fire every 1 minute
+    // First parameter: relative time (negative value = relative time)
+    // 1 minute = 60,000 ms = 60,000,000 microseconds = 600,000,000 100-nanosecond intervals
+    FILETIME dueTime;
+    ULARGE_INTEGER ulDueTime;
+    ulDueTime.QuadPart = static_cast<ULONGLONG>(-(60LL * 10000000LL)); // 1 minute in 100-nanosecond intervals (negative = relative)
+    dueTime.dwHighDateTime = ulDueTime.HighPart;
+    dueTime.dwLowDateTime = ulDueTime.LowPart;
+    
+    // Period in milliseconds (1 minute = 60,000 ms)
+    DWORD period = 60000;
+    
+    // Window length (0 = no window)
+    DWORD windowLength = 0;
+    
+    SetThreadpoolTimer(compressionTimer_, &dueTime, period, windowLength);
+    
+    compressionTimerRunning_.store(true);
+    std::cout << "[ContextCollector] Compression timer started (runs every 1 minute)" << std::endl;
+}
+
+void ContextCollector::StopCompressionTimer() {
+    if (!compressionTimerRunning_.load()) {
+        return;
+    }
+    
+    compressionTimerRunning_.store(false);
+    
+    if (compressionTimer_) {
+        // Cancel timer and wait for callbacks to complete
+        SetThreadpoolTimer(compressionTimer_, nullptr, 0, 0);
+        WaitForThreadpoolTimerCallbacks(compressionTimer_, TRUE);
+        CloseThreadpoolTimer(compressionTimer_);
+        compressionTimer_ = nullptr;
+        std::cout << "[ContextCollector] Compression timer stopped" << std::endl;
+    }
+}
+
+VOID CALLBACK ContextCollector::CompressionTimerCallback(
+    PTP_CALLBACK_INSTANCE Instance,
+    PVOID Context,
+    PTP_TIMER Timer)
+{
+    // Context is the 'this' pointer
+    ContextCollector* collector = static_cast<ContextCollector*>(Context);
+    
+    if (!collector || !collector->compressionTimerRunning_.load()) {
+        return;
+    }
+    
+    // Check if a compression task is already running
+    bool expected = false;
+    if (!collector->compressionTaskRunning_.compare_exchange_strong(expected, true)) {
+        // Another compression task is still running, skip this tick
+        std::cout << "[CompressionTimer] Previous compression task still running, skipping this tick" << std::endl;
+        return;
+    }
+    
+    // Execute the compression check
+    collector->OnCompressionTimerTick();
+    
+    // Mark task as completed
+    collector->compressionTaskRunning_.store(false);
+}
+
+void ContextCollector::OnCompressionTimerTick() {
+    if (!sessionManager_ || !sessionManager_->IsRunning()) {
+        return;
+    }
+    
+    try {
+        auto startTime = std::chrono::steady_clock::now();
+        std::cout << "[CompressionTimer] Checking compression status..." << std::endl;
+        
+        // This call is now executed asynchronously by the timer
+        // It won't block OnUserSwitchWindow anymore
+        sessionManager_->CheckAndTriggerCompression();
+        
+        auto endTime = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+        std::cout << "[CompressionTimer] Compression check completed in " << duration.count() << " ms" << std::endl;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[CompressionTimer] Exception: " << e.what() << std::endl;
     }
 }

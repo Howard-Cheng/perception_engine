@@ -1,7 +1,8 @@
 #include "providers/AppActivityContextProvider.h"
-#include "utils/Logger.h"
+#include "pe_base/logger.h"
+#include "pe_base/time_util.h"
 
-// Windows headers必须在前面
+// Windows headers
 #include <Windows.h>
 #include <iostream>
 // UI Automation headers
@@ -57,7 +58,7 @@ void AppActivityContextProvider::update() {
     // App activity is event-driven, not polled
 }
 
-void AppActivityContextProvider::collectContext(Json& context) const {
+void AppActivityContextProvider::collectContext(pe_base::Json& context) const {
     std::lock_guard<std::mutex> lock(mutex_);
     context.set("activeApp", currentApp_);
     context.set("windowTitle", currentWindowTitle_);
@@ -114,8 +115,7 @@ void AppActivityContextProvider::onWindowSwitch(const WindowsAPIs::ActiveAppReco
         currentWindowTitle_ = record.windowTitle;
         currentContent_ = record.appContent;
         dwellTimeSeconds_ = record.durationSeconds;
-        startSwitchTime_ = std::chrono::duration_cast<std::chrono::milliseconds>(
-            record.timestamp.time_since_epoch()).count();
+        startSwitchTime_ = pe_base::TimeUtil::TimestampMs();
         
         // Update interaction count
         if (mouseTracker_) {

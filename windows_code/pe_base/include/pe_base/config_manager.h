@@ -3,7 +3,10 @@
 #include <string>
 #include <mutex>
 #include <memory>
-#include "utils/json.hpp"
+#include "pe_base/json.hpp"
+#include "pe_base/pe_exports.h"
+
+namespace pe_base {
 
 /**
  * ConfigManager - Centralized configuration management
@@ -15,7 +18,7 @@
  *   ConfigManager::GetInstance().LoadConfig("config.json");
  *   std::string modelPath = ConfigManager::GetInstance().GetEmbeddingModelPath();
  */
-class ConfigManager {
+class PE_BASE_API ConfigManager {
 public:
     // Singleton access
     static ConfigManager& GetInstance();
@@ -63,6 +66,10 @@ public:
     // === Validation ===
     bool ValidateConfiguration() const;
     std::string GetLastError() const;
+    bool IsLoaded() const { 
+        std::lock_guard<std::mutex> lock(mutex_);
+        return loaded_; 
+    }
 
 private:
     ConfigManager();
@@ -89,3 +96,5 @@ private:
     bool loaded_;
     mutable std::string lastError_;
 };
+
+} // namespace pe_base

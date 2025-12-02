@@ -59,10 +59,10 @@ void CompositeContextManager::updateAll() {
     lastUpdate_ = std::chrono::steady_clock::now();
 }
 
-Json CompositeContextManager::collectAllContext() {
+pe_base::Json CompositeContextManager::collectAllContext() {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    Json context;
+    pe_base::Json context;
     
     for (auto& [name, provider] : providers_) {
         if (provider && provider->isAvailable()) {

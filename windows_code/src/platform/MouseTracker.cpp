@@ -1,5 +1,6 @@
 #include "platform/MouseTracker.h"
 #include "DatabaseTypes.h"  // Add this include for database::MouseEvent
+#include "pe_base/windows_helper.h"
 #include <iostream>
 #include <sstream>
 #include <iomanip>
@@ -396,7 +397,7 @@ void MouseTracker::RecordMouseOperation(MouseEventType eventType, POINT position
             dbMouseEvent.eventType = "TextSelection";
             dbMouseEvent.posX = position.x;
             dbMouseEvent.posY = position.y;
-            dbMouseEvent.content = WindowsAPIs::WideStringToUtf8(GetSelectedText(pointWindow));
+            dbMouseEvent.content = pe_base::WindowsHelper::ConvertToChar(GetSelectedText(pointWindow).c_str()).ToString();
             m_mouseEvents.push_back(dbMouseEvent);
         }
         else {
@@ -1148,7 +1149,7 @@ std::string GetCurrentTimeString() {
 
     wchar_t buffer[100];
     wcsftime(buffer, 100, L"%Y-%m-%d %H:%M:%S", &tm_val);
-    return WindowsAPIs::WideStringToUtf8(buffer);
+    return pe_base::WindowsHelper::ConvertToChar(buffer).ToString();
 }
 
 // Trim leading and trailing whitespace characters (spaces, tabs, newlines, etc.)

@@ -11,14 +11,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Source files
 set(E5_EMBEDDING_SOURCES
     src/E5EmbeddingDLL.cpp
-    ../src/config/ConfigManager.cpp
-    ../src/utils/Logger.cpp
 )
 
 set(E5_EMBEDDING_HEADERS
     include/E5EmbeddingDLL.h
-    ../include/config/ConfigManager.h
-    ../include/utils/Logger.h
 )
 
 # Create shared library
@@ -28,12 +24,14 @@ add_library(E5EmbeddingDLL SHARED ${E5_EMBEDDING_SOURCES} ${E5_EMBEDDING_HEADERS
 target_include_directories(E5EmbeddingDLL PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../pe_base/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/onnxruntime/include
 )
 
 # Link libraries
 target_link_libraries(E5EmbeddingDLL PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/onnxruntime/lib/onnxruntime.lib
+    pe_base
 )
 
 # Compiler definitions
@@ -62,17 +60,17 @@ if(BUILD_EMBEDDING_TESTS)
     # Test executable - Document Comparison
     add_executable(test_document_comparison
         tests/test_document_comparison.cpp
-        ../src/config/ConfigManager.cpp
-        ../src/utils/Logger.cpp
     )
     
     target_include_directories(test_document_comparison PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../pe_base/include
     )
     
     target_link_libraries(test_document_comparison PRIVATE
         E5EmbeddingDLL
+        pe_base
     )
     
     # Copy test executable to bin directory
@@ -86,19 +84,19 @@ if(BUILD_EMBEDDING_TESTS)
     # Test executable - Elasticsearch Similarity Integration
     add_executable(test_elasticsearch_similarity
         tests/test_elasticsearch_similarity.cpp
-        ../src/config/ConfigManager.cpp
-        ../src/utils/Logger.cpp
     )
     
     target_include_directories(test_elasticsearch_similarity PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
         ${CMAKE_CURRENT_SOURCE_DIR}/../database_client/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../pe_base/include
     )
     
     target_link_libraries(test_elasticsearch_similarity PRIVATE
         E5EmbeddingDLL
         database_client
+        pe_base
     )
     
     # Copy test executable to bin directory

@@ -27,6 +27,14 @@ add_subdirectory(embeddingmodel)
 
 # ============================================================================
 
+# PE Base (subdirectory)
+# ============================================================================
+
+# Add pe_base as a subdirectory
+add_subdirectory(pe_base)
+
+# ============================================================================
+
 # Dependencies
 # ============================================================================
 
@@ -92,8 +100,6 @@ message(STATUS "Database client enabled (built from subdirectory)")
 set(PERCEPTION_ENGINE_SOURCES
     src/core/PerceptionEngine.cpp
     src/core/WindowsService.cpp
-    src/utils/Logger.cpp
-    src/config/ConfigManager.cpp
     src/context/ContextCollector.cpp
     src/communication/HttpServer.cpp
     src/platform/WindowsAPIs.cpp
@@ -114,8 +120,6 @@ set(PERCEPTION_ENGINE_SOURCES
 
 set(PERCEPTION_ENGINE_HEADERS
     include/core/WindowsService.h
-    include/utils/Logger.h
-    include/config/ConfigManager.h
     include/context/ContextCollector.h
     include/communication/HttpServer.h
     include/platform/WindowsAPIs.h
@@ -141,13 +145,11 @@ set(PERCEPTION_ENGINE_HEADERS
 set(DATAPROCESS_SERVER_SOURCES
     src/dataprocess/DataProcessServerMain.cpp
     src/dataprocess/TaskQueue.cpp
-    src/utils/Logger.cpp
 )
 
 set(DATAPROCESS_SERVER_HEADERS
     include/dataprocess/DataProcessProtocol.h
     include/dataprocess/TaskQueue.h
-    include/utils/Logger.h
 )
 
 # ============================================================================
@@ -176,11 +178,9 @@ source_group("Source Files\\core" FILES
 )
 
 source_group("Source Files\\utils" FILES
-    src/utils/Logger.cpp
 )
 
 source_group("Source Files\\config" FILES
-    src/config/ConfigManager.cpp
 )
 
 source_group("Source Files\\embeddingmodel" FILES
@@ -230,11 +230,9 @@ source_group("Header Files\\core" FILES
 )
 
 source_group("Header Files\\utils" FILES
-    include/utils/Logger.h
 )
 
 source_group("Header Files\\config" FILES
-    include/config/ConfigManager.h
 )
 
 source_group("Header Files\\context" FILES
@@ -289,7 +287,6 @@ source_group("Source Files\\dataprocess" FILES
 source_group("Header Files\\dataprocess" FILES
     include/dataprocess/DataProcessProtocol.h
     include/dataprocess/TaskQueue.h
-    include/utils/Logger.h
 )
 
 # ============================================================================
@@ -301,6 +298,7 @@ target_include_directories(PerceptionEngine PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/embeddingmodel/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/pe_base/include
     ${WHISPER_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/ggml/include
     ${JSON_INCLUDE_DIR}
@@ -318,6 +316,7 @@ endif()
 target_include_directories(DataProcessServer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/pe_base/include
 )
 
 # Note: test_embedding_comparison include directories are now in embeddingmodel/CMakeLists.txt
@@ -359,6 +358,9 @@ target_link_libraries(PerceptionEngine PRIVATE
 
     # WinRT (for location services)
     WindowsApp  # WinRT APIs
+
+    # PE Base
+    pe_base
 )
 
 # Link E5 Embedding library
@@ -373,6 +375,7 @@ endif()
 # DataProcessServer only needs basic Windows APIs
 target_link_libraries(DataProcessServer PRIVATE
     # No external dependencies needed
+    pe_base
 )
 
 # Note: test_embedding_comparison link libraries are now in embeddingmodel/CMakeLists.txt

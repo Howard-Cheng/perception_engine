@@ -1,4 +1,4 @@
-#include "pe_base/config_manager.h"
+﻿#include "pe_base/config_manager.h"
 #include "pe_base/logger.h"
 #include <iostream>
 #include <fstream>
@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <windows.h>
 #include <algorithm>
+#include <cctype>
 
 namespace pe_base {
 
@@ -23,7 +24,7 @@ ConfigManager::ConfigManager() : loaded_(false) {
 
     config_.set("compression_threshold", 100);
     config_.set("similarity_threshold", 70.0f);
-    config_.set("batch_size", 50);
+    config_.set("batch_size", 100);
     config_.set("session_manager_enabled", true);
 
     config_.set("database_type", "elasticsearch");
@@ -36,6 +37,13 @@ ConfigManager::ConfigManager() : loaded_(false) {
 
     config_.set("temp_directory", "temp");
     config_.set("log_directory", "logs");
+    
+    // Initialize default blacklist (common system apps)
+    blacklist_.insert("weixin");
+    blacklist_.insert("dwm");
+    blacklist_.insert("winlogon");
+    blacklist_.insert("csrss");
+    blacklist_.insert("taskmgr");
 }
 
 // Helper function to trim whitespace
@@ -83,6 +91,13 @@ bool ConfigManager::LoadConfig(const std::string& configPath) {
                 std::string key = trim(line.substr(0, equals));
                 std::string value = trim(line.substr(equals + 1));
                 
+                // Handle blacklist section specially
+                if (currentSection == "blacklist") {
+                    // Store blacklist entries with "blacklist_" prefix for later retrieval
+                    config_.set("blacklist_" + key, value);
+                    continue;
+                }
+                
                 // Construct full key with section prefix
                 std::string fullKey = key;
                 
@@ -107,6 +122,9 @@ bool ConfigManager::LoadConfig(const std::string& configPath) {
             }
         }
         
+        // Load blacklist after config is parsed
+        LoadBlacklist_Unlocked();
+        
         loaded_ = true;
         PE_INFO("Configuration loaded successfully from: " + configPath);
         return true;
@@ -116,6 +134,25 @@ bool ConfigManager::LoadConfig(const std::string& configPath) {
         PE_ERROR(lastError_);
         return false;
     }
+}
+
+// Load blacklist from config (internal, assumes mutex is locked)
+void ConfigManager::LoadBlacklist_Unlocked() {
+    // Clear existing blacklist (but keep defaults)
+    std::set<std::string> defaults = {"weixin", "dwm", "winlogon", "csrss", "taskmgr"};
+    blacklist_ = defaults;
+    
+    // Load blacklist entries from config
+    // Keys are stored as "blacklist_app_1", "blacklist_app_2", etc.
+    for (int i = 1; i <= 100; ++i) {  // Check up to 100 entries
+        std::string key = "blacklist_app_" + std::to_string(i);
+        std::string appName = config_.getString(key, "");
+        if (!appName.empty()) {
+            blacklist_.insert(ToLowerCase(appName));
+        }
+    }
+    
+    PE_INFO("Loaded " + std::to_string(blacklist_.size()) + " blacklisted applications");
 }
 
 bool ConfigManager::SaveConfig(const std::string& configPath) {
@@ -155,6 +192,14 @@ bool ConfigManager::SaveConfig(const std::string& configPath) {
         file << "\n[paths]\n";
         file << "temp_directory=" << config_.getString("temp_directory", "") << "\n";
         file << "log_directory=" << config_.getString("log_directory", "") << "\n";
+        
+        // Save blacklist
+        file << "\n[blacklist]\n";
+        file << "# Application names to ignore (case-insensitive)\n";
+        int index = 1;
+        for (const auto& appName : blacklist_) {
+            file << "app_" << index++ << "=" << appName << "\n";
+        }
         
         file.close();
         
@@ -399,6 +444,45 @@ std::string ConfigManager::ConvertToUtf8(const std::wstring& wstr) const {
                        static_cast<int>(wstr.length()), 
                        &str[0], size_needed, NULL, NULL);
     return str;
+}
+
+// Blacklist functionality implementation
+std::set<std::string> ConfigManager::GetBlacklist() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return blacklist_;
+}
+
+bool ConfigManager::IsBlacklisted(const std::string& appName) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::string lowerAppName = ToLowerCase(appName);
+    return blacklist_.find(lowerAppName) != blacklist_.end();
+}
+
+void ConfigManager::AddToBlacklist(const std::string& appName) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::string lowerAppName = ToLowerCase(appName);
+    blacklist_.insert(lowerAppName);
+    PE_INFO("Added to blacklist: " + appName);
+}
+
+void ConfigManager::RemoveFromBlacklist(const std::string& appName) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::string lowerAppName = ToLowerCase(appName);
+    blacklist_.erase(lowerAppName);
+    PE_INFO("Removed from blacklist: " + appName);
+}
+
+void ConfigManager::ClearBlacklist() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    blacklist_.clear();
+    PE_INFO("Blacklist cleared");
+}
+
+std::string ConfigManager::ToLowerCase(const std::string& str) const {
+    std::string result = str;
+    std::transform(result.begin(), result.end(), result.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return result;
 }
 
 } // namespace pe_base

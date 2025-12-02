@@ -154,6 +154,7 @@ public:
         if (event.url) j["url"] = *event.url;
         if (event.screenContent) j["screen_content"] = *event.screenContent;
         if (event.screenContentHash) j["screen_content_hash"] = *event.screenContentHash;
+        if (event.similarScreenContent) j["similar_screen_content"] = *event.similarScreenContent;
         if (event.voiceTranscription) j["voice_transcription"] = *event.voiceTranscription;
         if (event.cameraDescription) j["camera_description"] = *event.cameraDescription;
         if (event.sessionId) j["session_id"] = *event.sessionId;
@@ -232,6 +233,9 @@ public:
             }
             if (j.contains("screen_content_hash") && !j["screen_content_hash"].is_null()) {
                 event.screenContentHash = j["screen_content_hash"].get<std::string>();
+            }
+            if (j.contains("similar_screen_content") && !j["similar_screen_content"].is_null()) {
+                event.similarScreenContent = j["similar_screen_content"].get<std::string>();
             }
             if (j.contains("voice_transcription") && !j["voice_transcription"].is_null()) {
                 event.voiceTranscription = j["voice_transcription"].get<std::string>();
@@ -377,6 +381,7 @@ bool ElasticsearchClient::initializeCollection(const std::string& collectionName
                 "url": {"type": "keyword"},
                 "screen_content": {"type": "text"},
                 "screen_content_hash": {"type": "keyword"},
+                "similar_screen_content": {"type": "text"},
                 "voice_transcription": {"type": "text"},
                 "camera_description": {"type": "text"},
                 "session_id": {"type": "keyword"},
@@ -534,6 +539,48 @@ bool ElasticsearchClient::markEventsAsCompressed(const std::string& indexName,
     
     std::string response;
     return pImpl_->httpRequest("POST", "/_bulk", bulk.str(), response);
+}
+
+bool ElasticsearchClient::markEventsAsCompressedWithSimilarity(
+    const std::string& indexName,
+    const std::vector<std::string>& eventIds,
+    const std::string& sessionId,
+    const std::string& similarScreenContent) {
+    
+    if (eventIds.empty()) return true;
+    
+    std::ostringstream bulk;
+    for (const auto& eventId : eventIds) {
+        json action = {
+            {"update", {
+                {"_index", indexName},
+                {"_id", eventId}
+            }}
+        };
+        bulk << action.dump() << "\n";
+        
+        json doc = {
+            {"doc", {
+                {"compressed", true},
+                {"session_id", sessionId},
+                {"similar_screen_content", similarScreenContent}
+            }}
+        };
+        bulk << doc.dump() << "\n";
+    }
+    
+    std::string response;
+    bool success = pImpl_->httpRequest("POST", "/_bulk", bulk.str(), response);
+    
+    if (success) {
+        std::cout << "[ElasticsearchClient] Updated " << eventIds.size() 
+                  << " events with session_id=" << sessionId 
+                  << " and similarity info" << std::endl;
+    } else {
+        std::cerr << "[ElasticsearchClient] Failed to update events with similarity info" << std::endl;
+    }
+    
+    return success;
 }
 
 int ElasticsearchClient::deleteOlderThan(const std::string& indexName,

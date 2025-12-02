@@ -135,6 +135,19 @@ public:
     
 private:
     /**
+     * @brief Session content - holds event info and similarity data
+     */
+    struct SessionContent {
+        std::string eventId;
+        std::string similarScreenContent;
+        
+        SessionContent() = default;
+        SessionContent(const std::string& id) : eventId(id) {}
+        SessionContent(const std::string& id, const std::string& similarity)
+            : eventId(id), similarScreenContent(similarity) {}
+    };
+    
+    /**
      * @brief Worker thread function
      */
     void WorkerThread();
@@ -181,10 +194,10 @@ private:
     std::string GenerateSessionId();
     
     /**
-     * @brief Mark records as compressed with session ID
+     * @brief Mark records as compressed with session ID and similarity info
      */
     bool MarkRecordsCompressed(
-        const std::vector<std::string>& recordIds,
+        const std::vector<SessionContent>& sessionContents,
         const std::string& sessionId
     );
     
@@ -215,6 +228,13 @@ private:
     
     // Similarity algorithm
     SimilarityAlgorithm algorithm_ = SimilarityAlgorithm::ML_BASED;
+    
+    // Store last similarity summary for current comparison
+    std::string lastSimilaritySummary_;
+    
+    // Store separated content A and B from last comparison
+    std::string lastContentA_;
+    std::string lastContentB_;
 };
 
 } // namespace sessionmanager

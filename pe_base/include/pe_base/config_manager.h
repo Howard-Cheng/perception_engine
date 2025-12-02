@@ -66,6 +66,10 @@ public:
     // === Validation ===
     bool ValidateConfiguration() const;
     std::string GetLastError() const;
+    bool IsLoaded() const { 
+        std::lock_guard<std::mutex> lock(mutex_);
+        return loaded_; 
+    }
 
 private:
     ConfigManager();

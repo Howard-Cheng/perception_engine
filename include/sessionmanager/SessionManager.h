@@ -62,8 +62,7 @@ public:
      */
     SessionManager(
         std::shared_ptr<database::IDatabaseClient> dbClient,
-        const std::string& indexName,
-        const Config& config = Config()
+        const std::string& indexName
     );
     
     /**

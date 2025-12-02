@@ -163,17 +163,9 @@ bool ContextCollector::InitializeDatabase(const std::string& esHost,
         esStorageRunning_.store(true);
         std::cout << "[InitializeDatabase] ES storage flag set to true" << std::endl;
         
-        // Initialize SessionManager
-        sessionmanager::SessionManager::Config config;
-        config.compressionThreshold = 10;
-        config.similarityThreshold = 60;
-        config.batchSize = 100;
-        config.enabled = true;
-        
         sessionManager_ = std::make_unique<sessionmanager::SessionManager>(
             esClient_,
-            indexName,
-            config
+            indexName
         );
         sessionManager_->Start();
         std::cout << "[ContextCollector] Session manager initialized and started" << std::endl;

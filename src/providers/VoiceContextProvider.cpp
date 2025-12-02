@@ -11,7 +11,7 @@ void VoiceContextProvider::update() {
     // Voice context is updated via updateTranscription(), not via polling
 }
 
-void VoiceContextProvider::collectContext(Json& context) const {
+void VoiceContextProvider::collectContext(pe_base::Json& context) const {
     std::lock_guard<std::mutex> lock(mutex_);
     
     if (!transcription_.empty()) {

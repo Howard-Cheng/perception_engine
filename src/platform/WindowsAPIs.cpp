@@ -2,6 +2,7 @@
 #include "platform/WindowEventMonitor.h"
 #include "platform/BrowserContentExtractor.h"
 #include "utils/AsyncTaskQueue.h"  // ? NEW: Include async task queue
+#include "pe_base/windows_helper.h" // For WideStringToUtf8
 #define WIN32_LEAN_AND_MEAN
 #define _WINSOCKAPI_    // Prevent inclusion of winsock.h
 #include <windows.h>
@@ -160,12 +161,12 @@ namespace WindowsAPIs {
     void WindowsAPIsManager::OnWindowEventInternal(const WindowInfo& info) {
         // ? Debug logs
         std::cout << "[DEBUG] OnWindowEventInternal called!" << std::endl;
-        std::cout << "  App: " << WideStringToUtf8(info.processName) << std::endl;
-        std::cout << "  Window: " << WideStringToUtf8(info.windowTitle) << std::endl;
+        std::cout << "  App: " << pe_base::WindowsHelper::ConvertToChar(info.processName.c_str()).ToString() << std::endl;
+        std::cout << "  Window: " << pe_base::WindowsHelper::ConvertToChar(info.windowTitle.c_str()).ToString() << std::endl;
 
         try {
             std::string appName = GetAppNameFromWindowInfo(info);
-            std::string windowTitle = WideStringToUtf8(info.windowTitle);
+            std::string windowTitle = pe_base::WindowsHelper::ConvertToChar(info.windowTitle.c_str()).ToString();
 
             std::cout << "  Processed App: " << appName << std::endl;
             std::cout << "  Processed Window: " << windowTitle << std::endl;
@@ -286,7 +287,7 @@ namespace WindowsAPIs {
     // Get app name from WindowInfo
     std::string WindowsAPIsManager::GetAppNameFromWindowInfo(const WindowInfo& info) {
         try {
-            std::string processName = WideStringToUtf8(info.processName);
+            std::string processName = pe_base::WindowsHelper::ConvertToChar(info.processName.c_str()).ToString();
 
             if (!processName.empty() && processName != "Unknown") {
                 size_t dotPos = processName.find_last_of('.');
@@ -296,7 +297,7 @@ namespace WindowsAPIs {
                 return processName;
             }
 
-            std::string windowTitle = WideStringToUtf8(info.windowTitle);
+            std::string windowTitle = pe_base::WindowsHelper::ConvertToChar(info.windowTitle.c_str()).ToString();
             if (!windowTitle.empty()) {
                 return windowTitle;
             }
@@ -402,7 +403,7 @@ namespace WindowsAPIs {
                 return "";
             }
 
-            return WideStringToUtf8(info.textContent);
+            return pe_base::WindowsHelper::ConvertToChar(info.textContent.c_str()).ToString();
         }
         catch (...) {
             return "";
@@ -429,7 +430,7 @@ namespace WindowsAPIs {
                 int result = GetWindowTextW(hwnd, buffer, sizeof(buffer) / sizeof(wchar_t) - 1);
 
                 if (result > 0 && wcslen(buffer) > 0) {
-                    std::string title = WideStringToUtf8(buffer);
+                    std::string title = pe_base::WindowsHelper::ConvertToChar(buffer).ToString();
 
                     if (title != "Program Manager" &&
                         title != "Desktop" &&
@@ -462,7 +463,7 @@ namespace WindowsAPIs {
                                 exeName = exeName.substr(0, dotPos);
                             }
 
-                            std::string exeNameUtf8 = WideStringToUtf8(exeName);
+                            std::string exeNameUtf8 = pe_base::WindowsHelper::ConvertToChar(exeName.c_str()).ToString();
 
                             if (exeNameUtf8 != "dwm" &&
                                 exeNameUtf8 != "winlogon" &&
@@ -499,27 +500,6 @@ namespace WindowsAPIs {
 
     std::string GetCurrentActiveAppContent() {
         return WindowsAPIsManager::GetInstance().GetCurrentActiveAppContent();
-    }
-
-    // Helper function: Convert Unicode string to UTF-8
-    std::string WideStringToUtf8(const std::wstring& wstr) {
-        if (wstr.empty()) return std::string();
-
-        try {
-            int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
-            std::string strTo(size_needed, 0);
-            WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
-            return strTo;
-        }
-        catch (...) {
-            return "Unknown";
-        }
-    }
-
-    // Overload version: Convert wchar_t* to UTF-8
-    std::string WideStringToUtf8(const wchar_t* wstr) {
-        if (!wstr || wcslen(wstr) == 0) return std::string();
-        return WideStringToUtf8(std::wstring(wstr));
     }
 
     int GetBatteryPercentage() {

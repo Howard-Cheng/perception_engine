@@ -8,13 +8,13 @@
 // The actual tokenization is handled by the Python camera client
 
 bool FastVLMTokenizer::LoadVocab(const std::string& vocabPath) {
-    LOG_WARN("FastVLMTokenizer::LoadVocab called - using stub implementation");
+    PE_WARN("FastVLMTokenizer::LoadVocab called - using stub implementation");
     LOG_INFO_FMT("Vocab path: %s (not actually loaded - Python handles tokenization)", vocabPath.c_str());
     return true;  // Return true to avoid errors
 }
 
 std::string FastVLMTokenizer::Decode(const std::vector<int64_t>& tokens) const {
-    LOG_WARN("FastVLMTokenizer::Decode called - using stub implementation");
+    PE_WARN("FastVLMTokenizer::Decode called - using stub implementation");
 
     // Return a placeholder message
     std::ostringstream oss;
@@ -23,7 +23,7 @@ std::string FastVLMTokenizer::Decode(const std::vector<int64_t>& tokens) const {
 }
 
 std::vector<int64_t> FastVLMTokenizer::GetPromptTokens() {
-    LOG_WARN("FastVLMTokenizer::GetPromptTokens called - using stub implementation");
+    PE_WARN("FastVLMTokenizer::GetPromptTokens called - using stub implementation");
 
     // Return empty vector - Python client handles prompts
     return std::vector<int64_t>();

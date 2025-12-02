@@ -1,6 +1,6 @@
 #pragma once
 
-#include "utils/json.hpp"
+#include "pe_base/json.hpp"
 #include <string>
 #include <memory>
 
@@ -26,9 +26,9 @@ public:
     
     /**
      * @brief Collect current context data
-     * @param context Json object to populate with context data
+     * @param context pe_base::Json object to populate with context data
      */
-    virtual void collectContext(Json& context) const = 0;
+    virtual void collectContext(pe_base::Json& context) const = 0;
     
     /**
      * @brief Get provider name (for logging and debugging)

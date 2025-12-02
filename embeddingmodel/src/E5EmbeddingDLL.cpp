@@ -1,7 +1,7 @@
 #define E5EMBEDDING_EXPORTS
 #include "E5EmbeddingDLL.h"
-#include "config/ConfigManager.h"
-#include "utils/Logger.h"  // NEW: Add Logger
+#include "pe_base/config_manager.h"
+#include "pe_base/logger.h"  // NEW: Add Logger
 
 #include <onnxruntime_cxx_api.h>
 #include <string>
@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <filesystem>
 #include <algorithm>
 #include <windows.h>
 
@@ -110,8 +111,14 @@ std::string GetExePath() {
 }
 
 E5_API int E5_Initialize(const wchar_t* model_path) {
-    std::lock_guard<std::mutex> lock(g_mutex);
-    Logger::GetInstance().Initialize("Embedding.log", LogLevel::DEBUG_L);
+    std::lock_guard<std::mutex> lock(g_mutex);    
+    std::filesystem::path log_path = "";
+    if (auto* p_appdata = getenv("APPDATA")) {
+        log_path =
+            std::filesystem::path(p_appdata) / "Lenovo" / "PerceptionEngine" / "logs";
+    }
+    pe_base::LogWriter::SetLogFilePrefix(
+        (log_path / "e5_embedding").generic_string());
 
     if (g_initialized) {
         SetError("Already initialized");
@@ -122,24 +129,24 @@ E5_API int E5_Initialize(const wchar_t* model_path) {
     // =========================================
     // Load Configuration
     // =========================================
-    LOG_INFO("Loading configuration from config.ini...");
+    PE_INFO("Loading configuration from config.ini...");
     std::string config_path = GetExePath() + "\\config.ini";
-    if (!ConfigManager::GetInstance().LoadConfig(config_path)) {
-        LOG_WARN("Failed to load config.ini, using default values");
-        LOG_WARN(std::string("Error: ") + ConfigManager::GetInstance().GetLastError());
+    if (!pe_base::ConfigManager::GetInstance().LoadConfig(config_path)) {
+        PE_WARN("Failed to load config.ini, using default values");
+        PE_WARN(std::string("Error: ") + pe_base::ConfigManager::GetInstance().GetLastError());
     }
     else {
-        LOG_INFO("Configuration loaded successfully");
+        PE_INFO("Configuration loaded successfully");
     }
 
     // Validate configuration
-    if (!ConfigManager::GetInstance().ValidateConfiguration()) {
-        LOG_ERROR("Configuration validation failed:");
-        LOG_ERROR(ConfigManager::GetInstance().GetLastError());
-        LOG_WARN("Continuing with best-effort configuration...");
+    if (!pe_base::ConfigManager::GetInstance().ValidateConfiguration()) {
+        PE_ERROR("Configuration validation failed:");
+        PE_ERROR(pe_base::ConfigManager::GetInstance().GetLastError());
+        PE_WARN("Continuing with best-effort configuration...");
     }
     else {
-        LOG_INFO("Configuration validated successfully");
+        PE_INFO("Configuration validated successfully");
     }
 
     try {
@@ -541,9 +548,9 @@ E5_API int E5_CompareDocuments(
             g_last_doc_B_text = doc_B_text;
         }
 
-        // Get paths from ConfigManager
-        std::string python_executable = ConfigManager::GetInstance().GetPythonExecutable();
-        std::string chunk_script = ConfigManager::GetInstance().GetChunkDocumentScript();
+        // Get paths from pe_base::ConfigManager
+        std::string python_executable = pe_base::ConfigManager::GetInstance().GetPythonExecutable();
+        std::string chunk_script = pe_base::ConfigManager::GetInstance().GetChunkDocumentScript();
 
         // Normalize paths: replace forward slashes with backslashes for Windows
         std::replace(chunk_script.begin(), chunk_script.end(), '/', '\\');
@@ -561,20 +568,20 @@ E5_API int E5_CompareDocuments(
         std::string chunks_A_file = exe_dir + "\\temp_chunks_A.bin";
         std::string chunks_B_file = exe_dir + "\\temp_chunks_B.bin";
 
-        LOG_INFO("Executable directory: " + exe_dir);
-        LOG_INFO("Python executable: " + python_executable);
-        LOG_INFO("Chunk script: " + chunk_script);
+        PE_INFO("Executable directory: " + exe_dir);
+        PE_INFO("Python executable: " + python_executable);
+        PE_INFO("Chunk script: " + chunk_script);
 
         // Save documents to temp files
         if (!SaveTextToFile(temp_doc_A, doc_A_text)) {
             SetError("Failed to save document A to temp file: " + temp_doc_A);
-            LOG_ERROR(g_last_error);
+            PE_ERROR(g_last_error);
             return -1;
         }
 
         if (!SaveTextToFile(temp_doc_B, doc_B_text)) {
             SetError("Failed to save document B to temp file: " + temp_doc_B);
-            LOG_ERROR(g_last_error);
+            PE_ERROR(g_last_error);
             return -1;
         }
 
@@ -611,19 +618,19 @@ E5_API int E5_CompareDocuments(
             overlap,
             tokenizer_path.c_str());
 
-        LOG_INFO("Executing command A: " + std::string(cmd_A));
+        PE_INFO("Executing command A: " + std::string(cmd_A));
 
         if (system(cmd_A) != 0) {
             SetError("Failed to chunk document A (Python error). Command: " + std::string(cmd_A));
-            LOG_ERROR(g_last_error);
+            PE_ERROR(g_last_error);
             return -1;
         }
 
-        LOG_INFO("Executing command B: " + std::string(cmd_B));
+        PE_INFO("Executing command B: " + std::string(cmd_B));
 
         if (system(cmd_B) != 0) {
             SetError("Failed to chunk document B (Python error). Command: " + std::string(cmd_B));
-            LOG_ERROR(g_last_error);
+            PE_ERROR(g_last_error);
             return -1;
         }
 
@@ -725,7 +732,7 @@ E5_API int E5_CompareDocuments(
         DeleteFileA(chunks_A_file.c_str());
         DeleteFileA(chunks_B_file.c_str());
 
-        LOG_INFO("Document comparison complete. Stored " + std::to_string(g_last_comparison_results.size()) + " chunk pairs");
+        PE_INFO("Document comparison complete. Stored " + std::to_string(g_last_comparison_results.size()) + " chunk pairs");
 
         return 0;
 

@@ -143,6 +143,46 @@ E5_API int E5_IsInitialized();
 E5_API const char* E5_GetLastError();
 
 /**
+ * Structure to hold information about a similar chunk pair
+ */
+typedef struct E5_SimilarChunkPair {
+    int chunk_index_A;          // Index of chunk in document A
+    int chunk_index_B;          // Index of chunk in document B
+    float similarity_score;     // Similarity score (0-100)
+    char text_A[512];          // Text snippet from document A
+    char text_B[512];          // Text snippet from document B
+} E5_SimilarChunkPair;
+
+/**
+ * Get the most similar chunk pairs from the last document comparison
+ *
+ * @param pairs_out Output: array of similar chunk pairs
+ * @param max_pairs Maximum number of pairs to return
+ * @param num_pairs_out Output: actual number of pairs returned
+ *
+ * @return 0 on success, negative on error
+ *
+ * This function must be called after E5_CompareDocuments or E5_CompareDocumentsSimple.
+ * It returns the top N most similar chunk pairs found in the comparison.
+ * The results are sorted by similarity score (highest first).
+ *
+ * Note: Caller must allocate memory for pairs_out array.
+ * Thread-safe (returns data from last comparison in same thread context).
+ */
+E5_API int E5_GetSimilarChunks(
+    E5_SimilarChunkPair* pairs_out,
+    int max_pairs,
+    int* num_pairs_out
+);
+
+/**
+ * Clear the stored comparison results
+ *
+ * Call this to free memory used for storing chunk comparison results.
+ */
+E5_API void E5_ClearComparisonResults();
+
+/**
  * Compare two large documents (handles chunking internally)
  *
  * @param doc_A_text Raw text of document A (UTF-8 encoded)

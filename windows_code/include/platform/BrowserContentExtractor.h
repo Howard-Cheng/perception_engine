@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -13,21 +13,21 @@
 #include <sstream>
 #include <atlbase.h>
 #include <comdef.h>
-#include <set>  // ¡û ĞÂÔö£ºÓÃÓÚÈ¥ÖØ
+#include <set>  // For tracking extracted texts to avoid duplicates
 
-// ä¯ÀÀÆ÷ÄÚÈİĞÅÏ¢½á¹¹
+// Browser content information structure
 struct BrowserContentInfo {
-    std::wstring url;              // URLµØÖ·
-    std::wstring title;            // Ò³Ãæ±êÌâ
-    std::wstring textContent;      // ÎÄ±¾ÄÚÈİ
-    std::wstring htmlContent;      // HTMLÄÚÈİ
-    int elementCount;              // ÔªËØÊıÁ¿
-    std::vector<std::wstring> links; // Á´½ÓÁĞ±í
-    std::vector<std::wstring> images; // Í¼Æ¬ÁĞ±í
-    std::set<std::wstring> seenTexts;  // ¡û ĞÂÔö£ºÒÑ¼û¹ıµÄÎÄ±¾£¨ÓÃÓÚÈ¥ÖØ£©
+    std::wstring url;              // URL address
+    std::wstring title;            // Page title
+    std::wstring textContent;      // Text content
+    std::wstring htmlContent;      // HTML content
+    int elementCount;              // Element count
+    std::vector<std::wstring> links; // Link list
+    std::vector<std::wstring> images; // Image list
+    std::set<std::wstring> seenTexts;  // Track extracted texts for deduplication
 };
 
-// ä¯ÀÀÆ÷ÀàĞÍÃ¶¾Ù
+// Browser type enumeration
 enum class BrowserType {
     Chrome,
     Edge,
@@ -41,48 +41,48 @@ private:
     CComPtr<IUIAutomation> pAutomation;
     BrowserType browserType;
     
-    // ³õÊ¼»¯UI Automation
+    // Initialize UI Automation
     bool InitializeUIAutomation();
     
-    // »ñÈ¡»î¶¯´°¿ÚµÄä¯ÀÀÆ÷ÀàĞÍ
+    // Get browser type of window
     BrowserType DetectBrowserType(HWND hwnd);
     
-    // µİ¹é±éÀúUIÔªËØÊ÷
+    // Recursively traverse UI element tree
     void TraverseElementTree(IUIAutomationElement* pElement, BrowserContentInfo& info, int depth = 0);
     
-    // ÌáÈ¡ÔªËØĞÅÏ¢
+    // Extract element information
     void ExtractElementInfo(IUIAutomationElement* pElement, BrowserContentInfo& info);
     
-    // »ñÈ¡ÔªËØµÄÎÄ±¾ÄÚÈİ
+    // Get element text content
     std::wstring GetElementText(IUIAutomationElement* pElement);
     
-    // »ñÈ¡ÔªËØµÄÊôĞÔ
+    // Get element property
     std::wstring GetElementProperty(IUIAutomationElement* pElement, PROPERTYID propertyId);
     
-    // »ñÈ¡Chrome/EdgeµÄµØÖ·À¸URL
+    // Get Chrome/Edge address bar URL
     std::wstring GetChromeEdgeURL(IUIAutomationElement* pRootElement);
     
-    // »ñÈ¡FirefoxµÄµØÖ·À¸URL
+    // Get Firefox address bar URL
     std::wstring GetFirefoxURL(IUIAutomationElement* pRootElement);
     
-    // ²éÕÒÔªËØ£¨Í¨¹ıAutomationId»òName£©
+    // Find element (by AutomationId or Name)
     CComPtr<IUIAutomationElement> FindElement(IUIAutomationElement* pParent, 
                                                const std::wstring& automationId, 
                                                const std::wstring& name);
     
-    // »ñÈ¡¿Ø¼şÀàĞÍÃû³Æ
+    // Get control type name
     std::wstring GetControlTypeName(long controlType);
 
 public:
     BrowserContentExtractor();
     ~BrowserContentExtractor();
     
-    // »ñÈ¡µ±Ç°»îÔ¾ä¯ÀÀÆ÷µÄÄÚÈİ
+    // Get active browser window content
     bool GetActiveBrowserContent(BrowserContentInfo& outInfo);
     
-    // »ñÈ¡Ö¸¶¨´°¿Ú¾ä±úµÄä¯ÀÀÆ÷ÄÚÈİ
+    // Get browser window content by window handle
     bool GetBrowserContentByHWND(HWND hwnd, BrowserContentInfo& outInfo);
     
-    // ´òÓ¡ä¯ÀÀÆ÷ÄÚÈİĞÅÏ¢
+    // Print browser content information
     void PrintBrowserContent(const BrowserContentInfo& info);
 };

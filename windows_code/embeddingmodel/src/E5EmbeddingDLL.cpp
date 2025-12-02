@@ -1,5 +1,5 @@
 #define E5EMBEDDING_EXPORTS
-#include "embeddingmodel/E5EmbeddingDLL.h"
+#include "E5EmbeddingDLL.h"
 #include "config/ConfigManager.h"
 #include "utils/Logger.h"  // NEW: Add Logger
 
@@ -25,6 +25,22 @@ namespace {
 
     const int EMBEDDING_DIM = 256;  // google/embeddinggemma-300m uses 256-dim embeddings
     const int MAX_SEQ_LENGTH = 512;
+    
+    // ============================================================================
+    // Comparison Results Storage
+    // ============================================================================
+    struct ChunkComparisonResult {
+        int chunk_index_A;
+        int chunk_index_B;
+        float similarity_score;
+        std::string text_A;
+        std::string text_B;
+    };
+    
+    std::vector<ChunkComparisonResult> g_last_comparison_results;
+    std::string g_last_doc_A_text;
+    std::string g_last_doc_B_text;
+    std::mutex g_comparison_mutex;  // Protects comparison results
 }
 
 // Helper: Set error message
@@ -84,6 +100,15 @@ float DotProduct(const float* a, const float* b) {
 
 // API Implementation
 
+std::string GetExePath() {
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    std::string exePathStr(exePath);
+    size_t lastSlash = exePathStr.find_last_of("\\/");
+    std::string exe_dir = exePathStr.substr(0, lastSlash);
+    return exe_dir;
+}
+
 E5_API int E5_Initialize(const wchar_t* model_path) {
     std::lock_guard<std::mutex> lock(g_mutex);
     Logger::GetInstance().Initialize("Embedding.log", LogLevel::DEBUG_L);
@@ -98,7 +123,8 @@ E5_API int E5_Initialize(const wchar_t* model_path) {
     // Load Configuration
     // =========================================
     LOG_INFO("Loading configuration from config.ini...");
-    if (!ConfigManager::GetInstance().LoadConfig("config.ini")) {
+    std::string config_path = GetExePath() + "\\config.ini";
+    if (!ConfigManager::GetInstance().LoadConfig(config_path)) {
         LOG_WARN("Failed to load config.ini, using default values");
         LOG_WARN(std::string("Error: ") + ConfigManager::GetInstance().GetLastError());
     }
@@ -459,6 +485,36 @@ void AverageEmbeddings(const std::vector<std::vector<float>>& embeddings,
     Normalize(avg_out.data());
 }
 
+// Helper: Extract chunk text from document
+std::string ExtractChunkText(const std::string& doc_text, int chunk_index, int chunk_size, int overlap) {
+    // Approximate character position based on chunk index
+    // Assuming average of 4 characters per token
+    int chars_per_chunk = chunk_size * 4;
+    int chars_overlap = overlap * 4;
+    int stride = chars_per_chunk - chars_overlap;
+    
+    int start_pos = chunk_index * stride;
+    int end_pos = start_pos + chars_per_chunk;
+    
+    if (start_pos >= doc_text.size()) {
+        return "";
+    }
+    
+    if (end_pos > doc_text.size()) {
+        end_pos = doc_text.size();
+    }
+    
+    // Extract and trim
+    std::string chunk = doc_text.substr(start_pos, end_pos - start_pos);
+    
+    // Truncate to 500 chars max for display
+    if (chunk.size() > 500) {
+        chunk = chunk.substr(0, 497) + "...";
+    }
+    
+    return chunk;
+}
+
 E5_API int E5_CompareDocuments(
     const char* doc_A_text,
     const char* doc_B_text,
@@ -477,6 +533,14 @@ E5_API int E5_CompareDocuments(
     }
 
     try {
+        // Clear previous comparison results
+        {
+            std::lock_guard<std::mutex> lock(g_comparison_mutex);
+            g_last_comparison_results.clear();
+            g_last_doc_A_text = doc_A_text;
+            g_last_doc_B_text = doc_B_text;
+        }
+
         // Get paths from ConfigManager
         std::string python_executable = ConfigManager::GetInstance().GetPythonExecutable();
         std::string chunk_script = ConfigManager::GetInstance().GetChunkDocumentScript();
@@ -611,24 +675,46 @@ E5_API int E5_CompareDocuments(
         }
 
         // Stage 2: Fine-grained similarity (cross-document chunk comparison)
-        std::vector<float> all_similarities;
-        all_similarities.reserve(embeddings_A.size() * embeddings_B.size());
+        std::vector<ChunkComparisonResult> all_chunk_comparisons;
+        all_chunk_comparisons.reserve(embeddings_A.size() * embeddings_B.size());
 
         // Compare all chunk pairs (A vs B only, no A vs A or B vs B)
-        for (const auto& emb_A : embeddings_A) {
-            for (const auto& emb_B : embeddings_B) {
-                float sim = DotProduct(emb_A.data(), emb_B.data()) * 100.0f;
-                all_similarities.push_back(sim);
+        for (size_t i = 0; i < embeddings_A.size(); i++) {
+            for (size_t j = 0; j < embeddings_B.size(); j++) {
+                float sim = DotProduct(embeddings_A[i].data(), embeddings_B[j].data()) * 100.0f;
+                
+                ChunkComparisonResult result;
+                result.chunk_index_A = (int)i;
+                result.chunk_index_B = (int)j;
+                result.similarity_score = sim;
+                result.text_A = ExtractChunkText(doc_A_text, (int)i, chunk_size, overlap);
+                result.text_B = ExtractChunkText(doc_B_text, (int)j, chunk_size, overlap);
+                
+                all_chunk_comparisons.push_back(result);
             }
         }
 
-        // Take top 10% average
-        std::sort(all_similarities.begin(), all_similarities.end(), std::greater<float>());
-        int top_n = (std::max)(1, (int)(all_similarities.size() * 0.1));
+        // Sort by similarity score (highest first)
+        std::sort(all_chunk_comparisons.begin(), all_chunk_comparisons.end(),
+            [](const ChunkComparisonResult& a, const ChunkComparisonResult& b) {
+                return a.similarity_score > b.similarity_score;
+            });
 
+        // Store top results (up to 100 pairs)
+        {
+            std::lock_guard<std::mutex> lock(g_comparison_mutex);
+            int num_to_store = (std::min)((int)all_chunk_comparisons.size(), 100);
+            g_last_comparison_results.assign(
+                all_chunk_comparisons.begin(),
+                all_chunk_comparisons.begin() + num_to_store
+            );
+        }
+
+        // Calculate final similarity (top 10% average)
+        int top_n = (std::max)(1, (int)(all_chunk_comparisons.size() * 0.1));
         float sum = 0.0f;
         for (int i = 0; i < top_n; i++) {
-            sum += all_similarities[i];
+            sum += all_chunk_comparisons[i].similarity_score;
         }
 
         *similarity_out = sum / top_n;
@@ -638,6 +724,8 @@ E5_API int E5_CompareDocuments(
         DeleteFileA(temp_doc_B.c_str());
         DeleteFileA(chunks_A_file.c_str());
         DeleteFileA(chunks_B_file.c_str());
+
+        LOG_INFO("Document comparison complete. Stored " + std::to_string(g_last_comparison_results.size()) + " chunk pairs");
 
         return 0;
 
@@ -653,4 +741,65 @@ E5_API int E5_CompareDocumentsSimple(
     float* similarity_out) {
 
     return E5_CompareDocuments(doc_A_text, doc_B_text, 450, 50, similarity_out);
+}
+
+// ============================================================================
+// Comparison Results Retrieval
+// ============================================================================
+
+E5_API int E5_GetSimilarChunks(
+    E5_SimilarChunkPair* pairs_out,
+    int max_pairs,
+    int* num_pairs_out) {
+
+    if (pairs_out == nullptr || num_pairs_out == nullptr) {
+        SetError("NULL pointer provided");
+        return -1;
+    }
+
+    if (max_pairs <= 0) {
+        SetError("max_pairs must be positive");
+        return -1;
+    }
+
+    try {
+        std::lock_guard<std::mutex> lock(g_comparison_mutex);
+
+        if (g_last_comparison_results.empty()) {
+            SetError("No comparison results available. Call E5_CompareDocuments first");
+            *num_pairs_out = 0;
+            return -1;
+        }
+
+        // Return up to max_pairs results
+        int num_to_return = (std::min)(max_pairs, (int)g_last_comparison_results.size());
+        *num_pairs_out = num_to_return;
+
+        for (int i = 0; i < num_to_return; i++) {
+            const auto& result = g_last_comparison_results[i];
+            
+            pairs_out[i].chunk_index_A = result.chunk_index_A;
+            pairs_out[i].chunk_index_B = result.chunk_index_B;
+            pairs_out[i].similarity_score = result.similarity_score;
+            
+            // Copy text snippets (truncate if needed)
+            strncpy_s(pairs_out[i].text_A, sizeof(pairs_out[i].text_A),
+                      result.text_A.c_str(), _TRUNCATE);
+            strncpy_s(pairs_out[i].text_B, sizeof(pairs_out[i].text_B),
+                      result.text_B.c_str(), _TRUNCATE);
+        }
+
+        return 0;
+
+    } catch (const std::exception& e) {
+        SetError(std::string("Get similar chunks error: ") + e.what());
+        return -1;
+    }
+}
+
+E5_API void E5_ClearComparisonResults() {
+    std::lock_guard<std::mutex> lock(g_comparison_mutex);
+    g_last_comparison_results.clear();
+    g_last_doc_A_text.clear();
+    g_last_doc_B_text.clear();
 }

@@ -135,7 +135,7 @@ namespace sessionmanager {
                 << e.what() << std::endl;
             return 0;
         }
-    }
+    }   
 
     void SessionManager::PostCompressionTask() {
         std::lock_guard<std::mutex> lock(taskMutex_);

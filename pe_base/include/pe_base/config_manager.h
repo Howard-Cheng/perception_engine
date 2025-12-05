@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string>
+#include <vector>
+#include <set>
 #include <mutex>
 #include <memory>
 #include "pe_base/json.hpp"
@@ -56,6 +58,37 @@ public:
     std::string GetTempDirectory() const;
     std::string GetLogDirectory() const;
 
+    // === ?? Blacklist Configuration ===
+    /**
+     * Get application blacklist
+     * @return Set of blacklisted application names (lowercase)
+     */
+    std::set<std::string> GetBlacklist() const;
+    
+    /**
+     * Check if an application is blacklisted
+     * @param appName Application name to check (case-insensitive)
+     * @return true if blacklisted, false otherwise
+     */
+    bool IsBlacklisted(const std::string& appName) const;
+    
+    /**
+     * Add application to blacklist
+     * @param appName Application name to add
+     */
+    void AddToBlacklist(const std::string& appName);
+    
+    /**
+     * Remove application from blacklist
+     * @param appName Application name to remove
+     */
+    void RemoveFromBlacklist(const std::string& appName);
+    
+    /**
+     * Clear all blacklisted applications
+     */
+    void ClearBlacklist();
+
     // === Update Configuration ===
     void SetEmbeddingModelPath(const std::wstring& path);
     void SetTokenizerPath(const std::string& path);
@@ -84,17 +117,24 @@ private:
     std::string ResolvePath(const std::string& path) const;
     std::wstring ConvertToWideString(const std::string& str) const;
     std::string ConvertToUtf8(const std::wstring& wstr) const;
+    std::string ToLowerCase(const std::string& str) const;  // ?? Helper for case-insensitive comparison
     
     // Internal helper methods (without locking) for use within locked sections
     std::string GetEmbeddingModelPathUtf8_Unlocked() const;
     std::string GetTokenizerPath_Unlocked() const;
     int GetCompressionThreshold_Unlocked() const;
     float GetSimilarityThreshold_Unlocked() const;
+    
+    // ?? Blacklist helper (without locking)
+    void LoadBlacklist_Unlocked();
 
     mutable std::mutex mutex_;
     Json config_;
     bool loaded_;
     mutable std::string lastError_;
+    
+    // ?? Blacklist storage (lowercase for case-insensitive comparison)
+    std::set<std::string> blacklist_;
 };
 
 } // namespace pe_base

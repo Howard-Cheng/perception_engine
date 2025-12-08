@@ -538,7 +538,59 @@ bool ElasticsearchClient::markEventsAsCompressed(const std::string& indexName,
     }
     
     std::string response;
-    return pImpl_->httpRequest("POST", "/_bulk", bulk.str(), response);
+    bool httpSuccess = pImpl_->httpRequest("POST", "/_bulk", bulk.str(), response);
+    
+    if (!httpSuccess) {
+        std::cerr << "[ElasticsearchClient] HTTP request failed for bulk update" << std::endl;
+        return false;
+    }
+    
+    // Parse bulk response to check for individual operation failures
+    try {
+        auto j = json::parse(response);
+        
+        if (j.contains("errors") && j["errors"].get<bool>()) {
+            // Some operations failed
+            std::vector<std::string> failedIds;
+            
+            if (j.contains("items") && j["items"].is_array()) {
+                size_t idx = 0;
+                for (const auto& item : j["items"]) {
+                    if (item.contains("update")) {
+                        const auto& updateResult = item["update"];
+                        
+                        if (updateResult.contains("error")) {
+                            if (idx < eventIds.size()) {
+                                failedIds.push_back(eventIds[idx]);
+                                std::cerr << "[ElasticsearchClient] Failed to update event " 
+                                         << eventIds[idx] << ": ";
+                                if (updateResult["error"].contains("reason")) {
+                                    std::cerr << updateResult["error"]["reason"].get<std::string>();
+                                }
+                                std::cerr << std::endl;
+                            }
+                        }
+                    }
+                    idx++;
+                }
+            }
+            
+            int successCount = eventIds.size() - failedIds.size();
+            std::cerr << "[ElasticsearchClient] Bulk update partial failure: " 
+                     << successCount << " succeeded, " 
+                     << failedIds.size() << " failed" << std::endl;
+            
+            return failedIds.empty();
+        }
+        
+        std::cout << "[ElasticsearchClient] Successfully updated " << eventIds.size() 
+                  << " events with session_id=" << sessionId << std::endl;
+        return true;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[ElasticsearchClient] Failed to parse bulk response: " << e.what() << std::endl;
+        return true;
+    }
 }
 
 bool ElasticsearchClient::markEventsAsCompressedWithSimilarity(
@@ -570,17 +622,59 @@ bool ElasticsearchClient::markEventsAsCompressedWithSimilarity(
     }
     
     std::string response;
-    bool success = pImpl_->httpRequest("POST", "/_bulk", bulk.str(), response);
+    bool httpSuccess = pImpl_->httpRequest("POST", "/_bulk", bulk.str(), response);
     
-    if (success) {
-        std::cout << "[ElasticsearchClient] Updated " << eventIds.size() 
-                  << " events with session_id=" << sessionId 
-                  << " and similarity info" << std::endl;
-    } else {
-        std::cerr << "[ElasticsearchClient] Failed to update events with similarity info" << std::endl;
+    if (!httpSuccess) {
+        std::cerr << "[ElasticsearchClient] HTTP request failed for bulk update" << std::endl;
+        return false;
     }
     
-    return success;
+    // Parse bulk response to check for individual operation failures
+    try {
+        auto j = json::parse(response);
+        
+        if (j.contains("errors") && j["errors"].get<bool>()) {
+            // Some operations failed
+            std::vector<std::string> failedIds;
+            
+            if (j.contains("items") && j["items"].is_array()) {
+                size_t idx = 0;
+                for (const auto& item : j["items"]) {
+                    if (item.contains("update")) {
+                        const auto& updateResult = item["update"];
+                        
+                        if (updateResult.contains("error")) {
+                            if (idx < eventIds.size()) {
+                                failedIds.push_back(eventIds[idx]);
+                                std::cerr << "[ElasticsearchClient] Failed to update event " 
+                                         << eventIds[idx] << ": ";
+                                if (updateResult["error"].contains("reason")) {
+                                    std::cerr << updateResult["error"]["reason"].get<std::string>();
+                                }
+                                std::cerr << std::endl;
+                            }
+                        }
+                    }
+                    idx++;
+                }
+            }
+            
+            int successCount = eventIds.size() - failedIds.size();
+            std::cerr << "[ElasticsearchClient] Bulk update partial failure: " 
+                     << successCount << " succeeded, " 
+                     << failedIds.size() << " failed" << std::endl;
+            
+            return failedIds.empty();
+        }
+        
+        std::cout << "[ElasticsearchClient] Successfully updated " << eventIds.size() 
+                  << " events with session_id=" << sessionId << std::endl;
+        return true;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[ElasticsearchClient] Failed to parse bulk response: " << e.what() << std::endl;
+        return true;
+    }
 }
 
 int ElasticsearchClient::deleteOlderThan(const std::string& indexName,

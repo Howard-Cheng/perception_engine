@@ -41,6 +41,11 @@ public:
         int batchSize = 100;                // Max records to process per batch
         bool enabled = true;                // Enable/disable compression
         
+        // Retry configuration
+        int maxRetries = 3;                 // Maximum retry attempts for failed operations
+        int retryDelayMs = 1000;            // Initial retry delay in milliseconds
+        bool useExponentialBackoff = true;  // Use exponential backoff for retries
+        
         Config() = default;
     };
     
@@ -116,6 +121,13 @@ public:
         int lastBatchSize = 0;
         int currentUncompressedCount = 0;
         std::chrono::steady_clock::time_point lastCompressionTime;
+        
+        // Retry statistics
+        int totalRetryAttempts = 0;         // Total number of retry attempts
+        int successfulRetries = 0;          // Retries that eventually succeeded
+        int failedRetries = 0;              // Retries that failed after max attempts
+        int partialFailures = 0;            // Batches with partial failures
+        int totalFailedOperations = 0;      // Total number of failed individual operations
         
         Statistics() : lastCompressionTime(std::chrono::steady_clock::now()) {}
     };
@@ -196,6 +208,17 @@ private:
      * @brief Mark records as compressed with session ID and similarity info
      */
     bool MarkRecordsCompressed(
+        const std::vector<SessionContent>& sessionContents,
+        const std::string& sessionId
+    );
+    
+    /**
+     * @brief Mark records as compressed with retry mechanism
+     * @param sessionContents Session content list with event IDs and similarity info
+     * @param sessionId Unique session identifier
+     * @return true if all operations succeeded (possibly after retries)
+     */
+    bool MarkRecordsCompressedWithRetry(
         const std::vector<SessionContent>& sessionContents,
         const std::string& sessionId
     );

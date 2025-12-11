@@ -9,6 +9,82 @@
 #include <random>
 #include <algorithm>
 
+// Add UTF-8 validation helper function after includes
+namespace {
+    // Helper function to validate and sanitize UTF-8 strings
+    std::string sanitizeUtf8(const std::string& input) {
+        std::string output;
+        output.reserve(input.size());
+        
+        for (size_t i = 0; i < input.size(); ) {
+            unsigned char c = static_cast<unsigned char>(input[i]);
+            
+            // Single-byte character (ASCII: 0x00-0x7F)
+            if (c <= 0x7F) {
+                // Filter out control characters except newline, tab, and carriage return
+                if (c >= 0x20 || c == '\n' || c == '\r' || c == '\t') {
+                    output.push_back(input[i]);
+                }
+                i++;
+            }
+            // Two-byte character (0xC0-0xDF)
+            else if ((c & 0xE0) == 0xC0) {
+                if (i + 1 < input.size()) {
+                    unsigned char c2 = static_cast<unsigned char>(input[i + 1]);
+                    if ((c2 & 0xC0) == 0x80) {
+                        output.push_back(input[i]);
+                        output.push_back(input[i + 1]);
+                        i += 2;
+                        continue;
+                    }
+                }
+                // Invalid sequence, skip
+                i++;
+            }
+            // Three-byte character (0xE0-0xEF)
+            else if ((c & 0xF0) == 0xE0) {
+                if (i + 2 < input.size()) {
+                    unsigned char c2 = static_cast<unsigned char>(input[i + 1]);
+                    unsigned char c3 = static_cast<unsigned char>(input[i + 2]);
+                    if ((c2 & 0xC0) == 0x80 && (c3 & 0xC0) == 0x80) {
+                        output.push_back(input[i]);
+                        output.push_back(input[i + 1]);
+                        output.push_back(input[i + 2]);
+                        i += 3;
+                        continue;
+                    }
+                }
+                // Invalid sequence, skip
+                i++;
+            }
+            // Four-byte character (0xF0-0xF7)
+            else if ((c & 0xF8) == 0xF0) {
+                if (i + 3 < input.size()) {
+                    unsigned char c2 = static_cast<unsigned char>(input[i + 1]);
+                    unsigned char c3 = static_cast<unsigned char>(input[i + 2]);
+                    unsigned char c4 = static_cast<unsigned char>(input[i + 3]);
+                    if ((c2 & 0xC0) == 0x80 && (c3 & 0xC0) == 0x80 && (c4 & 0xC0) == 0x80) {
+                        output.push_back(input[i]);
+                        output.push_back(input[i + 1]);
+                        output.push_back(input[i + 2]);
+                        output.push_back(input[i + 3]);
+                        i += 4;
+                        continue;
+                    }
+                }
+                // Invalid sequence, skip
+                i++;
+            }
+            // Invalid UTF-8 start byte, skip
+            else {
+                i++;
+            }
+        }
+        
+        return output;
+    }
+}
+
 namespace sessionmanager {
 
     SessionManager::SessionManager(
@@ -38,11 +114,18 @@ namespace sessionmanager {
             config_.compressionThreshold = pe_base::ConfigManager::GetInstance().GetCompressionThreshold();
             config_.similarityThreshold = pe_base::ConfigManager::GetInstance().GetSimilarityThreshold();
             config_.batchSize = pe_base::ConfigManager::GetInstance().GetBatchSize();
+            
+            // Initialize retry configuration with sensible defaults
+            config_.maxRetries = 3;
+            config_.retryDelayMs = 1000;
+            config_.useExponentialBackoff = true;
         }
         std::cout << "[SessionManager] Created with device ID: " << deviceId_ << std::endl;
         std::cout << "[SessionManager] Config: threshold=" << config_.compressionThreshold
             << ", similarity=" << config_.similarityThreshold
-            << ", batchSize=" << config_.batchSize << std::endl;
+            << ", batchSize=" << config_.batchSize
+            << ", maxRetries=" << config_.maxRetries
+            << ", retryDelay=" << config_.retryDelayMs << "ms" << std::endl;
     }
 
     SessionManager::~SessionManager() {
@@ -135,7 +218,7 @@ namespace sessionmanager {
                 << e.what() << std::endl;
             return 0;
         }
-    }
+    }   
 
     void SessionManager::PostCompressionTask() {
         std::lock_guard<std::mutex> lock(taskMutex_);
@@ -268,12 +351,16 @@ namespace sessionmanager {
                             // End current session and start new one
                             if (!currentSession.empty()) {
                                 std::string sessionId = GenerateSessionId();
-                                if (MarkRecordsCompressed(currentSession, sessionId)) {
+                                if (MarkRecordsCompressedWithRetry(currentSession, sessionId)) {
                                     sessionsCreated++;
                                     recordsProcessed += currentSession.size();
-                                    std::cout << "[SessionManager] Session " << sessionId
+                                    PE_INFO("[SessionManager] Session " << sessionId
                                         << " completed (" << currentSession.size()
-                                        << " records)" << std::endl;
+                                        << " records)");
+                                }
+                                else {
+                                    PE_ERROR("[SessionManager] Failed to mark session " << sessionId
+                                        << " after all retry attempts");
                                 }
                             }
 
@@ -293,12 +380,16 @@ namespace sessionmanager {
             // Mark remaining session
             if (!currentSession.empty()) {
                 std::string sessionId = GenerateSessionId();
-                if (MarkRecordsCompressed(currentSession, sessionId)) {
+                if (MarkRecordsCompressedWithRetry(currentSession, sessionId)) {
                     sessionsCreated++;
                     recordsProcessed += currentSession.size();
-                    std::cout << "[SessionManager] Final session " << sessionId
+                    PE_INFO("[SessionManager] Final session " << sessionId
                         << " completed (" << currentSession.size()
-                        << " records)" << std::endl;
+                        << " records)");
+                }
+                else {
+                    PE_ERROR("[SessionManager] Failed to mark final session " << sessionId
+                        << " after all retry attempts");
                 }
             }
 
@@ -379,7 +470,7 @@ namespace sessionmanager {
         // Check if content is empty
         if (content1.empty() || content2.empty()) {
             PE_WARN("One or both screen contents are empty, falling back to simple comparison");
-            return CompareContentSimple(record1, record2);
+            return 0;
         }
 
         PE_INFO(std::string("Comparing content1 (").append(std::to_string(content1.length())).append(" chars)"));
@@ -403,20 +494,20 @@ namespace sessionmanager {
         if (E5_GetSimilarChunks(chunks, 5, &num_chunks) == 0 && num_chunks > 0) {
             // Build Content A summary
             std::ostringstream contentA;
-            //contentA << "Similarity: " << similarity << "%\n";
-            //contentA << "Top " << num_chunks << " matching sections (Previous Content):\n\n";
 
             for (int i = 0; i < num_chunks && i < 3; i++) {
-                contentA << (i + 1) << ":" << std::string(chunks[i].text_A) << ".\n\n";
+                // Sanitize UTF-8 before adding to content
+                std::string chunkText = sanitizeUtf8(std::string(chunks[i].text_A));
+                contentA << (i + 1) << ":" << chunkText << ".\n\n";
             }
 
             // Build Content B summary
             std::ostringstream contentB;
-            //contentB << "Similarity: " << similarity << "%\n";
-            //contentB << "Top " << num_chunks << " matching sections (Current Content):\n\n";
 
             for (int i = 0; i < num_chunks && i < 3; i++) {
-                contentB << (i + 1) << ":" << std::string(chunks[i].text_B) << ".\n\n";
+                // Sanitize UTF-8 before adding to content
+                std::string chunkText = sanitizeUtf8(std::string(chunks[i].text_B));
+                contentB << (i + 1) << ":" << chunkText << ".\n\n";
             }
 
             // Store separated content
@@ -429,9 +520,13 @@ namespace sessionmanager {
             combined << "Top " << num_chunks << " matching sections:\n\n";
 
             for (int i = 0; i < num_chunks && i < 3; i++) {
+                // Sanitize UTF-8 for combined summary
+                std::string textA = sanitizeUtf8(std::string(chunks[i].text_A));
+                std::string textB = sanitizeUtf8(std::string(chunks[i].text_B));
+                
                 combined << (i + 1) << ". Score: " << chunks[i].similarity_score << "\n";
-                combined << "   Content A: " << std::string(chunks[i].text_A).substr(0, 100) << "...\n";
-                combined << "   Content B: " << std::string(chunks[i].text_B).substr(0, 100) << "...\n\n";
+                combined << "   Content A: " << textA.substr(0, std::min<size_t>(100, textA.length())) << "...\n";
+                combined << "   Content B: " << textB.substr(0, std::min<size_t>(100, textB.length())) << "...\n\n";
             }
 
             lastSimilaritySummary_ = combined.str();
@@ -538,18 +633,41 @@ namespace sessionmanager {
                     std::vector<std::string> singleEventId = { content.eventId };
 
                     if (!content.similarScreenContent.empty()) {
-                        // Update this event with its specific similarity content
-                        bool success = esClient->markEventsAsCompressedWithSimilarity(
-                            indexName_,
-                            singleEventId,
-                            sessionId,
-                            content.similarScreenContent
-                        );
+                        // Sanitize the similarity content before sending to Elasticsearch
+                        std::string sanitizedContent = sanitizeUtf8(content.similarScreenContent);
+                        
+                        // Validate that sanitization produced valid content
+                        if (sanitizedContent.empty() && !content.similarScreenContent.empty()) {
+                            PE_WARN("[SessionManager] Similarity content for event " << content.eventId 
+                                   << " was completely invalid UTF-8, skipping similarity field");
+                            
+                            // Fall back to update without similarity
+                            bool success = esClient->markEventsAsCompressed(
+                                indexName_,
+                                singleEventId,
+                                sessionId
+                            );
 
-                        if (!success) {
-                            std::cerr << "[SessionManager] Failed to mark event " << content.eventId
-                                << " as compressed with similarity" << std::endl;
-                            allSuccess = false;
+                            if (!success) {
+                                PE_ERROR("[SessionManager] Failed to mark event " << content.eventId
+                                    << " as compressed");
+                                allSuccess = false;
+                            }
+                        }
+                        else {
+                            // Update this event with its specific sanitized similarity content
+                            bool success = esClient->markEventsAsCompressedWithSimilarity(
+                                indexName_,
+                                singleEventId,
+                                sessionId,
+                                sanitizedContent
+                            );
+
+                            if (!success) {
+                                PE_ERROR("[SessionManager] Failed to mark event " << content.eventId
+                                    << " as compressed with similarity");
+                                allSuccess = false;
+                            }
                         }
                     }
                     else {
@@ -561,17 +679,17 @@ namespace sessionmanager {
                         );
 
                         if (!success) {
-                            std::cerr << "[SessionManager] Failed to mark event " << content.eventId
-                                << " as compressed" << std::endl;
+                            PE_ERROR("[SessionManager] Failed to mark event " << content.eventId
+                                << " as compressed");
                             allSuccess = false;
                         }
                     }
                 }
 
                 if (allSuccess) {
-                    std::cout << "[SessionManager] Marked " << sessionContents.size()
+                    PE_INFO("[SessionManager] Marked " << sessionContents.size()
                         << " records as compressed with session: " << sessionId
-                        << " (with individual similarity info)" << std::endl;
+                        << " (with individual similarity info)");
                 }
 
                 return allSuccess;
@@ -591,11 +709,11 @@ namespace sessionmanager {
                 );
 
                 if (success) {
-                    std::cout << "[SessionManager] Marked " << recordIds.size()
-                        << " records as compressed with session: " << sessionId << std::endl;
+                    PE_INFO("[SessionManager] Marked " << recordIds.size()
+                        << " records as compressed with session: " << sessionId);
                 }
                 else {
-                    std::cerr << "[SessionManager] Failed to mark records as compressed" << std::endl;
+                    PE_ERROR("[SessionManager] Failed to mark records as compressed");
                 }
 
                 return success;
@@ -603,10 +721,102 @@ namespace sessionmanager {
 
         }
         catch (const std::exception& e) {
-            std::cerr << "[SessionManager] MarkRecordsCompressed exception: "
-                << e.what() << std::endl;
+            PE_ERROR("[SessionManager] MarkRecordsCompressed exception: " << e.what());
+            
+            // Log detailed information about the problematic content
+            PE_ERROR("[SessionManager] Session ID: " << sessionId);
+            PE_ERROR("[SessionManager] Number of events: " << sessionContents.size());
+            
+            for (size_t i = 0; i < sessionContents.size(); i++) {
+                const auto& content = sessionContents[i];
+                PE_ERROR("[SessionManager]   Event[" << i << "]: " << content.eventId 
+                        << " (similarity length: " << content.similarScreenContent.length() << ")");
+            }
+            
             return false;
         }
+    }
+
+    bool SessionManager::MarkRecordsCompressedWithRetry(
+        const std::vector<SessionContent>& sessionContents,
+        const std::string& sessionId)
+    {
+        if (sessionContents.empty()) {
+            return true;
+        }
+
+        int retryDelay = config_.retryDelayMs;
+        bool finalSuccess = false;
+
+        for (int attempt = 0; attempt <= config_.maxRetries; attempt++) {
+            if (attempt > 0) {
+                // This is a retry attempt
+                std::lock_guard<std::mutex> lock(statsMutex_);
+                stats_.totalRetryAttempts++;
+
+                PE_INFO("[SessionManager] Retry attempt " << attempt 
+                         << " of " << config_.maxRetries 
+                         << " for session " << sessionId 
+                         << " (delay: " << retryDelay << "ms)");
+
+                // Wait before retry
+                std::this_thread::sleep_for(std::chrono::milliseconds(retryDelay));
+
+                // Apply exponential backoff
+                if (config_.useExponentialBackoff) {
+                    retryDelay *= 2;
+                }
+            }
+
+            try {
+                // Attempt to mark records
+                bool success = MarkRecordsCompressed(sessionContents, sessionId);
+
+                if (success) {
+                    if (attempt > 0) {
+                        // Successful retry
+                        std::lock_guard<std::mutex> lock(statsMutex_);
+                        stats_.successfulRetries++;
+                        PE_INFO("[SessionManager] Session " << sessionId 
+                                 << " succeeded on retry attempt " << attempt);
+                    }
+                    finalSuccess = true;
+                    break;
+                }
+                else {
+                    // Operation failed
+                    std::lock_guard<std::mutex> lock(statsMutex_);
+                    stats_.partialFailures++;
+                    stats_.totalFailedOperations += sessionContents.size();
+
+                    if (attempt == config_.maxRetries) {
+                        // Final attempt failed
+                        stats_.failedRetries++;
+                        PE_ERROR("[SessionManager] Session " << sessionId 
+                                 << " failed after " << (attempt + 1) 
+                                 << " attempts");
+                    }
+                    else {
+                        PE_WARN("[SessionManager] Attempt " << (attempt + 1) 
+                                 << " failed for session " << sessionId 
+                                 << ", will retry...");
+                    }
+                }
+            }
+            catch (const std::exception& e) {
+                PE_ERROR("[SessionManager] Exception during attempt " << (attempt + 1) 
+                         << " for session " << sessionId << ": " 
+                         << e.what());
+
+                if (attempt == config_.maxRetries) {
+                    std::lock_guard<std::mutex> lock(statsMutex_);
+                    stats_.failedRetries++;
+                    stats_.totalFailedOperations += sessionContents.size();
+                }
+            }
+        }
+
+        return finalSuccess;
     }
 
     SessionManager::Config SessionManager::GetConfig() const {

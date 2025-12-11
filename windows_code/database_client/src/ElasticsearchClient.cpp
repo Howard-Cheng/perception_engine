@@ -18,6 +18,79 @@ static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* use
     return size * nmemb;
 }
 
+// Helper: Sanitize UTF-8 strings for JSON
+static std::string sanitizeUtf8ForJson(const std::string& input) {
+    std::string output;
+    output.reserve(input.size());
+    
+    for (size_t i = 0; i < input.size(); ) {
+        unsigned char c = static_cast<unsigned char>(input[i]);
+        
+        // Single-byte character (ASCII: 0x00-0x7F)
+        if (c <= 0x7F) {
+            // Filter out control characters except newline, tab, and carriage return
+            if (c >= 0x20 || c == '\n' || c == '\r' || c == '\t') {
+                output.push_back(input[i]);
+            }
+            i++;
+        }
+        // Two-byte character (0xC0-0xDF)
+        else if ((c & 0xE0) == 0xC0) {
+            if (i + 1 < input.size()) {
+                unsigned char c2 = static_cast<unsigned char>(input[i + 1]);
+                if ((c2 & 0xC0) == 0x80) {
+                    output.push_back(input[i]);
+                    output.push_back(input[i + 1]);
+                    i += 2;
+                    continue;
+                }
+            }
+            // Invalid sequence, skip
+            i++;
+        }
+        // Three-byte character (0xE0-0xEF)
+        else if ((c & 0xF0) == 0xE0) {
+            if (i + 2 < input.size()) {
+                unsigned char c2 = static_cast<unsigned char>(input[i + 1]);
+                unsigned char c3 = static_cast<unsigned char>(input[i + 2]);
+                if ((c2 & 0xC0) == 0x80 && (c3 & 0xC0) == 0x80) {
+                    output.push_back(input[i]);
+                    output.push_back(input[i + 1]);
+                    output.push_back(input[i + 2]);
+                    i += 3;
+                    continue;
+                }
+            }
+            // Invalid sequence, skip
+            i++;
+        }
+        // Four-byte character (0xF0-0xF7)
+        else if ((c & 0xF8) == 0xF0) {
+            if (i + 3 < input.size()) {
+                unsigned char c2 = static_cast<unsigned char>(input[i + 1]);
+                unsigned char c3 = static_cast<unsigned char>(input[i + 2]);
+                unsigned char c4 = static_cast<unsigned char>(input[i + 3]);
+                if ((c2 & 0xC0) == 0x80 && (c3 & 0xC0) == 0x80 && (c4 & 0xC0) == 0x80) {
+                    output.push_back(input[i]);
+                    output.push_back(input[i + 1]);
+                    output.push_back(input[i + 2]);
+                    output.push_back(input[i + 3]);
+                    i += 4;
+                    continue;
+                }
+            }
+            // Invalid sequence, skip
+            i++;
+        }
+        // Invalid UTF-8 start byte, skip
+        else {
+            i++;
+        }
+    }
+    
+    return output;
+}
+
 // Helper: Convert time_t to ISO 8601 string (using local time)
 static std::string timestampToISO8601(std::time_t timestamp) {
     std::tm tm_val;
@@ -149,14 +222,14 @@ public:
             {"compressed", event.compressed}
         };
         
-        // Optional fields
-        if (event.windowTitle) j["window_title"] = *event.windowTitle;
+        // Optional fields - sanitize text fields to prevent UTF-8 errors
+        if (event.windowTitle) j["window_title"] = sanitizeUtf8ForJson(*event.windowTitle);
         if (event.url) j["url"] = *event.url;
-        if (event.screenContent) j["screen_content"] = *event.screenContent;
+        if (event.screenContent) j["screen_content"] = sanitizeUtf8ForJson(*event.screenContent);
         if (event.screenContentHash) j["screen_content_hash"] = *event.screenContentHash;
-        if (event.similarScreenContent) j["similar_screen_content"] = *event.similarScreenContent;
-        if (event.voiceTranscription) j["voice_transcription"] = *event.voiceTranscription;
-        if (event.cameraDescription) j["camera_description"] = *event.cameraDescription;
+        if (event.similarScreenContent) j["similar_screen_content"] = sanitizeUtf8ForJson(*event.similarScreenContent);
+        if (event.voiceTranscription) j["voice_transcription"] = sanitizeUtf8ForJson(*event.voiceTranscription);
+        if (event.cameraDescription) j["camera_description"] = sanitizeUtf8ForJson(*event.cameraDescription);
         if (event.sessionId) j["session_id"] = *event.sessionId;
         if (event.contentType) j["content_type"] = contentTypeToString(*event.contentType);
         if (event.domain) j["domain"] = domainToString(*event.domain);
@@ -168,7 +241,7 @@ public:
                 mouseEventsArray.push_back({
                     {"timestamp", timestampToISO8601(me.timestamp)},
                     {"event_type", me.eventType},
-                    {"content", me.content},
+                    {"content", sanitizeUtf8ForJson(me.content)},
                     {"pos_x", me.posX},
                     {"pos_y", me.posY},
                     {"element_type", me.elementType}
@@ -538,7 +611,59 @@ bool ElasticsearchClient::markEventsAsCompressed(const std::string& indexName,
     }
     
     std::string response;
-    return pImpl_->httpRequest("POST", "/_bulk", bulk.str(), response);
+    bool httpSuccess = pImpl_->httpRequest("POST", "/_bulk", bulk.str(), response);
+    
+    if (!httpSuccess) {
+        std::cerr << "[ElasticsearchClient] HTTP request failed for bulk update" << std::endl;
+        return false;
+    }
+    
+    // Parse bulk response to check for individual operation failures
+    try {
+        auto j = json::parse(response);
+        
+        if (j.contains("errors") && j["errors"].get<bool>()) {
+            // Some operations failed
+            std::vector<std::string> failedIds;
+            
+            if (j.contains("items") && j["items"].is_array()) {
+                size_t idx = 0;
+                for (const auto& item : j["items"]) {
+                    if (item.contains("update")) {
+                        const auto& updateResult = item["update"];
+                        
+                        if (updateResult.contains("error")) {
+                            if (idx < eventIds.size()) {
+                                failedIds.push_back(eventIds[idx]);
+                                std::cerr << "[ElasticsearchClient] Failed to update event " 
+                                         << eventIds[idx] << ": ";
+                                if (updateResult["error"].contains("reason")) {
+                                    std::cerr << updateResult["error"]["reason"].get<std::string>();
+                                }
+                                std::cerr << std::endl;
+                            }
+                        }
+                    }
+                    idx++;
+                }
+            }
+            
+            int successCount = eventIds.size() - failedIds.size();
+            std::cerr << "[ElasticsearchClient] Bulk update partial failure: " 
+                     << successCount << " succeeded, " 
+                     << failedIds.size() << " failed" << std::endl;
+            
+            return failedIds.empty();
+        }
+        
+        std::cout << "[ElasticsearchClient] Successfully updated " << eventIds.size() 
+                  << " events with session_id=" << sessionId << std::endl;
+        return true;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[ElasticsearchClient] Failed to parse bulk response: " << e.what() << std::endl;
+        return true;
+    }
 }
 
 bool ElasticsearchClient::markEventsAsCompressedWithSimilarity(
@@ -548,6 +673,9 @@ bool ElasticsearchClient::markEventsAsCompressedWithSimilarity(
     const std::string& similarScreenContent) {
     
     if (eventIds.empty()) return true;
+    
+    // Sanitize the similarity content before serialization
+    std::string sanitizedContent = sanitizeUtf8ForJson(similarScreenContent);
     
     std::ostringstream bulk;
     for (const auto& eventId : eventIds) {
@@ -563,24 +691,66 @@ bool ElasticsearchClient::markEventsAsCompressedWithSimilarity(
             {"doc", {
                 {"compressed", true},
                 {"session_id", sessionId},
-                {"similar_screen_content", similarScreenContent}
+                {"similar_screen_content", sanitizedContent}
             }}
         };
         bulk << doc.dump() << "\n";
     }
     
     std::string response;
-    bool success = pImpl_->httpRequest("POST", "/_bulk", bulk.str(), response);
+    bool httpSuccess = pImpl_->httpRequest("POST", "/_bulk", bulk.str(), response);
     
-    if (success) {
-        std::cout << "[ElasticsearchClient] Updated " << eventIds.size() 
-                  << " events with session_id=" << sessionId 
-                  << " and similarity info" << std::endl;
-    } else {
-        std::cerr << "[ElasticsearchClient] Failed to update events with similarity info" << std::endl;
+    if (!httpSuccess) {
+        std::cerr << "[ElasticsearchClient] HTTP request failed for bulk update" << std::endl;
+        return false;
     }
     
-    return success;
+    // Parse bulk response to check for individual operation failures
+    try {
+        auto j = json::parse(response);
+        
+        if (j.contains("errors") && j["errors"].get<bool>()) {
+            // Some operations failed
+            std::vector<std::string> failedIds;
+            
+            if (j.contains("items") && j["items"].is_array()) {
+                size_t idx = 0;
+                for (const auto& item : j["items"]) {
+                    if (item.contains("update")) {
+                        const auto& updateResult = item["update"];
+                        
+                        if (updateResult.contains("error")) {
+                            if (idx < eventIds.size()) {
+                                failedIds.push_back(eventIds[idx]);
+                                std::cerr << "[ElasticsearchClient] Failed to update event " 
+                                         << eventIds[idx] << ": ";
+                                if (updateResult["error"].contains("reason")) {
+                                    std::cerr << updateResult["error"]["reason"].get<std::string>();
+                                }
+                                std::cerr << std::endl;
+                            }
+                        }
+                    }
+                    idx++;
+                }
+            }
+            
+            int successCount = eventIds.size() - failedIds.size();
+            std::cerr << "[ElasticsearchClient] Bulk update partial failure: " 
+                     << successCount << " succeeded, " 
+                     << failedIds.size() << " failed" << std::endl;
+            
+            return failedIds.empty();
+        }
+        
+        std::cout << "[ElasticsearchClient] Successfully updated " << eventIds.size() 
+                  << " events with session_id=" << sessionId << std::endl;
+        return true;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[ElasticsearchClient] Failed to parse bulk response: " << e.what() << std::endl;
+        return true;
+    }
 }
 
 int ElasticsearchClient::deleteOlderThan(const std::string& indexName,

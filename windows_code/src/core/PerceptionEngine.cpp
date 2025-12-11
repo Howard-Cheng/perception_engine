@@ -563,7 +563,7 @@ int main(int argc, char* argv[]) {
                         try {
                             // Parse query parameters (same as service mode)
                             std::string keyword;
-                            int hours = 24;
+                            int hours = 0;
                             int maxResults = 100;
 
                             size_t queryPos = request.path.find('?');

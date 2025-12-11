@@ -366,24 +366,67 @@ pe_base::Json ContextCollector::GetESDBData(const std::string& keyword,
         for (const auto& event : searchResult.events) {
             if (!first) resultsArray << ",";
             first = false;
-            
+
             resultsArray << "{"
                          << "\"eventId\":\"" << pe_base::Json::escapeJsonString(event.eventId) << "\","
                          << "\"timestamp\":" << event.timestamp << ","
                          << "\"deviceId\":\"" << pe_base::Json::escapeJsonString(event.deviceId) << "\","
                          << "\"appName\":\"" << pe_base::Json::escapeJsonString(event.appName) << "\"";
-            
+
             if (event.windowTitle.has_value()) {
                 resultsArray << ",\"windowTitle\":\"" << pe_base::Json::escapeJsonString(event.windowTitle.value()) << "\"";
             }
-            
+
             if (event.screenContent.has_value()) {
                 resultsArray << ",\"screenContent\":\"" << pe_base::Json::escapeJsonString(event.screenContent.value()) << "\"";
             }
-            
+
+            // Add location information
+            if (event.systemInfo.locationLat.has_value() && event.systemInfo.locationLon.has_value()) {
+                resultsArray << ",\"location\":{"
+                             << "\"lat\":" << event.systemInfo.locationLat.value() << ","
+                             << "\"lon\":" << event.systemInfo.locationLon.value()
+                             << "}";
+            }
+
+            // Add mouse events
+            if (!event.mouseEvents.empty()) {
+                resultsArray << ",\"mouseEvents\":[";
+                bool firstMe = true;
+                for (const auto& me : event.mouseEvents) {
+                    if (!firstMe) resultsArray << ",";
+                    firstMe = false;
+
+                    resultsArray << "{";
+                    // timestamp (seconds)
+                    resultsArray << "\"timestamp\":" << me.timestamp;
+
+                    // eventType
+                    if (!me.eventType.empty()) {
+                        resultsArray << ",\"eventType\":\"" << pe_base::Json::escapeJsonString(me.eventType) << "\"";
+                    }
+
+                    // content
+                    if (!me.content.empty()) {
+                        resultsArray << ",\"content\":\"" << pe_base::Json::escapeJsonString(me.content) << "\"";
+                    }
+
+                    // positions
+                    resultsArray << ",\"posX\":" << me.posX << ",\"posY\":" << me.posY;
+
+                    // elementType
+                    if (!me.elementType.empty()) {
+                        resultsArray << ",\"elementType\":\"" << pe_base::Json::escapeJsonString(me.elementType) << "\"";
+                    }
+
+                    resultsArray << "}";
+                }
+                resultsArray << "]";
+            }
+
             resultsArray << "}";
         }
-        
+
         resultsArray << "]";
         
         result.set("totalHits", searchResult.totalHits);

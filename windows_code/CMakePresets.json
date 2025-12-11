@@ -11,6 +11,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_GENERATOR_PLATFORM": "x64",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
         "WHISPER_BUILD_EXAMPLES": "OFF",
         "WHISPER_BUILD_TESTS": "OFF",
         "BUILD_SHARED_LIBS": "OFF",
@@ -27,6 +28,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_GENERATOR_PLATFORM": "x64",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
         "WHISPER_BUILD_EXAMPLES": "OFF",
         "WHISPER_BUILD_TESTS": "OFF",
         "BUILD_SHARED_LIBS": "OFF",

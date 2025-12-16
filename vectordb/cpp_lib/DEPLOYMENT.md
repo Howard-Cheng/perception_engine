@@ -74,21 +74,85 @@ docker-compose down
 
 ### 2. 直接运行二进制文件
 
-1. 下载 Qdrant 二进制：
-   - 从 https://github.com/qdrant/qdrant/releases 下载
-   - Windows: `qdrant-x.x.x-windows-amd64.exe`
-   - Linux: `qdrant-x.x.x-linux-amd64`
+#### 步骤 1：下载 Qdrant 二进制
+- 从 https://github.com/qdrant/qdrant/releases 下载
+- Windows: `qdrant-x.x.x-windows-amd64.exe`
+- Linux: `qdrant-x.x.x-linux-amd64`
 
-2. 运行：
-```bash
-# Windows
+#### 步骤 2：启动服务
+
+**Windows（前台运行）:**
+```powershell
 .\qdrant.exe
+```
 
-# Linux
+**Windows（后台运行）:**
+```powershell
+Start-Process -FilePath ".\qdrant.exe" -WindowStyle Hidden
+```
+
+**Linux（前台运行）:**
+```bash
 ./qdrant
 ```
 
-3. 配置数据目录（可选）：
+**Linux（后台运行）:**
+```bash
+./qdrant > qdrant.log 2>&1 &
+```
+
+#### 步骤 3：验证服务启动
+
+**方法 1：检查健康状态（推荐）**
+```powershell
+# PowerShell
+1. 检查根路径
+Invoke-WebRequest -Uri "http://localhost:6333/" -UseBasicParsing
+2. 检查集合接口
+Invoke-WebRequest -Uri "http://localhost:6333/collections" -UseBasicParsing
+
+# 或使用 curl
+curl http://localhost:6333/health
+```
+**预期输出**：`{"title":"healthz","version":"1.x.x"}`，状态码 200
+
+**方法 2：检查端口监听**
+```powershell
+# Windows PowerShell
+Get-NetTCPConnection -LocalPort 6333,6334 -State Listen
+
+# Linux
+netstat -tlnp | grep -E '6333|6334'
+# 或
+ss -tlnp | grep -E '6333|6334'
+```
+**预期输出**：显示端口 6333（REST API）和 6334（gRPC）正在监听
+
+**方法 3：检查进程**
+```powershell
+# Windows PowerShell
+Get-Process qdrant
+
+# Linux
+ps aux | grep qdrant
+```
+
+**方法 4：访问 Web UI**
+打开浏览器访问：
+- **管理界面**: http://localhost:6333/dashboard
+- **REST API**: http://localhost:6333
+
+**方法 5：测试 API 调用**
+```powershell
+# 列出所有集合
+Invoke-RestMethod -Uri "http://localhost:6333/collections" -Method Get
+
+# 或使用 curl
+curl http://localhost:6333/collections
+```
+
+#### 步骤 4：配置数据目录（可选）
+
 创建 `config.yaml`：
 ```yaml
 storage:
@@ -97,7 +161,35 @@ storage:
 
 运行：
 ```bash
-qdrant --config-path config.yaml
+# Windows
+.\qdrant.exe --config-path config.yaml
+
+# Linux
+./qdrant --config-path config.yaml
+```
+
+#### 停止服务
+
+**Windows:**
+```powershell
+# 查找进程 ID
+Get-Process qdrant | Select-Object Id
+
+# 停止进程
+Stop-Process -Name qdrant
+# 或使用 PID
+Stop-Process -Id <进程ID>
+```
+
+**Linux:**
+```bash
+# 查找进程 ID
+ps aux | grep qdrant
+
+# 停止进程
+killall qdrant
+# 或使用 PID
+kill <进程ID>
 ```
 
 ### 3. Systemd 服务（Linux）

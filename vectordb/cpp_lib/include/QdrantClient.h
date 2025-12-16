@@ -1,5 +1,6 @@
 #pragma once
 
+#include "vectordb_export.h"
 #include <string>
 #include <vector>
 #include <map>
@@ -162,7 +163,7 @@ struct Filter {
  * 
  * Provides interface for collection management, vector storage, and search operations.
  */
-class QdrantClient {
+class VECTORDB_API QdrantClient {
 public:
     // Connection configuration
     struct Config {

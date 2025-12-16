@@ -35,7 +35,7 @@ int main()
 {
     std::cout << "=== Vector Store Example with E5-Small Model ===" << std::endl;
 
-    // ========================================================================
+    // ======================================================================== 
     // 1. Initialize Vector Store
     // ========================================================================
 
@@ -115,7 +115,7 @@ int main()
     std::cout << "\nStoring " << texts.size() << " texts with E5 embeddings..." << std::endl;
     if (!store.storeTexts(texts, payloads))
     {
-        std::cerr << "Failed to store texts" << std::endl;
+        std::cerr << "Failed to store texts" << std::endl; 
         return 1;
     }
     std::cout << "✓ Texts stored successfully" << std::endl;

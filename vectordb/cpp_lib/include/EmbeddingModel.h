@@ -1,5 +1,6 @@
 #pragma once
 
+#include "vectordb_export.h"
 #include <string>
 #include <vector>
 #include <memory>
@@ -21,7 +22,7 @@ class EmbeddingModelImpl;
  *     auto embedding = model.encode("Hello world");
  *     auto embeddings = model.encodeBatch({"text1", "text2"});
  */
-class EmbeddingModel {
+class VECTORDB_API EmbeddingModel {
 public:
     /**
      * Constructor.

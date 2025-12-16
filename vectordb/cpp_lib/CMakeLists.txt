@@ -11,7 +11,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # Options
-option(BUILD_SHARED_LIBS "Build shared library" OFF)
+option(BUILD_SHARED_LIBS "Build shared library" ON)
 option(BUILD_EXAMPLES "Build examples" ON)
 
 # Find dependencies
@@ -86,22 +86,25 @@ set(VECTORDB_SOURCES
 )
 
 # Create library
-add_library(vectordb_cpp ${VECTORDB_SOURCES})
+add_library(vectordb_cpp SHARED ${VECTORDB_SOURCES})
+
+# Define export macro
+target_compile_definitions(vectordb_cpp PRIVATE VECTORDB_EXPORTS)
 
 # Link libraries
 if(TARGET nlohmann_json::nlohmann_json)
-    target_link_libraries(vectordb_cpp PUBLIC nlohmann_json::nlohmann_json)
+    target_link_libraries(vectordb_cpp PRIVATE nlohmann_json::nlohmann_json)
 elseif(nlohmann_json_FOUND)
-    target_include_directories(vectordb_cpp PUBLIC ${nlohmann_json_INCLUDE_DIRS})
-    target_link_libraries(vectordb_cpp PUBLIC ${nlohmann_json_LIBRARIES})
+    target_include_directories(vectordb_cpp PRIVATE ${nlohmann_json_INCLUDE_DIRS})
+    target_link_libraries(vectordb_cpp PRIVATE ${nlohmann_json_LIBRARIES})
 endif()
 
 if(onnxruntime_FOUND)
     # Use local ONNX Runtime if available
     if(EXISTS "${ONNXRUNTIME_INCLUDE_DIR}/onnxruntime_cxx_api.h")
-        target_include_directories(vectordb_cpp PUBLIC ${ONNXRUNTIME_INCLUDE_DIR})
-        target_link_directories(vectordb_cpp PUBLIC ${ONNXRUNTIME_LIB_DIR})
-        target_link_libraries(vectordb_cpp PUBLIC onnxruntime.lib)
+        target_include_directories(vectordb_cpp PRIVATE ${ONNXRUNTIME_INCLUDE_DIR})
+        target_link_directories(vectordb_cpp PRIVATE ${ONNXRUNTIME_LIB_DIR})
+        target_link_libraries(vectordb_cpp PRIVATE onnxruntime.lib)
         
         # Copy DLL to output directory on Windows
         if(WIN32)
@@ -114,7 +117,7 @@ if(onnxruntime_FOUND)
         endif()
     else()
         # Use find_package result
-        target_link_libraries(vectordb_cpp PUBLIC onnxruntime::onnxruntime)
+        target_link_libraries(vectordb_cpp PRIVATE onnxruntime::onnxruntime)
     endif()
 else()
     message(FATAL_ERROR "ONNX Runtime is required but not found!")
@@ -122,10 +125,10 @@ endif()
 
 # Link CURL library (required for Qdrant HTTP client)
 if(TARGET CURL::libcurl)
-    target_link_libraries(vectordb_cpp PUBLIC CURL::libcurl)
+    target_link_libraries(vectordb_cpp PRIVATE CURL::libcurl)
 elseif(CURL_FOUND)
-    target_include_directories(vectordb_cpp PUBLIC ${CURL_INCLUDE_DIRS})
-    target_link_libraries(vectordb_cpp PUBLIC ${CURL_LIBRARIES})
+    target_include_directories(vectordb_cpp PRIVATE ${CURL_INCLUDE_DIRS})
+    target_link_libraries(vectordb_cpp PRIVATE ${CURL_LIBRARIES})
 else()
     message(FATAL_ERROR "CURL library not found but is required for Qdrant HTTP client")
 endif()

@@ -171,8 +171,13 @@ endif()
 # Library
 # ============================================================================
 
-add_library(llm_summary_cpp STATIC
+add_library(llm_summary_cpp SHARED
     LLMClient.cpp
+)
+
+target_compile_definitions(llm_summary_cpp
+    PRIVATE
+        LLM_SUMMARY_EXPORTS
 )
 
 target_include_directories(llm_summary_cpp
@@ -181,7 +186,7 @@ target_include_directories(llm_summary_cpp
 )
 
 target_link_libraries(llm_summary_cpp
-    PUBLIC
+    PRIVATE
         llama_common
         llama
         ggml_base

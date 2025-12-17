@@ -202,6 +202,36 @@ if(USE_DUCKDB)
     target_link_libraries(llm_summary_cpp PUBLIC duckdb)
 endif()
 
+# Copy llama.cpp DLLs to output directory on Windows
+if(WIN32)
+    # For multi-config generators (Visual Studio), copy DLLs for each configuration
+    add_custom_command(TARGET llm_summary_cpp POST_BUILD
+        # Copy llama.dll
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${LLAMA_CPP_BUILD_DIR}/bin/Release/llama.dll"
+            $<TARGET_FILE_DIR:llm_summary_cpp>/llama.dll
+        
+        # Copy ggml.dll
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${LLAMA_CPP_BUILD_DIR}/bin/Release/ggml.dll"
+            $<TARGET_FILE_DIR:llm_summary_cpp>/ggml.dll
+        
+        # Copy ggml-base.dll
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${LLAMA_CPP_BUILD_DIR}/bin/Release/ggml-base.dll"
+            $<TARGET_FILE_DIR:llm_summary_cpp>/ggml-base.dll
+        
+        # Copy ggml-cpu.dll
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${LLAMA_CPP_BUILD_DIR}/bin/Release/ggml-cpu.dll"
+            $<TARGET_FILE_DIR:llm_summary_cpp>/ggml-cpu.dll
+        
+        COMMENT "Copying llama.cpp DLLs to output directory"
+    )
+    
+    message(STATUS "POST_BUILD: Will copy llama.cpp DLLs from ${LLAMA_CPP_BUILD_DIR}/bin/Release")
+endif()
+
 # ============================================================================
 # Examples
 # ============================================================================
@@ -209,6 +239,33 @@ endif()
 if(BUILD_EXAMPLES)
     add_executable(llm_summary_example example_usage.cpp)
     target_link_libraries(llm_summary_example PRIVATE llm_summary_cpp)
+    
+    # Copy llama.cpp DLLs to example output directory on Windows
+    if(WIN32)
+        add_custom_command(TARGET llm_summary_example POST_BUILD
+            # Copy llama.dll
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${LLAMA_CPP_BUILD_DIR}/bin/Release/llama.dll"
+                $<TARGET_FILE_DIR:llm_summary_example>/llama.dll
+            
+            # Copy ggml.dll
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${LLAMA_CPP_BUILD_DIR}/bin/Release/ggml.dll"
+                $<TARGET_FILE_DIR:llm_summary_example>/ggml.dll
+            
+            # Copy ggml-base.dll
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${LLAMA_CPP_BUILD_DIR}/bin/Release/ggml-base.dll"
+                $<TARGET_FILE_DIR:llm_summary_example>/ggml-base.dll
+            
+            # Copy ggml-cpu.dll
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${LLAMA_CPP_BUILD_DIR}/bin/Release/ggml-cpu.dll"
+                $<TARGET_FILE_DIR:llm_summary_example>/ggml-cpu.dll
+            
+            COMMENT "Copying llama.cpp DLLs to example output directory"
+        )
+    endif()
 endif()
 
 # ============================================================================

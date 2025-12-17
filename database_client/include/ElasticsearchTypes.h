@@ -108,6 +108,7 @@ struct ES_CLIENT_API RawEvent {
     
     // Status
     bool compressed;
+    bool summarized;  // NEW: Indicates if the event has been summarized
     
     // System info
     SystemInfo systemInfo;
@@ -117,7 +118,8 @@ struct ES_CLIENT_API RawEvent {
         , createdAt(0)
         , interactionCount(0)
         , dwellTimeSeconds(0)
-        , compressed(false) 
+        , compressed(false)
+        , summarized(false) 
     {}
 };
 

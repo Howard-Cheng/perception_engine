@@ -421,9 +421,6 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/config.ini
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/config.ini
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/config.json
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/config.json
 
     # Copy models folder from windows_code to bin/
     COMMAND ${CMAKE_COMMAND} -E echo "Copying models folder to output directory..."
@@ -437,61 +434,16 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
         ${CMAKE_CURRENT_SOURCE_DIR}/scripts
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/scripts
 
-    # Copy whisper model to bin/
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/whisper
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/../models/whisper/ggml-small.bin
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/whisper/ggml-small.bin
-
-    # Copy Silero VAD model to bin/
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/vad
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/../models/vad/silero_vad.onnx
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/vad/silero_vad.onnx
-
     # Copy ONNX Runtime DLL to bin/
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/onnxruntime.dll
-
-    # Copy OpenCV DLL to bin/
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${OpenCV_BIN_DIR}/opencv_world4100.dll
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/opencv_world4100.dll
 
     # Copy our E5EmbeddingDLL to bin/
     COMMAND ${CMAKE_COMMAND} -E echo "Copying E5EmbeddingDLL..."
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:E5EmbeddingDLL>
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/E5EmbeddingDLL.dll
-
-    # Copy whisper.cpp DLLs to bin/ (CUDA build)
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/whisper.dll
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/whisper.dll
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml.dll
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml.dll
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-base.dll
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml-base.dll
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-cpu.dll
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml-cpu.dll
-    
-    # Copy ggml-cuda.dll if it exists (CUDA support may not be built)
-    COMMAND ${CMAKE_COMMAND} -E echo "Checking for CUDA support..."
-    COMMAND ${CMAKE_COMMAND} -E true
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-cuda.dll
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml-cuda.dll || ${CMAKE_COMMAND} -E echo "Warning: ggml-cuda.dll not found, CUDA acceleration may not be available"
-
-    # Copy dashboard.html to bin/
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/dashboard.html
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/dashboard.html
 
     # Copy DataProcessServer.exe to bin/ (same directory as PerceptionEngine.exe)
     COMMAND ${CMAKE_COMMAND} -E echo "Copying DataProcessServer.exe to output directory..."
@@ -503,9 +455,6 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/config.ini
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/config.ini
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/config.json
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/config.json
     
     # Copy models folder to bin/$<CONFIG>/}
     COMMAND ${CMAKE_COMMAND} -E echo "Copying models folder to $<CONFIG> directory..."
@@ -518,17 +467,6 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/scripts
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/scripts
-    
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/whisper
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/vad
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/../models/whisper/ggml-small.bin
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/whisper/ggml-small.bin
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/../models/vad/silero_vad.onnx
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/vad/silero_vad.onnx
 
     # Copy E5EmbeddingDLL to bin/$<CONFIG>/}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

@@ -4,6 +4,9 @@ project(PerceptionEngine VERSION 2.0.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Find vcpkg packages
+find_package(nlohmann_json CONFIG REQUIRED)
+
 # Output directories
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -152,6 +155,16 @@ set(DATAPROCESS_SERVER_HEADERS
     include/dataprocess/TaskQueue.h
 )
 
+# LinguaCore source files
+set(LINGUACORE_SOURCES
+    src/linguacore/LinguaCoreMain.cpp
+    src/linguacore/LinguaCore.cpp
+)
+
+set(LINGUACORE_HEADERS
+    include/linguacore/LinguaCore.h
+)
+
 # ============================================================================
 
 # Executables
@@ -164,6 +177,9 @@ add_executable(PerceptionEngine ${PERCEPTION_ENGINE_SOURCES} ${PERCEPTION_ENGINE
 
 # DataProcessServer executable
 add_executable(DataProcessServer ${DATAPROCESS_SERVER_SOURCES} ${DATAPROCESS_SERVER_HEADERS})
+
+# LinguaCore executable
+add_executable(LinguaCore ${LINGUACORE_SOURCES} ${LINGUACORE_HEADERS})
 
 # ============================================================================
 # Visual Studio Source Groups (organize files in Solution Explorer)
@@ -289,6 +305,19 @@ source_group("Header Files\\dataprocess" FILES
     include/dataprocess/TaskQueue.h
 )
 
+# ========== LinguaCore Source Groups ==========
+
+# Source files for LinguaCore
+source_group("Source Files\\linguacore" FILES
+    src/linguacore/LinguaCoreMain.cpp
+    src/linguacore/LinguaCore.cpp
+)
+
+# Header files for LinguaCore
+source_group("Header Files\\linguacore" FILES
+    include/linguacore/LinguaCore.h
+)
+
 # ============================================================================
 
 # Include Directories
@@ -317,6 +346,15 @@ target_include_directories(DataProcessServer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/pe_base/include
+)
+
+target_include_directories(LinguaCore PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/database_client/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../llm_summary/cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../vectordb/cpp_lib/include
+    ${JSON_INCLUDE_DIR}
 )
 
 # Note: test_embedding_comparison include directories are now in embeddingmodel/CMakeLists.txt
@@ -376,6 +414,24 @@ endif()
 target_link_libraries(DataProcessServer PRIVATE
     # No external dependencies needed
     pe_base
+)
+
+# LinguaCore links to database_client, llm_summary, and vectordb
+target_link_libraries(LinguaCore PRIVATE
+    # Database client (Elasticsearch)
+    database_client
+    
+    # LLM Summary library
+    llm_summary_cpp
+    
+    # Vector DB library (Qdrant)
+    vectordb_cpp
+    
+    # nlohmann_json for JSON handling
+    nlohmann_json::nlohmann_json
+    
+    # Windows APIs
+    ws2_32      # Winsock for networking
 )
 
 # Note: test_embedding_comparison link libraries are now in embeddingmodel/CMakeLists.txt

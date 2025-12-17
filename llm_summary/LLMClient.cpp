@@ -33,7 +33,7 @@ namespace perception
     {
         // Default model path: ../../../models/phi4-aitc/Phi4_FP16-3.8B-Q41-g32d-1027-v1.3.1.gguf
         std::filesystem::path current_file(__FILE__);
-        auto models_dir = current_file.parent_path().parent_path().parent_path() / "models" / "phi4-aitc";
+        auto models_dir = current_file.parent_path().parent_path() / "models" / "phi4-aitc";
         return models_dir / "Phi4_FP16-3.8B-Q41-g32d-1027-v1.3.1.gguf";
     }
 

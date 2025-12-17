@@ -226,6 +226,11 @@ if(WIN32)
             "${LLAMA_CPP_BUILD_DIR}/bin/Release/ggml-cpu.dll"
             $<TARGET_FILE_DIR:llm_summary_cpp>/ggml-cpu.dll
         
+        # Copy ggml-cuda.dll (for GPU acceleration)
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${LLAMA_CPP_BUILD_DIR}/bin/Release/ggml-cuda.dll"
+            $<TARGET_FILE_DIR:llm_summary_cpp>/ggml-cuda.dll
+        
         COMMENT "Copying llama.cpp DLLs to output directory"
     )
     
@@ -262,6 +267,11 @@ if(BUILD_EXAMPLES)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${LLAMA_CPP_BUILD_DIR}/bin/Release/ggml-cpu.dll"
                 $<TARGET_FILE_DIR:llm_summary_example>/ggml-cpu.dll
+            
+            # Copy ggml-cuda.dll (for GPU acceleration)
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${LLAMA_CPP_BUILD_DIR}/bin/Release/ggml-cuda.dll"
+                $<TARGET_FILE_DIR:llm_summary_example>/ggml-cuda.dll
             
             COMMENT "Copying llama.cpp DLLs to example output directory"
         )

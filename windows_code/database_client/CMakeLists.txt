@@ -53,6 +53,7 @@ target_link_libraries(database_client
 target_compile_definitions(database_client
     PRIVATE
         DB_CLIENT_EXPORTS
+        ES_CLIENT_EXPORTS
 )
 
 # Windows-specific settings

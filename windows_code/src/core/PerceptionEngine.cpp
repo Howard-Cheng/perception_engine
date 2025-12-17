@@ -19,12 +19,8 @@
 class PerceptionEngineService : public WindowsService {
 private:
     std::unique_ptr<HttpServer> httpServer;
-    std::unique_ptr<ContextCollector> contextCollector;  // UPDATED
-    std::unique_ptr<AudioCaptureEngine> audioEngine;
-    // std::unique_ptr<CameraVisionEngine> cameraEngine;  // Removed - using Python client
+    std::unique_ptr<ContextCollector> contextCollector;
     std::unique_ptr<std::thread> serverThread;
-    std::unique_ptr<std::thread> audioPollingThread;
-    // std::unique_ptr<std::thread> cameraThread;  // Removed - using Python client
     std::atomic<bool> serviceRunning{ false };
     bool screenOnlyMode;
 
@@ -56,52 +52,6 @@ public:
             else {
                 PE_WARN("??  Elasticsearch not available - running without ES storage");
                 PE_INFO("   To enable ES: Install and start Elasticsearch on http://localhost:9200");
-            }
-
-            // Initialize audio capture engine (only if NOT in screen-only mode)
-            if (!screenOnlyMode) {
-                audioEngine = std::make_unique<AudioCaptureEngine>();
-                if (!audioEngine->Initialize("models/whisper/ggml-small.bin")) {
-                    PE_WARN("Failed to initialize audio engine");
-                    audioEngine.reset();
-                }
-                else {
-                    PE_INFO("Audio engine initialized");
-
-                    // Set callback to update context when new transcription arrives
-                    audioEngine->SetTranscriptionCallback([this](const std::string& transcription) {
-                        if (contextCollector) {
-                            // Get latency from audio engine metrics
-                            auto metrics = audioEngine->GetMetrics();
-                            contextCollector->UpdateVoiceContext(transcription, metrics.whisperLatencyMs);
-                            PE_INFO_THIS("Voice transcription:" << transcription.c_str())
-                        }
-                        });
-
-                    // Start audio capture
-                    if (audioEngine->Start()) {
-                        PE_INFO("Audio capture started");
-
-                        // Start polling thread to pull transcriptions
-                        audioPollingThread = std::make_unique<std::thread>([this]() {
-                            while (serviceRunning.load() && audioEngine) {
-                                audioEngine->GetLatestUserSpeech(); // Triggers callback if new result
-                                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                            }
-                            });
-                    }
-                    else {
-                        PE_WARN("Failed to start audio capture");
-                    }
-                }
-
-                // Camera engine removed - using Python client (win_camera_fastvlm_pytorch.py) instead
-                // Camera updates come via HTTP POST /update_context from Python client
-                PE_INFO("Camera engine: Using Python client (not C++ engine)");
-            }
-            else {
-                PE_INFO("Audio engine: DISABLED (screen-only mode)");
-                PE_INFO("Camera engine: DISABLED (screen-only mode)");
             }
 
             // Initialize HTTP server
@@ -136,30 +86,6 @@ public:
             // Signal service to stop
             serviceRunning = false;
 
-            // Stop audio engine
-            if (audioEngine) {
-                audioEngine->Stop();
-                PE_INFO("Audio engine stopped");
-            }
-
-            // Wait for audio polling thread
-            if (audioPollingThread && audioPollingThread->joinable()) {
-                audioPollingThread->join();
-                PE_INFO("Audio polling thread joined");
-            }
-
-            // Camera thread removed - using Python client instead
-            // if (cameraThread && cameraThread->joinable()) {
-            //     cameraThread->join();
-            //     PE_INFO("Camera thread joined");
-            // }
-
-            // Camera engine removed - using Python client instead
-            // if (cameraEngine) {
-            //     cameraEngine.reset();
-            //     PE_INFO("Camera engine stopped");
-            // }
-
             if (httpServer) {
                 httpServer->Stop();
                 PE_INFO("HTTP server stop signal sent");
@@ -177,8 +103,6 @@ public:
                 PE_INFO("Context collector stopped");
             }
 
-            audioEngine.reset();
-            audioPollingThread.reset();
             httpServer.reset();
             serverThread.reset();
 
@@ -498,49 +422,6 @@ int main(int argc, char* argv[]) {
                     PE_WARN("??  Elasticsearch not available - running without ES storage");
                 }
 
-                // Initialize audio engine (only if NOT in screen-only mode)
-                std::atomic<bool> audioRunning{ false };
-                std::unique_ptr<std::thread> audioPollingThread;
-
-                if (!screenOnlyMode) {
-                    PE_INFO("Initializing audio engine...");
-
-                    if (audioEngine.Initialize("models/whisper/ggml-small.bin")) {
-                        PE_INFO("Audio engine initialized");
-
-                        // Set callback
-                        audioEngine.SetTranscriptionCallback([&collector](const std::string& transcription) {
-                            collector.UpdateVoiceContext(transcription);
-                            PE_INFO("Voice:" << transcription.c_str())
-                            });
-
-                        if (audioEngine.Start()) {
-                            PE_INFO("Audio capture started");
-                            audioRunning = true;
-
-                            // Start polling thread
-                            audioPollingThread = std::make_unique<std::thread>([&audioEngine, &audioRunning]() {
-                                while (audioRunning.load()) {
-                                    audioEngine.GetLatestUserSpeech();
-                                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                                }
-                                });
-                        }
-                        else {
-                            PE_WARN("Failed to start audio capture");
-                        }
-                    }
-                    else {
-                        PE_WARN("Failed to initialize audio engine");
-                    }
-
-                    PE_INFO("Camera vision: Using Python client (C++ ONNX disabled)");
-                }
-                else {
-                    PE_INFO("Audio engine: DISABLED (screen-only mode)");
-                    PE_INFO("Camera vision: DISABLED (screen-only mode)");
-                }
-
                 PE_INFO("Setting up request handler...");
                 server.SetRequestHandler([&collector](const HttpRequest& request, HttpResponse& response) {
                     PE_DEBUG("Received request:" << request.method.c_str() << request.path.c_str())
@@ -719,16 +600,6 @@ int main(int argc, char* argv[]) {
                 server.Run(); // Blocking call
 
                 PE_INFO("Server loop ended, cleaning up...");
-
-                // Stop audio engine
-                if (audioRunning.load()) {
-                    audioRunning = false;
-                    audioEngine.Stop();
-                    if (audioPollingThread && audioPollingThread->joinable()) {
-                        audioPollingThread->join();
-                    }
-                    PE_INFO("Audio engine stopped");
-                }
 
                 collector.StopPeriodicUpdate();
             }

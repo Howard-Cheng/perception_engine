@@ -133,7 +133,8 @@ public:
             {"app_name", event.appName},
             {"interaction_count", event.interactionCount},
             {"dwell_time_seconds", event.dwellTimeSeconds},
-            {"compressed", event.compressed}
+            {"compressed", event.compressed},
+            {"summarized", event.summarized}
         };
         
         // Optional fields
@@ -199,6 +200,7 @@ public:
         event.interactionCount = j.value("interaction_count", 0);
         event.dwellTimeSeconds = j.value("dwell_time_seconds", 0);
         event.compressed = j.value("compressed", false);
+        event.summarized = j.value("summarized", false);
         
         // Optional string fields
         if (j.contains("window_title") && !j["window_title"].is_null()) {

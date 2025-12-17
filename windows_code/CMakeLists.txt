@@ -38,6 +38,22 @@ add_subdirectory(pe_base)
 
 # ============================================================================
 
+# LLM Summary Library (subdirectory)
+# ============================================================================
+
+# Add llm_summary as a subdirectory (copied to windows_code/llm_summary)
+add_subdirectory(llm_summary)
+
+# ============================================================================
+
+# VectorDB Client Library (subdirectory)
+# ============================================================================
+
+# Add vectordb_client as a subdirectory (copied to windows_code/vectordb_client)
+add_subdirectory(vectordb_client)
+
+# ============================================================================
+
 # Dependencies
 # ============================================================================
 
@@ -351,9 +367,10 @@ target_include_directories(DataProcessServer PRIVATE
 target_include_directories(LinguaCore PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/pe_base/include
     ${CMAKE_CURRENT_SOURCE_DIR}/database_client/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../llm_summary/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../vectordb/cpp_lib/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/llm_summary
+    ${CMAKE_CURRENT_SOURCE_DIR}/vectordb_client/include
     ${JSON_INCLUDE_DIR}
 )
 
@@ -416,7 +433,7 @@ target_link_libraries(DataProcessServer PRIVATE
     pe_base
 )
 
-# LinguaCore links to database_client, llm_summary, and vectordb
+# LinguaCore links to database_client, llm_summary, and vectordb_client
 target_link_libraries(LinguaCore PRIVATE
     # Database client (Elasticsearch)
     database_client
@@ -425,7 +442,7 @@ target_link_libraries(LinguaCore PRIVATE
     llm_summary_cpp
     
     # Vector DB library (Qdrant)
-    vectordb_cpp
+    vectordb_client
     
     # nlohmann_json for JSON handling
     nlohmann_json::nlohmann_json

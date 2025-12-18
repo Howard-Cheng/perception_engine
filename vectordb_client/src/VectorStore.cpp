@@ -3,13 +3,76 @@
 #include <filesystem>
 #include <functional>
 #include <iostream>
+#include <sstream>
+#include <iomanip>
 
 #ifdef _WIN32
 #include <windows.h>
+#include <wincrypt.h>  // For SHA1 hashing
+#pragma comment(lib, "advapi32.lib")
 #endif
 
 namespace vectordb
 {
+    namespace {
+        // Helper function to convert string to UUID using deterministic hashing
+        // This mimics Python's uuid.uuid5() behavior
+        std::string convertToUuid(const std::string& input) {
+            // Standard UUID5 namespace (DNS namespace as used in Python)
+            const unsigned char namespace_bytes[] = {
+                0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1,
+                0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8
+            };
+            
+            // Combine namespace + input string
+            std::vector<unsigned char> data;
+            data.insert(data.end(), namespace_bytes, namespace_bytes + 16);
+            data.insert(data.end(), input.begin(), input.end());
+            
+#ifdef _WIN32
+            // Use Windows CryptoAPI for SHA1
+            HCRYPTPROV hProv = 0;
+            HCRYPTHASH hHash = 0;
+            unsigned char hash[20] = {0};
+            DWORD hashLen = 20;
+            
+            if (CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
+                if (CryptCreateHash(hProv, CALG_SHA1, 0, 0, &hHash)) {
+                    if (CryptHashData(hHash, data.data(), static_cast<DWORD>(data.size()), 0)) {
+                        CryptGetHashParam(hHash, HP_HASHVAL, hash, &hashLen, 0);
+                    }
+                    CryptDestroyHash(hHash);
+                }
+                CryptReleaseContext(hProv, 0);
+            }
+#else
+            // For non-Windows platforms, use a simple hash-based approach
+            // This is a fallback and won't match Python's uuid5 exactly
+            unsigned char hash[20] = {0};
+            std::hash<std::string> hasher;
+            size_t h = hasher(input);
+            std::memcpy(hash, &h, sizeof(h));
+#endif
+            
+            // Take first 16 bytes of SHA1 hash for UUID
+            // Set version (5) and variant bits as per RFC 4122
+            hash[6] = (hash[6] & 0x0F) | 0x50;  // Version 5
+            hash[8] = (hash[8] & 0x3F) | 0x80;  // Variant 10
+            
+            // Format as UUID string: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+            std::ostringstream oss;
+            oss << std::hex << std::setfill('0');
+            
+            for (int i = 0; i < 16; i++) {
+                if (i == 4 || i == 6 || i == 8 || i == 10) {
+                    oss << '-';
+                }
+                oss << std::setw(2) << static_cast<int>(hash[i]);
+            }
+            
+            return oss.str();
+        }
+    }
 
     VectorStore::VectorStore(
         const std::string &collectionName,
@@ -169,7 +232,20 @@ namespace vectordb
             std::vector<float> embedding = embeddingModel_->encode(text);
 
             // Use provided point ID or generate one
-            PointId id = pointId.has_value() ? pointId.value() : generatePointId();
+            PointId id;
+            if (pointId.has_value()) {
+                // Convert string IDs to UUID format for Qdrant compatibility
+                if (std::holds_alternative<std::string>(pointId.value())) {
+                    std::string stringId = std::get<std::string>(pointId.value());
+                    std::string uuidStr = convertToUuid(stringId);
+                    id = uuidStr;
+                } else {
+                    // For uint64_t IDs, use as-is
+                    id = pointId.value();
+                }
+            } else {
+                id = generatePointId();
+            }
 
             // Create vector point
             VectorPoint point(id, embedding, payload);
@@ -179,6 +255,7 @@ namespace vectordb
         }
         catch (const std::exception &e)
         {
+            std::cerr << "Exception in VectorStore::storeText: " << e.what() << std::endl;
             return false;
         }
     }
@@ -213,7 +290,15 @@ namespace vectordb
                 PointId id;
                 if (i < pointIds.size())
                 {
-                    id = pointIds[i];
+                    // Convert string IDs to UUID format for Qdrant compatibility
+                    if (std::holds_alternative<std::string>(pointIds[i])) {
+                        std::string stringId = std::get<std::string>(pointIds[i]);
+                        std::string uuidStr = convertToUuid(stringId);
+                        id = uuidStr;
+                    } else {
+                        // For uint64_t IDs, use as-is
+                        id = pointIds[i];
+                    }
                 }
                 else
                 {
@@ -234,6 +319,7 @@ namespace vectordb
         }
         catch (const std::exception &e)
         {
+            std::cerr << "Exception in VectorStore::storeTexts: " << e.what() << std::endl;
             return false;
         }
     }

@@ -471,8 +471,10 @@ bool LinguaCore::storeSummaryInVectorDB(
         log("Storing in Qdrant - session_id: " + session_id + 
             ", summary length: " + std::to_string(summary.length()));
         
-        // Store in Qdrant (text will be embedded automatically)
-        bool success = vector_store_->storeText(summary, metadata);
+        // ? FIX: Use session_id as point_id to prevent duplicates
+        // If the same session is processed multiple times, it will update the existing point
+        // instead of creating a new one
+        bool success = vector_store_->storeText(summary, metadata, session_id);
         
         if (!success) {
             log("ERROR: VectorStore::storeText returned false");

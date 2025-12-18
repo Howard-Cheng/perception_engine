@@ -592,7 +592,8 @@ namespace vectordb
             std::string response;
             long httpCode = 0;
 
-            std::string endpoint = "/collections/" + collectionName + "/points";
+            // Add wait=true parameter to ensure points are written before returning
+            std::string endpoint = "/collections/" + collectionName + "/points?wait=true";
             if (!impl_->httpRequest("PUT", endpoint, body, response, httpCode))
             {
                 return false;

@@ -2,6 +2,11 @@
 #include <stdexcept>
 #include <filesystem>
 #include <functional>
+#include <iostream>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace vectordb
 {
@@ -31,15 +36,57 @@ namespace vectordb
                 return false;
             }
 
-            // Load embedding model
-            if (!std::filesystem::exists(embeddingModelPath_))
+            // Resolve model path - handle both absolute and relative paths
+            std::filesystem::path modelPath(embeddingModelPath_);
+
+            // If path is relative, try multiple resolution strategies
+            if (!modelPath.is_absolute())
             {
+                // Strategy 1: Try relative to current working directory
+                std::filesystem::path cwdPath = std::filesystem::current_path() / modelPath;
+
+                // Strategy 2: Try relative to executable directory (Windows)
+                std::filesystem::path exePath;
+                bool hasExePath = false;
+
+#ifdef _WIN32
+                char exePathBuf[MAX_PATH];
+                if (GetModuleFileNameA(NULL, exePathBuf, MAX_PATH) != 0)
+                {
+                    exePath = std::filesystem::path(exePathBuf).parent_path() / modelPath;
+                    hasExePath = true;
+                }
+#endif
+
+                // Choose the path that exists
+                if (std::filesystem::exists(cwdPath))
+                {
+                    modelPath = cwdPath;
+                }
+                else if (hasExePath && std::filesystem::exists(exePath))
+                {
+                    modelPath = exePath;
+                }
+                else
+                {
+                    // Neither path exists - use cwd path for error message
+                    modelPath = cwdPath;
+                }
+            }
+
+            // Load embedding model
+            if (!std::filesystem::exists(modelPath))
+            {
+                // Log the paths we tried for debugging
+                std::cerr << "Embedding model not found at: " << modelPath.string() << std::endl;
+                std::cerr << "Current working directory: " << std::filesystem::current_path().string() << std::endl;
+                std::cerr << "Original path provided: " << embeddingModelPath_ << std::endl;
                 return false;
             }
 
             try
             {
-                embeddingModel_ = std::make_unique<EmbeddingModel>(embeddingModelPath_);
+                embeddingModel_ = std::make_unique<EmbeddingModel>(modelPath.string());
 
                 if (!embeddingModel_->isLoaded())
                 {
@@ -48,6 +95,7 @@ namespace vectordb
             }
             catch (const std::exception &e)
             {
+                std::cerr << "Failed to load embedding model: " << e.what() << std::endl;
                 return false;
             }
 
@@ -65,6 +113,7 @@ namespace vectordb
         }
         catch (const std::exception &e)
         {
+            std::cerr << "Exception in VectorStore::initialize(): " << e.what() << std::endl;
             return false;
         }
     }

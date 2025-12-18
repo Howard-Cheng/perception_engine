@@ -170,31 +170,70 @@ namespace perception
         }
 
         // Tokenize prompt
-        std::vector<llama_token> tokens;
-        tokens.resize(prompt.size() + 16);
+        std::vector<llama_token> prompt_tokens;
+        prompt_tokens.resize(prompt.size() + 16);
         int n_tokens = llama_tokenize(
             llama_model_get_vocab(model_),
             prompt.c_str(),
             prompt.size(),
-            tokens.data(),
-            tokens.size(),
+            prompt_tokens.data(),
+            prompt_tokens.size(),
             true, // add_special (add_bos)
             false // parse_special
         );
 
         if (n_tokens < 0)
         {
-            tokens.resize(-n_tokens);
+            prompt_tokens.resize(-n_tokens);
             n_tokens = llama_tokenize(
                 llama_model_get_vocab(model_),
                 prompt.c_str(),
                 prompt.size(),
-                tokens.data(),
-                tokens.size(),
+                prompt_tokens.data(),
+                prompt_tokens.size(),
                 true,
                 false);
+            
+            if (n_tokens < 0)
+            {
+                throw std::runtime_error("Failed to tokenize prompt");
+            }
         }
-        tokens.resize(n_tokens);
+        prompt_tokens.resize(n_tokens);
+
+        if (prompt_tokens.empty())
+        {
+            throw std::runtime_error("Tokenization resulted in empty token sequence");
+        }
+
+        // Check if prompt exceeds context window
+        // Reserve space for generation (max_tokens)
+        int max_prompt_tokens = config_.n_ctx - max_tokens - 8; // -8 for safety margin
+        if (max_prompt_tokens <= 0)
+        {
+            throw std::runtime_error("Context window too small for generation");
+        }
+
+        if (prompt_tokens.size() > static_cast<size_t>(max_prompt_tokens))
+        {
+            if (config_.verbose)
+            {
+                std::cout << "Warning: Prompt length (" << prompt_tokens.size() 
+                          << " tokens) exceeds context window (" << max_prompt_tokens 
+                          << " tokens). Truncating from the beginning..." << std::endl;
+            }
+            
+            // Keep the end of the prompt (more recent context is usually more important)
+            std::vector<llama_token> truncated_tokens(
+                prompt_tokens.end() - max_prompt_tokens,
+                prompt_tokens.end()
+            );
+            prompt_tokens = std::move(truncated_tokens);
+        }
+
+        // Clear the KV cache before generation
+        llama_memory_t mem = llama_get_memory(ctx_);
+        llama_memory_seq_rm(mem, -1, -1, -1);
 
         // Set up sampling parameters
         common_params_sampling sparams;
@@ -204,20 +243,79 @@ namespace perception
         sparams.penalty_repeat = config_.repeat_penalty;
 
         common_sampler *sampling_ctx = common_sampler_init(model_, sparams);
+        if (!sampling_ctx)
+        {
+            throw std::runtime_error("Failed to create sampling context");
+        }
 
         std::string result;
-        result.reserve(max_tokens * 4); // Rough estimate
+        result.reserve(max_tokens * 4);
 
-        // Generate tokens
+        // Use RAII wrapper for automatic cleanup
+        struct SamplerGuard {
+            common_sampler* sampler;
+            explicit SamplerGuard(common_sampler* s) : sampler(s) {}
+            ~SamplerGuard() { 
+                if (sampler) {
+                    common_sampler_free(sampler);
+                }
+            }
+            SamplerGuard(const SamplerGuard&) = delete;
+            SamplerGuard& operator=(const SamplerGuard&) = delete;
+        };
+        SamplerGuard sampler_guard(sampling_ctx);
+
+        // Create batch for prompt processing
+        llama_batch prompt_batch = llama_batch_init(prompt_tokens.size(), 0, 1);
+        
+        // Fill the batch with prompt tokens
+        for (size_t i = 0; i < prompt_tokens.size(); ++i)
+        {
+            prompt_batch.token[i] = prompt_tokens[i];
+            prompt_batch.pos[i] = i;
+            prompt_batch.n_seq_id[i] = 1;
+            prompt_batch.seq_id[i] = new llama_seq_id[1];
+            prompt_batch.seq_id[i][0] = 0;
+            prompt_batch.logits[i] = (i == prompt_tokens.size() - 1) ? 1 : 0;  // Only need logits for last token
+        }
+        prompt_batch.n_tokens = prompt_tokens.size();
+
+        // Process prompt
+        int decode_result = llama_decode(ctx_, prompt_batch);
+        
+        // Clean up prompt batch seq_id arrays immediately
+        for (size_t i = 0; i < prompt_tokens.size(); ++i)
+        {
+            delete[] prompt_batch.seq_id[i];
+            prompt_batch.seq_id[i] = nullptr;
+        }
+        llama_batch_free(prompt_batch);
+        
+        if (decode_result != 0)
+        {
+            // Return error instead of throwing to avoid cleanup issues
+            // The SamplerGuard will automatically clean up sampling_ctx
+            std::string error_msg = "Failed to process prompt, error code: " + std::to_string(decode_result);
+            if (config_.verbose)
+            {
+                std::cerr << error_msg << std::endl;
+            }
+            return "[Error: " + error_msg + "]";
+        }
+
+        // Create batch for single token generation
+        llama_batch gen_batch = llama_batch_init(1, 0, 1);
+        gen_batch.n_seq_id[0] = 1;
+        gen_batch.seq_id[0] = new llama_seq_id[1];
+        gen_batch.seq_id[0][0] = 0;
+        gen_batch.logits[0] = 1;
+        gen_batch.n_tokens = 1;
+
+        int current_pos = prompt_tokens.size();
+
+        // Generate tokens one by one
         for (int i = 0; i < max_tokens; ++i)
         {
-            // Evaluate tokens
-            if (llama_decode(ctx_, llama_batch_get_one(tokens.data(), tokens.size())))
-            {
-                common_sampler_free(sampling_ctx);
-                throw std::runtime_error("Failed to evaluate tokens");
-            }
-
             // Sample next token
             llama_token new_token = common_sampler_sample(sampling_ctx, ctx_, -1);
 
@@ -229,22 +327,45 @@ namespace perception
 
             // Convert token to text
             char buf[128];
-            int n = llama_token_to_piece(llama_model_get_vocab(model_), new_token, buf, sizeof(buf), 0, false);
+            int n = llama_token_to_piece(
+                llama_model_get_vocab(model_), 
+                new_token, 
+                buf, 
+                sizeof(buf), 
+                0, 
+                false
+            );
+            
             if (n > 0)
             {
                 result.append(buf, n);
             }
 
-            // Add token to context for next iteration
-            tokens.clear();
-            tokens.push_back(new_token);
+            // Prepare token for next decode
+            gen_batch.token[0] = new_token;
+            gen_batch.pos[0] = current_pos++;
+            
+            if (llama_decode(ctx_, gen_batch) != 0)
+            {
+                if (config_.verbose)
+                {
+                    std::cerr << "Failed to evaluate token at position " << current_pos - 1 << std::endl;
+                }
+                break;  // Stop generation instead of throwing
+            }
         }
 
-        common_sampler_free(sampling_ctx);
+        // Clean up generation batch
+        delete[] gen_batch.seq_id[0];
+        gen_batch.seq_id[0] = nullptr;
+        llama_batch_free(gen_batch);
 
         // Trim whitespace
-        result.erase(0, result.find_first_not_of(" \n\r\t"));
-        result.erase(result.find_last_not_of(" \n\r\t") + 1);
+        if (!result.empty())
+        {
+            result.erase(0, result.find_first_not_of(" \n\r\t"));
+            result.erase(result.find_last_not_of(" \n\r\t") + 1);
+        }
 
         return result;
     }

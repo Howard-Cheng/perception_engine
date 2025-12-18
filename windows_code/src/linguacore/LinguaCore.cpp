@@ -11,12 +11,14 @@
 #include "VectorStore.h"
 #include "QdrantClient.h"
 
+#include <windows.h>
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <algorithm>
 #include <map>
 #include <nlohmann/json.hpp>
+#include <filesystem>
 
 using json = nlohmann::json;
 
@@ -99,7 +101,7 @@ LinguaCoreConfig loadConfiguration(const std::string& config_path) {
             } else if (key == "collection") {
                 config.qdrant_collection = value;
             }
-        } else if (current_section == "embedding") {
+        } else if (current_section == "vectordb_embedding") {
             if (key == "model_path") {
                 config.embedding_model_path = value;
             }
@@ -152,7 +154,7 @@ LinguaCore::LinguaCore(const LinguaCoreConfig& config)
         // Create VectorStore with collection name, embedding model path, and Qdrant config
         vectordb::QdrantClient::Config qdrant_config = 
             vectordb::QdrantClient::Config::remote(qdrant_url);
-        
+
         vector_store_ = std::make_unique<vectordb::VectorStore>(
             config_.qdrant_collection,
             config_.embedding_model_path,
@@ -284,15 +286,8 @@ std::vector<database::RawEvent> LinguaCore::queryUnsummarizedEvents(
     must_conditions.push_back({{"term", {{"summarized", false}}}});
     must_conditions.push_back({{"exists", {{"field", "session_id"}}}});
     
-    // Add timestamp filter if provided
-    if (last_processed_time > 0) {
-        // Format timestamp as ISO8601
-        char timestamp_str[32];
-        std::strftime(timestamp_str, sizeof(timestamp_str), 
-                     "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&last_processed_time));
-        
-        must_conditions.push_back({{"range", {{"timestamp", {{"gte", timestamp_str}}}}}});
-    }
+    // Note: Removed timestamp filter to process all unsummarized events
+    // regardless of when they were created
     
     query["query"] = {{"bool", {{"must", must_conditions}}}};
     
@@ -334,8 +329,17 @@ bool LinguaCore::processSingleEvent(const database::RawEvent& event) {
     
     // Check if screen_content is available
     if (!event.screenContent.has_value() || event.screenContent->empty()) {
-        log("WARNING: Event has no screen_content, skipping");
-        return false;
+        log("WARNING: Event has no screen_content, marking as summarized without processing");
+        
+        // Still mark the event as summarized in Elasticsearch
+        std::vector<std::string> event_ids = {event.eventId};
+        if (!updateSummarizedFlag(event_ids)) {
+            log("ERROR: Failed to update summarized flag for empty content event");
+            return false;
+        }
+        
+        log("Successfully marked empty content event as summarized: " + event.eventId);
+        return true;  // Return true since we successfully handled the case
     }
     
     const std::string& content = *event.screenContent;
@@ -438,6 +442,24 @@ bool LinguaCore::storeSummaryInVectorDB(
     const std::string& original_content) {
     
     try {
+        // Check if vector store is properly initialized
+        if (!vector_store_) {
+            log("ERROR: Vector store is null");
+            return false;
+        }
+        
+        // Check if embedding model is loaded
+        if (vector_store_->getEmbeddingDimension() == 0) {
+            log("ERROR: Embedding model is not loaded (dimension = 0)");
+            log("ERROR: Embedding model error: " + 
+                (vector_store_->getEmbeddingModel().has_value() 
+                 ? vector_store_->getEmbeddingModel().value().get().getLastError()
+                 : "Model not initialized"));
+            return false;
+        }
+        
+        log("Embedding model dimension: " + std::to_string(vector_store_->getEmbeddingDimension()));
+        
         // Create metadata payload using vectordb::Payload
         vectordb::Payload metadata;
         metadata["session_id"] = session_id;
@@ -446,17 +468,43 @@ bool LinguaCore::storeSummaryInVectorDB(
         metadata["original_length"] = static_cast<int64_t>(original_content.length());
         metadata["summary_length"] = static_cast<int64_t>(summary.length());
         
+        log("Storing in Qdrant - session_id: " + session_id + 
+            ", summary length: " + std::to_string(summary.length()));
+        
         // Store in Qdrant (text will be embedded automatically)
         bool success = vector_store_->storeText(summary, metadata);
         
         if (!success) {
             log("ERROR: VectorStore::storeText returned false");
+            log("ERROR: Qdrant client error: " + vector_store_->getClient().getLastError());
+            
+            // Check collection exists
+            if (!vector_store_->getClient().collectionExists(vector_store_->getCollectionName())) {
+                log("ERROR: Collection does not exist: " + vector_store_->getCollectionName());
+            } else {
+                log("Collection exists: " + vector_store_->getCollectionName());
+                
+                // Get collection info
+                auto collectionInfo = vector_store_->getClient().getCollectionInfo(vector_store_->getCollectionName());
+                if (collectionInfo.has_value()) {
+                    log("Collection info - Points: " + std::to_string(collectionInfo->pointsCount) +
+                        ", Vector size: " + std::to_string(collectionInfo->vectorSize));
+                }
+            }
             return false;
+        }
+        
+        log("Successfully stored summary in Qdrant");
+        
+        // Verify by checking collection point count
+        auto collectionInfo = vector_store_->getClient().getCollectionInfo(vector_store_->getCollectionName());
+        if (collectionInfo.has_value()) {
+            log("Collection now has " + std::to_string(collectionInfo->pointsCount) + " points");
         }
         
         return true;
     } catch (const std::exception& e) {
-        log("ERROR storing in vector DB: " + std::string(e.what()));
+        log("ERROR storing in vector DB (exception): " + std::string(e.what()));
         return false;
     }
 }

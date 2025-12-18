@@ -1,47 +1,24 @@
 #include "EmbeddingModel.h"
-#include <onnxruntime_cxx_api.h>
+#include "E5EmbeddingDLL.h"  // Use E5EmbeddingDLL for embedding operations
 #include <stdexcept>
-#include <fstream>
-#include <sstream>
-#include <algorithm>
-#include <cmath>
 #include <filesystem>
+#include <iostream>
 
 namespace vectordb
 {
-
     // Forward declaration of implementation class
     class EmbeddingModelImpl
     {
     public:
         std::string modelPath;
-        std::string modelDir;
         bool normalize;
         size_t dimension;
         bool loaded;
         std::string lastError;
 
-        Ort::Env env;
-        Ort::SessionOptions sessionOptions;
-        std::unique_ptr<Ort::Session> session;
-        Ort::MemoryInfo memoryInfo;
-        Ort::AllocatorWithDefaultOptions allocator;
-
-        // Input/output names
-        std::vector<const char *> inputNames;
-        std::vector<const char *> outputNames;
-        std::vector<std::string> inputNamesStr;
-        std::vector<std::string> outputNamesStr;
-
         EmbeddingModelImpl(const std::string &path, bool norm)
-            : modelPath(path), normalize(norm), dimension(0), loaded(false),
-              env(ORT_LOGGING_LEVEL_WARNING, "EmbeddingModel"),
-              memoryInfo(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault))
+            : modelPath(path), normalize(norm), dimension(0), loaded(false)
         {
-            // Get model directory
-            std::filesystem::path modelFilePath(path);
-            modelDir = modelFilePath.parent_path().string();
-
             // Check if model file exists
             if (!std::filesystem::exists(path))
             {
@@ -51,67 +28,36 @@ namespace vectordb
 
             try
             {
-                // Configure session options
-                sessionOptions.SetIntraOpNumThreads(1);
-                sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-
-                // Convert path to wide string for Windows (ONNX Runtime requires wide string on Windows)
+                // Convert path to wide string for E5_Initialize
                 std::wstring wpath(path.begin(), path.end());
-                session = std::make_unique<Ort::Session>(env, wpath.c_str(), sessionOptions);
-
-                // Get input/output names
-                size_t numInputNodes = session->GetInputCount();
-                size_t numOutputNodes = session->GetOutputCount();
-
-                inputNamesStr.resize(numInputNodes);
-                outputNamesStr.resize(numOutputNodes);
-                inputNames.resize(numInputNodes);
-                outputNames.resize(numOutputNodes);
-
-                for (size_t i = 0; i < numInputNodes; i++)
-                {
-                    auto name = session->GetInputNameAllocated(i, allocator);
-                    inputNamesStr[i] = std::string(name.get());
-                    inputNames[i] = inputNamesStr[i].c_str();
+                
+                // Initialize E5 DLL
+                int result = E5_Initialize(wpath.c_str());
+                
+                if (result == 0 && E5_IsInitialized()) {
+                    dimension = E5_GetEmbeddingDimension();
+                    loaded = true;
+                    lastError.clear();
+                    
+                    std::cout << "EmbeddingModel: Successfully initialized using E5EmbeddingDLL" << std::endl;
+                    std::cout << "  Model path: " << path << std::endl;
+                    std::cout << "  Dimension: " << dimension << std::endl;
+                } else {
+                    lastError = "Failed to initialize E5 model: " + std::string(E5_GetLastError());
+                    loaded = false;
                 }
-
-                for (size_t i = 0; i < numOutputNodes; i++)
-                {
-                    auto name = session->GetOutputNameAllocated(i, allocator);
-                    outputNamesStr[i] = std::string(name.get());
-                    outputNames[i] = outputNamesStr[i].c_str();
-                }
-
-                // Get output shape to determine dimension
-                auto outputTypeInfo = session->GetOutputTypeInfo(0);
-                auto tensorInfo = outputTypeInfo.GetTensorTypeAndShapeInfo();
-                auto outputShape = tensorInfo.GetShape();
-
-                // E5 models typically output [batch, seq_len, hidden_size]
-                // We need to do mean pooling to get [batch, hidden_size]
-                if (outputShape.size() >= 2)
-                {
-                    dimension = static_cast<size_t>(outputShape[outputShape.size() - 1]);
-                }
-                else
-                {
-                    dimension = static_cast<size_t>(outputShape[0]);
-                }
-
-                // For E5-small, dimension should be 384
-                if (dimension == 0)
-                {
-                    dimension = 384; // Fallback to known dimension
-                }
-
-                loaded = true;
-                lastError.clear();
             }
             catch (const std::exception &e)
             {
-                lastError = "Failed to load ONNX model: " + std::string(e.what());
+                lastError = "Exception during initialization: " + std::string(e.what());
                 loaded = false;
             }
+        }
+
+        ~EmbeddingModelImpl()
+        {
+            // E5_Cleanup() is called when the DLL unloads
+            // No explicit cleanup needed here
         }
 
         std::vector<float> encode(const std::string &text)
@@ -123,103 +69,17 @@ namespace vectordb
 
             try
             {
-                // Simple tokenization: split by spaces and create basic token IDs
-                // Note: This is a simplified version. For production, use proper tokenizer
-                std::vector<int64_t> tokenIds;
-                std::string processedText = text;
+                std::vector<float> embedding(dimension);
+                
+                // Use E5_ComputeEmbeddingFromText which handles tokenization internally
+                int result = E5_ComputeEmbeddingFromText(
+                    text.c_str(),
+                    embedding.data()
+                );
 
-                // Basic tokenization (split by spaces)
-                std::istringstream iss(processedText);
-                std::string word;
-                while (iss >> word)
-                {
-                    // Simple hash-based token ID (not accurate, but works for testing)
-                    int64_t tokenId = std::hash<std::string>{}(word) % 250037; // vocab_size from config
-                    tokenIds.push_back(tokenId);
-                }
-
-                if (tokenIds.empty())
-                {
-                    tokenIds.push_back(0); // pad_token_id
-                }
-
-                // Limit to max_position_embeddings (512)
-                if (tokenIds.size() > 512)
-                {
-                    tokenIds.resize(512);
-                }
-
-                // Pad to at least 1 token
-                size_t seqLen = std::max<size_t>(tokenIds.size(), 1);
-
-                // Create input tensor: [1, seq_len]
-                std::vector<int64_t> inputShape = {1, static_cast<int64_t>(seqLen)};
-                Ort::Value inputTensor = Ort::Value::CreateTensor<int64_t>(
-                    memoryInfo, tokenIds.data(), tokenIds.size(), inputShape.data(), inputShape.size());
-
-                // Create attention mask (all ones)
-                std::vector<int64_t> attentionMask(seqLen, 1);
-                Ort::Value attentionTensor = Ort::Value::CreateTensor<int64_t>(
-                    memoryInfo, attentionMask.data(), attentionMask.size(), inputShape.data(), inputShape.size());
-
-                // Create token_type_ids (all zeros for single sequence)
-                std::vector<int64_t> tokenTypeIds(seqLen, 0);
-                Ort::Value tokenTypeTensor = Ort::Value::CreateTensor<int64_t>(
-                    memoryInfo, tokenTypeIds.data(), tokenTypeIds.size(), inputShape.data(), inputShape.size());
-
-                // Run inference
-                std::vector<Ort::Value> inputs;
-                inputs.push_back(std::move(inputTensor));
-                inputs.push_back(std::move(attentionTensor));
-                inputs.push_back(std::move(tokenTypeTensor));
-
-                auto outputs = session->Run(Ort::RunOptions{nullptr},
-                                            inputNames.data(), inputs.data(), inputs.size(),
-                                            outputNames.data(), outputNames.size());
-
-                // Get output tensor
-                float *outputData = outputs[0].GetTensorMutableData<float>();
-                auto outputShape = outputs[0].GetTensorTypeAndShapeInfo().GetShape();
-
-                // E5 models output [batch, seq_len, hidden_size]
-                // Need mean pooling: average over sequence length
-                size_t batchSize = outputShape[0];
-                size_t seqLength = outputShape[1];
-                size_t hiddenSize = outputShape[2];
-
-                std::vector<float> embedding(hiddenSize, 0.0f);
-
-                // Mean pooling: average over sequence dimension
-                for (size_t i = 0; i < seqLength; i++)
-                {
-                    for (size_t j = 0; j < hiddenSize; j++)
-                    {
-                        embedding[j] += outputData[i * hiddenSize + j];
-                    }
-                }
-
-                // Divide by sequence length
-                for (size_t j = 0; j < hiddenSize; j++)
-                {
-                    embedding[j] /= static_cast<float>(seqLength);
-                }
-
-                // Normalize if requested
-                if (normalize)
-                {
-                    float norm = 0.0f;
-                    for (float val : embedding)
-                    {
-                        norm += val * val;
-                    }
-                    norm = std::sqrt(norm);
-                    if (norm > 0.0f)
-                    {
-                        for (float &val : embedding)
-                        {
-                            val /= norm;
-                        }
-                    }
+                if (result != 0) {
+                    lastError = "Encoding failed: " + std::string(E5_GetLastError());
+                    throw std::runtime_error(lastError);
                 }
 
                 return embedding;
@@ -238,16 +98,53 @@ namespace vectordb
                 throw std::runtime_error("Model not loaded: " + lastError);
             }
 
-            std::vector<std::vector<float>> results;
-            results.reserve(texts.size());
-
-            // Encode one by one (can be optimized for batch processing later)
-            for (const auto &text : texts)
+            if (texts.empty())
             {
-                results.push_back(encode(text));
+                return {};
             }
 
-            return results;
+            try
+            {
+                // Prepare text pointers for batch processing
+                std::vector<const char*> textPtrs;
+                textPtrs.reserve(texts.size());
+                for (const auto& text : texts) {
+                    textPtrs.push_back(text.c_str());
+                }
+
+                // Allocate buffer for all embeddings
+                std::vector<float> allEmbeddings(texts.size() * dimension);
+                
+                // Use E5_ComputeEmbeddingFromTextBatch for batch processing
+                int result = E5_ComputeEmbeddingFromTextBatch(
+                    textPtrs.data(),
+                    (int)texts.size(),
+                    allEmbeddings.data()
+                );
+
+                if (result != 0) {
+                    lastError = "Batch encoding failed: " + std::string(E5_GetLastError());
+                    throw std::runtime_error(lastError);
+                }
+
+                // Convert flat array to vector<vector<float>>
+                std::vector<std::vector<float>> results;
+                results.reserve(texts.size());
+                
+                for (size_t i = 0; i < texts.size(); ++i) {
+                    results.emplace_back(
+                        allEmbeddings.begin() + i * dimension,
+                        allEmbeddings.begin() + (i + 1) * dimension
+                    );
+                }
+
+                return results;
+            }
+            catch (const std::exception &e)
+            {
+                lastError = "Batch encoding failed: " + std::string(e.what());
+                throw std::runtime_error(lastError);
+            }
         }
     };
 
@@ -296,9 +193,14 @@ namespace vectordb
 
     bool EmbeddingModel::reload()
     {
-        // TODO: Implement model reloading
-        impl_->lastError = "Reload not implemented";
-        return false;
+        // Reload by recreating the implementation
+        try {
+            impl_ = std::make_unique<EmbeddingModelImpl>(impl_->modelPath, impl_->normalize);
+            return impl_->loaded;
+        } catch (const std::exception& e) {
+            impl_->lastError = "Reload failed: " + std::string(e.what());
+            return false;
+        }
     }
 
 } // namespace vectordb

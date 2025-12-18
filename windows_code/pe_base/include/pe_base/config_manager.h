@@ -37,6 +37,7 @@ public:
     std::string GetTokenizerPath() const;
     std::string GetPythonExecutable() const;
     std::string GetChunkDocumentScript() const;
+    std::string GetTokenizeTextScript() const;  // NEW: For single text tokenization
     
     // === Session Manager Configuration ===
     int GetCompressionThreshold() const;

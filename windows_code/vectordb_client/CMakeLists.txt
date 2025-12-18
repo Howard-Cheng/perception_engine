@@ -143,6 +143,16 @@ else()
     message(FATAL_ERROR "CURL library not found but is required for Qdrant HTTP client")
 endif()
 
+# Link E5EmbeddingDLL (required for embedding model)
+# The E5EmbeddingDLL should be built as part of the main project
+if(TARGET E5EmbeddingDLL)
+    target_link_libraries(vectordb_client PRIVATE E5EmbeddingDLL)
+    target_include_directories(vectordb_client PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../embeddingmodel/include)
+    message(STATUS "E5EmbeddingDLL: Found and linked")
+else()
+    message(WARNING "E5EmbeddingDLL target not found. EmbeddingModel may not work correctly.")
+endif()
+
 # Compiler flags
 if(MSVC)
     target_compile_options(vectordb_client PRIVATE

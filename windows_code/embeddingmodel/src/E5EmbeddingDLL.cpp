@@ -379,18 +379,20 @@ E5_API const char* E5_GetLastError() {
     return g_last_error.c_str();
 }
 
-E5_API void E5_Cleanup() {
-    std::lock_guard<std::mutex> lock(g_mutex);
+// ============================================================================
+// Helper Functions for Text Processing (must be before they are used)
+// ============================================================================
 
-    g_session.reset();
-    g_env.reset();
-    g_initialized = false;
-    g_last_error.clear();
+// Helper: Save text to temp file
+bool SaveTextToFile(const std::string& filename, const std::string& text) {
+    std::ofstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        return false;
+    }
+    file.write(text.c_str(), text.size());
+    file.close();
+    return true;
 }
-
-// ============================================================================
-// Document Comparison Functions
-// ============================================================================
 
 // Helper: Read binary chunks file
 bool ReadChunksFromFile(const std::string& filename,
@@ -433,25 +435,14 @@ bool ReadChunksFromFile(const std::string& filename,
     return true;
 }
 
-// Helper: Save text to temp file
-bool SaveTextToFile(const std::string& filename, const std::string& text) {
-    std::ofstream file(filename, std::ios::binary);
-    if (!file.is_open()) {
-        return false;
-    }
-    file.write(text.c_str(), text.size());
-    file.close();
-    return true;
-}
-
-// Helper: Compute embeddings for all chunks
+// Helper: Compute embeddings for all chunks (calls E5_ComputeEmbedding)
 bool ComputeChunkEmbeddings(
     const std::vector<std::vector<int64_t>>& input_ids,
     const std::vector<std::vector<int64_t>>& attention_mask,
     const std::vector<std::vector<int64_t>>& token_type_ids,
     std::vector<std::vector<float>>& embeddings_out) {
 
-    int num_chunks = input_ids.size();
+    int num_chunks = static_cast<int>(input_ids.size());
     embeddings_out.resize(num_chunks);
 
     for (int i = 0; i < num_chunks; i++) {
@@ -473,7 +464,7 @@ bool ComputeChunkEmbeddings(
     return true;
 }
 
-// Helper: Compute average of embeddings
+// Helper: Compute average of embeddings (calls Normalize)
 void AverageEmbeddings(const std::vector<std::vector<float>>& embeddings,
                        std::vector<float>& avg_out) {
     avg_out.resize(EMBEDDING_DIM, 0.0f);
@@ -485,7 +476,7 @@ void AverageEmbeddings(const std::vector<std::vector<float>>& embeddings,
     }
 
     for (int i = 0; i < EMBEDDING_DIM; i++) {
-        avg_out[i] /= embeddings.size();
+        avg_out[i] /= static_cast<float>(embeddings.size());
     }
 
     // Normalize
@@ -494,8 +485,6 @@ void AverageEmbeddings(const std::vector<std::vector<float>>& embeddings,
 
 // Helper: Extract chunk text from document
 std::string ExtractChunkText(const std::string& doc_text, int chunk_index, int chunk_size, int overlap) {
-    // Approximate character position based on chunk index
-    // Assuming average of 4 characters per token
     int chars_per_chunk = chunk_size * 4;
     int chars_overlap = overlap * 4;
     int stride = chars_per_chunk - chars_overlap;
@@ -503,24 +492,196 @@ std::string ExtractChunkText(const std::string& doc_text, int chunk_index, int c
     int start_pos = chunk_index * stride;
     int end_pos = start_pos + chars_per_chunk;
     
-    if (start_pos >= doc_text.size()) {
+    if (start_pos >= static_cast<int>(doc_text.size())) {
         return "";
     }
     
-    if (end_pos > doc_text.size()) {
-        end_pos = doc_text.size();
+    if (end_pos > static_cast<int>(doc_text.size())) {
+        end_pos = static_cast<int>(doc_text.size());
     }
     
-    // Extract and trim
     std::string chunk = doc_text.substr(start_pos, end_pos - start_pos);
     
-    // Truncate to 500 chars max for display
     if (chunk.size() > 500) {
         chunk = chunk.substr(0, 497) + "...";
     }
     
     return chunk;
 }
+
+// ============================================================================
+// Text-based Embedding Functions (with internal tokenization)
+// ============================================================================
+
+E5_API int E5_ComputeEmbeddingFromText(
+    const char* text,
+    float* embedding_out) {
+
+    if (!g_initialized) {
+        SetError("Not initialized. Call E5_Initialize first");
+        return -1;
+    }
+
+    if (text == nullptr || embedding_out == nullptr) {
+        SetError("NULL pointer provided");
+        return -1;
+    }
+
+    try {
+        // Get paths from ConfigManager
+        std::string python_executable = pe_base::ConfigManager::GetInstance().GetPythonExecutable();
+        std::string tokenize_script = pe_base::ConfigManager::GetInstance().GetTokenizeTextScript();
+
+        // Normalize paths
+        std::replace(tokenize_script.begin(), tokenize_script.end(), '/', '\\');
+
+        // Get executable directory
+        std::string exe_dir = GetExePath();
+
+        // Create temp files
+        std::string temp_text_file = exe_dir + "\\temp_text.txt";
+        std::string temp_tokens_file = exe_dir + "\\temp_tokens.bin";
+
+        // Save text to temp file
+        if (!SaveTextToFile(temp_text_file, text)) {
+            SetError("Failed to save text to temp file: " + temp_text_file);
+            return -1;
+        }
+
+        // Convert tokenizer path to UTF-8
+        std::wstring tokenizer_path_w = g_tokenizer_path;
+        int size_needed = WideCharToMultiByte(CP_UTF8, 0, tokenizer_path_w.c_str(), 
+                                              (int)tokenizer_path_w.length(), NULL, 0, NULL, NULL);
+        std::string tokenizer_path(size_needed, 0);
+        WideCharToMultiByte(CP_UTF8, 0, tokenizer_path_w.c_str(), 
+                           (int)tokenizer_path_w.length(), &tokenizer_path[0], size_needed, NULL, NULL);
+        std::replace(tokenizer_path.begin(), tokenizer_path.end(), '/', '\\');
+
+        // Build and execute Python command to tokenize
+        char cmd[4096];
+        sprintf_s(cmd, sizeof(cmd),
+            "%s \"%s\" \"%s\" \"%s\" \"%s\"",
+            python_executable.c_str(),
+            tokenize_script.c_str(),
+            temp_text_file.c_str(),
+            temp_tokens_file.c_str(),
+            tokenizer_path.c_str());
+
+        PE_INFO("Tokenizing text: " + std::string(cmd));
+
+        if (system(cmd) != 0) {
+            SetError("Failed to tokenize text (Python error). Command: " + std::string(cmd));
+            DeleteFileA(temp_text_file.c_str());
+            return -1;
+        }
+
+        // Read tokenized data
+        std::ifstream token_file(temp_tokens_file, std::ios::binary);
+        if (!token_file.is_open()) {
+            SetError("Failed to read tokenized data from: " + temp_tokens_file);
+            DeleteFileA(temp_text_file.c_str());
+            DeleteFileA(temp_tokens_file.c_str());
+            return -1;
+        }
+
+        // Read token counts
+        int64_t num_tokens;
+        token_file.read(reinterpret_cast<char*>(&num_tokens), sizeof(int64_t));
+
+        if (num_tokens <= 0 || num_tokens > MAX_SEQ_LENGTH) {
+            SetError("Invalid token count: " + std::to_string(num_tokens));
+            token_file.close();
+            DeleteFileA(temp_text_file.c_str());
+            DeleteFileA(temp_tokens_file.c_str());
+            return -1;
+        }
+
+        // Read tokens
+        std::vector<int64_t> input_ids(num_tokens);
+        std::vector<int64_t> attention_mask(num_tokens);
+        std::vector<int64_t> token_type_ids(num_tokens);
+
+        token_file.read(reinterpret_cast<char*>(input_ids.data()), num_tokens * sizeof(int64_t));
+        token_file.read(reinterpret_cast<char*>(attention_mask.data()), num_tokens * sizeof(int64_t));
+        token_file.read(reinterpret_cast<char*>(token_type_ids.data()), num_tokens * sizeof(int64_t));
+
+        token_file.close();
+
+        // Compute embedding using existing function
+        int result = E5_ComputeEmbedding(
+            input_ids.data(),
+            attention_mask.data(),
+            token_type_ids.data(),
+            (int)num_tokens,
+            embedding_out
+        );
+
+        // Cleanup temp files
+        DeleteFileA(temp_text_file.c_str());
+        DeleteFileA(temp_tokens_file.c_str());
+
+        return result;
+
+    } catch (const std::exception& e) {
+        SetError(std::string("Text embedding error: ") + e.what());
+        return -1;
+    }
+}
+
+E5_API int E5_ComputeEmbeddingFromTextBatch(
+    const char** texts,
+    int num_texts,
+    float* embeddings_out) {
+
+    if (!g_initialized) {
+        SetError("Not initialized. Call E5_Initialize first");
+        return -1;
+    }
+
+    if (texts == nullptr || embeddings_out == nullptr) {
+        SetError("NULL pointer provided");
+        return -1;
+    }
+
+    if (num_texts <= 0) {
+        SetError("num_texts must be positive");
+        return -1;
+    }
+
+    try {
+        // Process each text individually
+        // TODO: Optimize with true batch processing
+        for (int i = 0; i < num_texts; ++i) {
+            int result = E5_ComputeEmbeddingFromText(
+                texts[i],
+                embeddings_out + i * EMBEDDING_DIM
+            );
+
+            if (result != 0) {
+                return result;
+            }
+        }
+
+        return 0;
+
+    } catch (const std::exception& e) {
+        SetError(std::string("Batch text embedding error: ") + e.what());
+        return -1;
+    }
+}
+
+E5_API void E5_Cleanup() {
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    g_session.reset();
+    g_env.reset();
+    g_initialized = false;
+    g_last_error.clear();
+}
+
+// ============================================================================
+// Document Comparison Functions (removed duplicate helper function definitions)
+// ============================================================================
 
 E5_API int E5_CompareDocuments(
     const char* doc_A_text,

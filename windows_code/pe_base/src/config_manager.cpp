@@ -21,6 +21,7 @@ ConfigManager::ConfigManager() : loaded_(false) {
     config_.set("tokenizer_path", "models/embedding/tokenizer");
     config_.set("python_executable", "python");
     config_.set("chunk_document_script", "scripts/chunk_document.py");
+    config_.set("tokenize_text_script", "scripts/tokenize_text.py");  // NEW
 
     config_.set("compression_threshold", 100);
     config_.set("similarity_threshold", 70.0f);
@@ -172,6 +173,7 @@ bool ConfigManager::SaveConfig(const std::string& configPath) {
         file << "tokenizer_path=" << config_.getString("tokenizer_path", "") << "\n";
         file << "python_executable=" << config_.getString("python_executable", "") << "\n";
         file << "chunk_document_script=" << config_.getString("chunk_document_script", "") << "\n";
+        file << "tokenize_text_script=" << config_.getString("tokenize_text_script", "") << "\n";  // NEW
         
         file << "\n[session_manager]\n";
         file << "enabled=" << (config_.getBool("session_manager_enabled", true) ? "true" : "false") << "\n";
@@ -250,6 +252,12 @@ std::string ConfigManager::GetPythonExecutable() const {
 std::string ConfigManager::GetChunkDocumentScript() const {
     std::lock_guard<std::mutex> lock(mutex_);
     std::string path = config_.getString("chunk_document_script", "scripts/chunk_document.py");
+    return ResolvePath(path);
+}
+
+std::string ConfigManager::GetTokenizeTextScript() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::string path = config_.getString("tokenize_text_script", "scripts/tokenize_text.py");
     return ResolvePath(path);
 }
 

@@ -143,6 +143,44 @@ E5_API int E5_IsInitialized();
 E5_API const char* E5_GetLastError();
 
 /**
+ * Compute embedding for raw text (handles tokenization internally)
+ *
+ * @param text Raw text (UTF-8 encoded)
+ * @param embedding_out Output: normalized embedding (dimension floats)
+ *                      Caller must allocate E5_GetEmbeddingDimension() * sizeof(float) bytes
+ *
+ * @return 0 on success, negative on error
+ *
+ * This function handles tokenization internally using Python tokenizer.
+ * The text is automatically tokenized and then processed by the E5 model.
+ * Thread-safe after initialization.
+ */
+E5_API int E5_ComputeEmbeddingFromText(
+    const char* text,
+    float* embedding_out
+);
+
+/**
+ * Compute embeddings for multiple texts in batch (handles tokenization)
+ *
+ * @param texts Array of text strings (UTF-8 encoded)
+ * @param num_texts Number of texts
+ * @param embeddings_out Output: normalized embeddings [num_texts * dimension]
+ *                       Caller must allocate num_texts * E5_GetEmbeddingDimension() * sizeof(float) bytes
+ *
+ * @return 0 on success, negative on error
+ *
+ * This function handles batch tokenization and embedding computation.
+ * More efficient than calling E5_ComputeEmbeddingFromText multiple times.
+ * Thread-safe after initialization.
+ */
+E5_API int E5_ComputeEmbeddingFromTextBatch(
+    const char** texts,
+    int num_texts,
+    float* embeddings_out
+);
+
+/**
  * Structure to hold information about a similar chunk pair
  */
 typedef struct E5_SimilarChunkPair {

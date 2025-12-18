@@ -101,7 +101,7 @@ LinguaCoreConfig loadConfiguration(const std::string& config_path) {
             } else if (key == "collection") {
                 config.qdrant_collection = value;
             }
-        } else if (current_section == "vectordb_embedding") {
+        } else if (current_section == "embedding") {
             if (key == "model_path") {
                 config.embedding_model_path = value;
             }

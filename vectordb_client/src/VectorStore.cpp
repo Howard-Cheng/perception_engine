@@ -99,10 +99,44 @@ namespace vectordb
                 return false;
             }
 
-            // Create collection if it doesn't exist
-            if (!client_->collectionExists(collectionName_))
+            size_t vectorSize = embeddingModel_->getDimension();
+
+            // Check if collection exists and has correct dimensions
+            if (client_->collectionExists(collectionName_))
             {
-                size_t vectorSize = embeddingModel_->getDimension();
+                auto collectionInfo = client_->getCollectionInfo(collectionName_);
+                if (collectionInfo.has_value())
+                {
+                    size_t existingVectorSize = collectionInfo->vectorSize;
+
+                    if (existingVectorSize != vectorSize)
+                    {
+                        std::cerr << "WARNING: Collection '" << collectionName_
+                                  << "' has incorrect vector size!" << std::endl;
+                        std::cerr << "  Expected: " << vectorSize << std::endl;
+                        std::cerr << "  Found: " << existingVectorSize << std::endl;
+                        std::cerr << "  Recreating collection..." << std::endl;
+
+                        // Delete and recreate collection
+                        if (!client_->deleteCollection(collectionName_))
+                        {
+                            std::cerr << "Failed to delete collection with wrong dimensions" << std::endl;
+                            return false;
+                        }
+
+                        if (!client_->createCollection(collectionName_, vectorSize, DistanceMetric::COSINE))
+                        {
+                            std::cerr << "Failed to recreate collection" << std::endl;
+                            return false;
+                        }
+
+                        std::cerr << "Collection recreated successfully with correct dimensions" << std::endl;
+                    }
+                }
+            }
+            else
+            {
+                // Create collection if it doesn't exist
                 if (!client_->createCollection(collectionName_, vectorSize, DistanceMetric::COSINE))
                 {
                     return false;

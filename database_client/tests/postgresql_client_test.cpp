@@ -390,7 +390,7 @@ int main(int argc, char** argv) {
     std::cout << "=============================================" << std::endl;
     
     // Configuration
-    std::string connectionString = "host=localhost port=5432 dbname=perception user=postgres password=postgres";
+    std::string connectionString = "host=127.0.0.1 port=5432 dbname=postgres user=postgres";
     std::string tableName = "test_pg_events";
     
     // Allow custom connection string from command line
@@ -424,6 +424,7 @@ int main(int argc, char** argv) {
         testUpdateDocument(*client, tableName);
         testStatistics(*client, tableName);
         testJSONStorage(*client, tableName);
+        getchar();
         testDeleteOperations(*client, tableName);
         
         // Cleanup

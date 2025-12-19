@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file LinguaCore.cpp
  * @brief Implementation of LinguaCore service
  */
@@ -240,34 +240,34 @@ void LinguaCore::serviceLoop() {
 int LinguaCore::processOnce() {
     int total_processed = 0;
     
-    while (running_) {
-        // Query for unsummarized events
-        auto events = queryUnsummarizedEvents(last_process_time_);
-        
-        if (events.empty()) {
-            // No more events to process
-            break;
-        }
-        
-        log("Found " + std::to_string(events.size()) + " unsummarized event(s)");
-        
-        // Process based on count
-        bool success = false;
-        if (events.size() == 1) {
-            success = processSingleEvent(events[0]);
-        } else {
-            success = processMultipleEvents(events);
-        }
-        
-        if (success) {
-            total_processed += events.size();
-            total_processed_ += events.size();
-            last_process_time_ = std::time(nullptr);
-        } else {
-            log("ERROR: Failed to process events");
-            total_errors_++;
-            break;  // Stop processing on error
-        }
+    // ? FIX: Only process ONE batch per call to prevent re-querying before ES refresh
+    // The while loop in serviceLoop() will call processOnce() again after the interval
+    
+    // Query for unsummarized events
+    auto events = queryUnsummarizedEvents(last_process_time_);
+    
+    if (events.empty()) {
+        // No events to process
+        return 0;
+    }
+    
+    log("Found " + std::to_string(events.size()) + " unsummarized event(s)");
+    
+    // Process based on count
+    bool success = false;
+    if (events.size() == 1) {
+        success = processSingleEvent(events[0]);
+    } else {
+        success = processMultipleEvents(events);
+    }
+    
+    if (success) {
+        total_processed = events.size();
+        total_processed_ += events.size();
+        last_process_time_ = std::time(nullptr);
+    } else {
+        log("ERROR: Failed to process events");
+        total_errors_++;
     }
     
     return total_processed;
@@ -532,6 +532,28 @@ bool LinguaCore::updateSummarizedFlag(const std::vector<std::string>& event_ids)
                 log("ERROR: Failed to update event " + event_id);
                 return false;
             }
+        }
+        
+        // ✅ FIX: Force Elasticsearch refresh to make changes immediately visible
+        // This prevents the same events from being re-queried in the next iteration
+        try {
+            log("Refreshing Elasticsearch index to ensure changes are visible");
+            
+            // Call the refreshCollection method from IDatabaseClient
+            bool refreshSuccess = es_client_->refreshCollection(config_.es_index);
+            
+            if (!refreshSuccess) {
+                log("WARNING: Failed to refresh index, changes may not be immediately visible");
+                // Don't fail the operation, just warn and add a small delay as fallback
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            } else {
+                log("Successfully refreshed Elasticsearch index");
+            }
+            
+        } catch (const std::exception& e) {
+            log("WARNING: Exception during index refresh: " + std::string(e.what()));
+            // Fallback: add a small delay
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
         
         return true;

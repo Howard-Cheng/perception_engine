@@ -89,6 +89,37 @@ public:
     bool deleteDocumentByAppName(const std::string& collectionName, 
                                 const std::string& appName) override;
     
+    /**
+     * @brief Perform fuzzy search on a specific field using PostgreSQL pg_trgm extension
+     * 
+     * This method provides fuzzy string matching similar to Elasticsearch's fuzzy query.
+     * It uses trigram similarity matching to find strings that are similar to the search value,
+     * even with typos or slight variations.
+     * 
+     * @param tableName Name of the table to search
+     * @param field Field name to search (e.g., "screen_content", "window_title")
+     * @param searchValue Value to search for (can have typos)
+     * @param similarityThreshold Minimum similarity threshold (0.0 to 1.0, default 0.3)
+     * @param from Starting position for pagination (default 0)
+     * @param size Number of results to return (default 100)
+     * @return SearchResult containing matching events sorted by similarity
+     * 
+     * @note Requires pg_trgm extension to be enabled (automatically done in initializeCollection)
+     * @note Results are ordered by similarity score (highest first)
+     * @note similarityThreshold of 0.3 is similar to Elasticsearch's "AUTO" fuzziness
+     * 
+     * @example
+     * // Find documents with "elasticsarch" (typo) in screen_content
+     * auto results = client.fuzzySearch("events", "screen_content", "elasticsarch", 0.3);
+     */
+    SearchResult fuzzySearch(
+        const std::string& tableName,
+        const std::string& field,
+        const std::string& searchValue,
+        double similarityThreshold = 0.3,
+        int from = 0,
+        int size = 100);
+    
 private:
     class Impl;
     std::unique_ptr<Impl> pImpl_;

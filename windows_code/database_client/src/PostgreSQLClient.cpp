@@ -310,6 +310,9 @@ DatabaseType PostgreSQLClient::getType() const {
 }
 
 bool PostgreSQLClient::initializeCollection(const std::string& tableName) {
+    // Enable pg_trgm extension for fuzzy search (if not already enabled)
+    pImpl_->executeQuery("CREATE EXTENSION IF NOT EXISTS pg_trgm;");
+    
     // Create table with all fields
     std::ostringstream createTable;
     createTable << "CREATE TABLE IF NOT EXISTS " << tableName << " ("
@@ -347,7 +350,12 @@ bool PostgreSQLClient::initializeCollection(const std::string& tableName) {
         "CREATE INDEX IF NOT EXISTS idx_" + tableName + "_compressed ON " + tableName + "(compressed);",
         "CREATE INDEX IF NOT EXISTS idx_" + tableName + "_summarized ON " + tableName + "(summarized);",
         "CREATE INDEX IF NOT EXISTS idx_" + tableName + "_session_id ON " + tableName + "(session_id);",
-        "CREATE INDEX IF NOT EXISTS idx_" + tableName + "_screen_content ON " + tableName + " USING gin(to_tsvector('english', screen_content));"
+        // Full-text search index
+        "CREATE INDEX IF NOT EXISTS idx_" + tableName + "_screen_content ON " + tableName + " USING gin(to_tsvector('english', screen_content));",
+        // Trigram indexes for fuzzy search
+        "CREATE INDEX IF NOT EXISTS idx_" + tableName + "_screen_content_trgm ON " + tableName + " USING gin(screen_content gin_trgm_ops);",
+        "CREATE INDEX IF NOT EXISTS idx_" + tableName + "_window_title_trgm ON " + tableName + " USING gin(window_title gin_trgm_ops);",
+        "CREATE INDEX IF NOT EXISTS idx_" + tableName + "_app_name_trgm ON " + tableName + " USING gin(app_name gin_trgm_ops);"
     };
     
     for (const auto& indexQuery : indexes) {
@@ -497,6 +505,39 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
                 }
             }
             
+            // Handle fuzzy query (NEW)
+            if (q.contains("fuzzy")) {
+                for (auto it = q["fuzzy"].begin(); it != q["fuzzy"].end(); ++it) {
+                    std::string field = it.key();
+                    auto fuzzyConfig = it.value();
+                    
+                    std::string value;
+                    double threshold = 0.3; // Default similar to Elasticsearch "AUTO"
+                    
+                    if (fuzzyConfig.is_string()) {
+                        value = fuzzyConfig.get<std::string>();
+                    } else if (fuzzyConfig.is_object()) {
+                        if (fuzzyConfig.contains("value")) {
+                            value = fuzzyConfig["value"].get<std::string>();
+                        }
+                        if (fuzzyConfig.contains("fuzziness")) {
+                            auto fuzziness = fuzzyConfig["fuzziness"];
+                            if (fuzziness.is_number()) {
+                                threshold = fuzziness.get<double>();
+                            } else if (fuzziness.is_string() && fuzziness.get<std::string>() == "AUTO") {
+                                threshold = 0.3;
+                            }
+                        }
+                    }
+                    
+                    if (!value.empty()) {
+                        // Use similarity function with threshold
+                        std::string escapedValue = escapeString(pImpl_->conn_, value);
+                        conditions.push_back("similarity(" + field + ", " + escapedValue + ") > " + std::to_string(threshold));
+                    }
+                }
+            }
+            
             // Handle term query
             if (q.contains("term")) {
                 for (auto it = q["term"].begin(); it != q["term"].end(); ++it) {
@@ -516,11 +557,120 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
                 
                 if (boolQuery.contains("must")) {
                     for (const auto& mustClause : boolQuery["must"]) {
+                        // Handle match
                         if (mustClause.contains("match")) {
                             for (auto it = mustClause["match"].begin(); it != mustClause["match"].end(); ++it) {
                                 std::string field = it.key();
                                 std::string value = it.value().get<std::string>();
                                 conditions.push_back(field + " ILIKE '%" + value + "%'");
+                            }
+                        }
+                        
+                        // Handle multi_match (NEW!)
+                        if (mustClause.contains("multi_match")) {
+                            auto multiMatch = mustClause["multi_match"];
+                            std::string queryText = multiMatch["query"].get<std::string>();
+                            
+                            if (multiMatch.contains("fields")) {
+                                std::vector<std::string> fieldConditions;
+                                
+                                // Check if fuzzy matching is enabled
+                                bool useFuzzy = false;
+                                if (multiMatch.contains("fuzziness")) {
+                                    auto fuzziness = multiMatch["fuzziness"];
+                                    if (fuzziness.is_string() && fuzziness.get<std::string>() == "AUTO") {
+                                        useFuzzy = true;
+                                    } else if (fuzziness.is_number() && fuzziness.get<double>() > 0) {
+                                        useFuzzy = true;
+                                    }
+                                }
+                                
+                                for (const auto& field : multiMatch["fields"]) {
+                                    std::string fieldName = field.get<std::string>();
+                                    
+                                    if (useFuzzy) {
+                                        // Use pg_trgm fuzzy matching with proper NULL handling
+                                        std::string escapedQuery = escapeString(pImpl_->conn_, queryText);
+                                        
+                                        // Build fuzzy condition with multiple strategies:
+                                        // 1. % operator (trigram similarity - best for short text)
+                                        // 2. word_similarity() for finding similar words in longer text
+                                        std::string fuzzyCondition = "(" + fieldName + " IS NOT NULL AND (";
+                                        
+                                        // Strategy 1: % operator (trigram matching)
+                                        // This works well for short strings and typos
+                                        fuzzyCondition += fieldName + " % " + escapedQuery;
+                                        
+                                        // Strategy 2: word_similarity for longer text
+                                        // This finds similar words within the text
+                                        fuzzyCondition += " OR word_similarity(" + escapedQuery + ", " + fieldName + ") > 0.3";
+                                        
+                                        fuzzyCondition += "))";
+                                        fieldConditions.push_back(fuzzyCondition);
+                                    } else {
+                                        // Regular ILIKE search (also add NULL check)
+                                        fieldConditions.push_back(
+                                            "(" + fieldName + " IS NOT NULL AND " + fieldName + " ILIKE '%" + queryText + "%')"
+                                        );
+                                    }
+                                }
+                                
+                                if (!fieldConditions.empty()) {
+                                    // Combine field conditions with OR
+                                    std::string combined = "(";
+                                    for (size_t i = 0; i < fieldConditions.size(); ++i) {
+                                        if (i > 0) combined += " OR ";
+                                        combined += fieldConditions[i];
+                                    }
+                                    combined += ")";
+                                    conditions.push_back(combined);
+                                }
+                            }
+                        }
+                        
+                        // Handle range
+                        if (mustClause.contains("range")) {
+                            for (auto it = mustClause["range"].begin(); it != mustClause["range"].end(); ++it) {
+                                std::string field = it.key();
+                                auto rangeObj = it.value();
+                                
+                                // Special handling for timestamp field (TIMESTAMP type in PostgreSQL)
+                                bool isTimestampField = (field == "timestamp" || field == "created_at");
+                                
+                                if (rangeObj.contains("gte")) {
+                                    long long value = rangeObj["gte"].get<long long>();
+                                    if (isTimestampField) {
+                                        // Convert Unix timestamp to PostgreSQL TIMESTAMP
+                                        conditions.push_back(field + " >= to_timestamp(" + std::to_string(value) + ")");
+                                    } else {
+                                        conditions.push_back(field + " >= " + std::to_string(value));
+                                    }
+                                }
+                                if (rangeObj.contains("lte")) {
+                                    long long value = rangeObj["lte"].get<long long>();
+                                    if (isTimestampField) {
+                                        // Convert Unix timestamp to PostgreSQL TIMESTAMP
+                                        conditions.push_back(field + " <= to_timestamp(" + std::to_string(value) + ")");
+                                    } else {
+                                        conditions.push_back(field + " <= " + std::to_string(value));
+                                    }
+                                }
+                                if (rangeObj.contains("gt")) {
+                                    long long value = rangeObj["gt"].get<long long>();
+                                    if (isTimestampField) {
+                                        conditions.push_back(field + " > to_timestamp(" + std::to_string(value) + ")");
+                                    } else {
+                                        conditions.push_back(field + " > " + std::to_string(value));
+                                    }
+                                }
+                                if (rangeObj.contains("lt")) {
+                                    long long value = rangeObj["lt"].get<long long>();
+                                    if (isTimestampField) {
+                                        conditions.push_back(field + " < to_timestamp(" + std::to_string(value) + ")");
+                                    } else {
+                                        conditions.push_back(field + " < " + std::to_string(value));
+                                    }
+                                }
                             }
                         }
                     }
@@ -557,6 +707,9 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
     }
     
     sqlQuery << " ORDER BY timestamp DESC LIMIT " << size << " OFFSET " << from << ";";
+    
+    // DEBUG: Print generated SQL
+    std::cout << "[DEBUG] Generated SQL: " << sqlQuery.str() << std::endl;
     
     PGresult* res = nullptr;
     if (!pImpl_->executeQuery(sqlQuery.str(), &res)) {
@@ -841,6 +994,42 @@ bool PostgreSQLClient::deleteDocumentByAppName(const std::string& tableName,
                        " WHERE app_name = " + escapeString(pImpl_->conn_, appName) + ";";
     
     return pImpl_->executeQuery(query);
+}
+
+SearchResult PostgreSQLClient::fuzzySearch(
+    const std::string& tableName,
+    const std::string& field,
+    const std::string& searchValue,
+    double similarityThreshold,
+    int from,
+    int size) {
+    
+    SearchResult result;
+    
+    // Build fuzzy search query using pg_trgm similarity
+    std::ostringstream query;
+    query << "SELECT *, similarity(" << field << ", " 
+          << escapeString(pImpl_->conn_, searchValue) << ") AS sim_score "
+          << "FROM " << tableName 
+          << " WHERE " << field << " % " << escapeString(pImpl_->conn_, searchValue)
+          << " AND similarity(" << field << ", " << escapeString(pImpl_->conn_, searchValue) 
+          << ") > " << similarityThreshold
+          << " ORDER BY sim_score DESC"
+          << " LIMIT " << size << " OFFSET " << from << ";";
+    
+    PGresult* res = nullptr;
+    if (!pImpl_->executeQuery(query.str(), &res)) {
+        return result;
+    }
+    
+    int rows = PQntuples(res);
+    for (int i = 0; i < rows; ++i) {
+        result.events.push_back(pImpl_->resultToEvent(res, i));
+    }
+    result.totalHits = rows;
+    
+    PQclear(res);
+    return result;
 }
 
 } // namespace database

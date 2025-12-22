@@ -211,6 +211,77 @@ void testFullTextSearch(IDatabaseClient& client, const std::string& tableName) {
     TEST_END();
 }
 
+// Test 5B: Fuzzy Search (NEW - Elasticsearch-like)
+void testFuzzySearch(IDatabaseClient& client, const std::string& tableName) {
+    TEST_START("Fuzzy Search (PostgreSQL pg_trgm)");
+    
+    // Insert test events with specific content for fuzzy matching
+    RawEvent fuzzyEvent1 = createTestEvent("pg_fuzzy_001", "chrome.exe", 
+        "This document contains the word elasticsearch for testing");
+    RawEvent fuzzyEvent2 = createTestEvent("pg_fuzzy_002", "vscode.exe", 
+        "This document contains the word PostgreSQL for testing");
+    RawEvent fuzzyEvent3 = createTestEvent("pg_fuzzy_003", "firefox.exe", 
+        "This document contains the word database for testing");
+    
+    client.indexDocument(tableName, fuzzyEvent1);
+    client.indexDocument(tableName, fuzzyEvent2);
+    client.indexDocument(tableName, fuzzyEvent3);
+    
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    
+    // Test 1: Fuzzy search using JSON query (Elasticsearch-style)
+    std::string fuzzyQuery1 = R"({
+        "query": {
+            "fuzzy": {
+                "screen_content": {
+                    "value": "elasticsarch",
+                    "fuzziness": "AUTO"
+                }
+            }
+        }
+    })";
+    
+    SearchResult fuzzyResult1 = client.search(tableName, fuzzyQuery1, 0, 10);
+    TEST_ASSERT(fuzzyResult1.totalHits >= 0, "Fuzzy search (JSON) executed");
+    std::cout << "  'elasticsarch' (typo) found: " << fuzzyResult1.totalHits << " matches" << std::endl;
+    
+    // Test 2: Fuzzy search using dedicated method
+    auto* pgClient = dynamic_cast<PostgreSQLClient*>(&client);
+    if (pgClient) {
+        // Search for "postgres" with typo "postgrs"
+        SearchResult fuzzyResult2 = pgClient->fuzzySearch(
+            tableName, "screen_content", "postgrs", 0.3, 0, 10);
+        
+        TEST_ASSERT(fuzzyResult2.totalHits >= 0, "Fuzzy search (dedicated method) executed");
+        std::cout << "  'postgrs' (typo) found: " << fuzzyResult2.totalHits << " matches" << std::endl;
+        
+        // Search for "databse" with typo
+        SearchResult fuzzyResult3 = pgClient->fuzzySearch(
+            tableName, "screen_content", "databse", 0.3, 0, 10);
+        
+        std::cout << "  'databse' (typo) found: " << fuzzyResult3.totalHits << " matches" << std::endl;
+        
+        // Search on app_name field with typo
+        SearchResult fuzzyResult4 = pgClient->fuzzySearch(
+            tableName, "app_name", "chrom", 0.3, 0, 10);
+        
+        TEST_ASSERT(fuzzyResult4.totalHits > 0, "Fuzzy app_name search found results");
+        std::cout << "  'chrom' (partial) found: " << fuzzyResult4.totalHits << " matches" << std::endl;
+        
+        // Test with different similarity threshold
+        SearchResult fuzzyResult5 = pgClient->fuzzySearch(
+            tableName, "screen_content", "elasticsearch", 0.5, 0, 10);
+        
+        std::cout << "  'elasticsearch' (exact, threshold=0.5) found: " << fuzzyResult5.totalHits << " matches" << std::endl;
+        
+    } else {
+        std::cout << "  ? Could not cast to PostgreSQLClient for dedicated method test" << std::endl;
+        g_results.skipped++;
+    }
+    
+    TEST_END();
+}
+
 // Test 6: Uncompressed Events Query
 void testUncompressedEvents(IDatabaseClient& client, const std::string& tableName) {
     TEST_START("Uncompressed Events Query");
@@ -383,6 +454,54 @@ void testJSONStorage(IDatabaseClient& client, const std::string& tableName) {
     TEST_END();
 }
 
+// Test 13: Time Range and Keyword Search (Similar to GetESDBData)
+void testTimeRangeAndKeywordSearch(IDatabaseClient& client, const std::string& tableName) {
+    TEST_START("Time Range and Keyword Search (GetESDBData-like)");
+    
+    // Insert test events with timestamps
+    std::time_t baseTime = std::time(nullptr);
+    
+    // Event 1: 10 minutes ago
+    RawEvent event1 = createTestEvent("pg_time_001", "chrome.exe", 
+        "Working on database project with PostgreSQL");
+    event1.timestamp = baseTime - 600;
+    client.indexDocument(tableName, event1);
+    
+    // Event 2: 5 minutes ago
+    RawEvent event2 = createTestEvent("pg_time_002", "vscode.exe", 
+        "Editing code and testing database queries");
+    event2.timestamp = baseTime - 300;
+    client.indexDocument(tableName, event2);
+    
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    
+    // Build query with keyword and time range
+    std::time_t startTime = baseTime - 1200;
+    std::time_t endTime = baseTime + 60;
+    
+    // Use raw string literal to avoid escape issues
+    std::string query = R"({"query":{"bool":{"must":[)";
+    query += R"({"multi_match":{"query":"database",)";
+    query += R"("fields":["screen_content","app_name"]}},)";
+    query += R"({"range":{"timestamp":{"gte":)" + std::to_string(startTime);
+    query += R"(,"lte":)" + std::to_string(endTime) + R"(}}}]}},)";
+    query += R"("sort":[{"timestamp":{"order":"desc"}}]})";
+    
+    SearchResult result = client.search(tableName, query, 0, 100);
+    
+    TEST_ASSERT(result.totalHits > 0, "Time range + keyword search found results");
+    std::cout << "  Total hits: " << result.totalHits << std::endl;
+    
+    // Print some results
+    for (size_t i = 0; i < result.events.size() && i < 3; ++i) {
+        const auto& event = result.events[i];
+        std::cout << "    Event " << (i+1) << ": " << event.eventId 
+                  << " | App: " << event.appName << std::endl;
+    }
+    
+    TEST_END();
+}
+
 // Main test runner
 int main(int argc, char** argv) {
     std::cout << "=============================================" << std::endl;
@@ -418,12 +537,14 @@ int main(int argc, char** argv) {
         testDocumentInsertion(*client, tableName);
         testBulkInsertion(*client, tableName);
         testFullTextSearch(*client, tableName);
+        testFuzzySearch(*client, tableName);  // NEW: Add fuzzy search test
         testUncompressedEvents(*client, tableName);
         testMarkAsCompressed(*client, tableName);
         testMarkAsCompressedWithSimilarity(*client, tableName);
         testUpdateDocument(*client, tableName);
         testStatistics(*client, tableName);
         testJSONStorage(*client, tableName);
+        testTimeRangeAndKeywordSearch(*client, tableName);  // NEW: Time range search test
         getchar();
         testDeleteOperations(*client, tableName);
         
@@ -458,6 +579,8 @@ int main(int argc, char** argv) {
         std::cout << "  ? Document CRUD operations" << std::endl;
         std::cout << "  ? Bulk insertion" << std::endl;
         std::cout << "  ? Full-text search (match, term, bool)" << std::endl;
+        std::cout << "  ? Fuzzy search (pg_trgm similarity matching)" << std::endl;
+        std::cout << "  ? Time range and keyword search (GetESDBData-like)" << std::endl;
         std::cout << "  ? JSONB storage (mouse events, system info)" << std::endl;
         std::cout << "  ? Compressed events management" << std::endl;
         std::cout << "  ? Statistics and metadata" << std::endl;

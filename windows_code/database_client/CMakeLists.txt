@@ -214,6 +214,25 @@ if(BUILD_TESTS)
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     )
     
+    # GetESDBData fuzzy matching test (NEW!)
+    add_executable(test_getesdbdata_fuzzy
+        tests/test_getesdbdata_fuzzy.cpp
+    )
+    
+    target_link_libraries(test_getesdbdata_fuzzy
+        PRIVATE
+            database_client
+    )
+    
+    target_include_directories(test_getesdbdata_fuzzy
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    
+    set_target_properties(test_getesdbdata_fuzzy PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    )
+    
     # MeiliSearch client test
     add_executable(meilisearch_client_test
         tests/meilisearch_client_test.cpp
@@ -236,6 +255,7 @@ if(BUILD_TESTS)
     message(STATUS "Building database client tests:")
     message(STATUS "  - Elasticsearch client test")
     message(STATUS "  - PostgreSQL client test")
+    message(STATUS "  - GetESDBData fuzzy matching test (NEW!)")
     message(STATUS "  - MeiliSearch client test")
 endif()
 

@@ -44,14 +44,14 @@ public:
             contextCollector = std::make_unique<ContextCollector>();  // UPDATED
             PE_INFO("Context collector started");
 
-            // NEW: Initialize Elasticsearch (optional feature)
-            // If ES is not available, system continues without it
-            if (contextCollector->InitializeDatabase("http://localhost:9200", "perception_context")) {  // UPDATED: renamed method
-                PE_INFO("? Elasticsearch initialized - auto storage every 5 seconds");
+            // NEW: Initialize PostgreSQL (optional feature)
+            // If PostgreSQL is not available, system continues without it
+            if (contextCollector->InitializeDatabase("host=127.0.0.1 port=5432 dbname=perception_engine user=postgres", "perception_context")) {  // UPDATED: Use PostgreSQL connection string
+                PE_INFO("? PostgreSQL initialized - auto storage every 5 seconds");
             }
             else {
-                PE_WARN("??  Elasticsearch not available - running without ES storage");
-                PE_INFO("   To enable ES: Install and start Elasticsearch on http://localhost:9200");
+                PE_WARN("??  PostgreSQL not available - running without database storage");
+                PE_INFO("   To enable PostgreSQL: Install and start PostgreSQL on 127.0.0.1:5432");
             }
 
             // Initialize HTTP server
@@ -188,7 +188,7 @@ private:
                 }
 
                 if (!contextCollector->IsElasticsearchAvailable()) {
-                    response.SetBody("{\"error\":\"Elasticsearch not available\"}");
+                    response.SetBody("{\"error\":\"Database not available\"}");
                     response.status = 503;
                     return;
                 }
@@ -253,13 +253,13 @@ private:
                     response.SetBody(results.toString());
                     response.status = 200;
 
-                    PE_INFO("ES Query: keyword='" + keyword + "' hours=" + std::to_string(hours));
+                    PE_INFO("Database Query: keyword='" + keyword + "' hours=" + std::to_string(hours));
 
                 }
                 catch (const std::exception& e) {
                     response.SetBody("{\"error\":\"Query failed: " + std::string(e.what()) + "\"}");
                     response.status = 500;
-                    PE_ERROR("ES query failed: " + std::string(e.what()));
+                    PE_ERROR("Database query failed: " + std::string(e.what()));
                 }
             }
             else if (request.path == "/dashboard" && request.method == "GET") {
@@ -414,12 +414,12 @@ int main(int argc, char* argv[]) {
                 // UPDATED: Use ContextCollector directly
                 ContextCollector collector;
 
-                // NEW: Initialize Elasticsearch (optional feature)
-                if (collector.InitializeDatabase("http://localhost:9200", "perception_context")) {  // UPDATED: renamed method
-                    PE_INFO("? Elasticsearch initialized - auto storage every 5 seconds");
+                // NEW: Initialize PostgreSQL (optional feature)
+                if (collector.InitializeDatabase("host=127.0.0.1 port=5432 dbname=perception_engine user=postgres", "perception_context")) {  // UPDATED: Use PostgreSQL connection string
+                    PE_INFO("? PostgreSQL initialized - auto storage every 5 seconds");
                 }
                 else {
-                    PE_WARN("??  Elasticsearch not available - running without ES storage");
+                    PE_WARN("??  PostgreSQL not available - running without database storage");
                 }
 
                 PE_INFO("Setting up request handler...");
@@ -436,7 +436,7 @@ int main(int argc, char* argv[]) {
                     // ? NEW: Elasticsearch query endpoint
                     else if (request.path.find("/query") == 0 && request.method == "GET") {
                         if (!collector.IsElasticsearchAvailable()) {
-                            response.SetBody("{\"error\":\"Elasticsearch not available\"}");
+                            response.SetBody("{\"error\":\"Database not available\"}");
                             response.status = 503;
                             return;
                         }
@@ -500,13 +500,13 @@ int main(int argc, char* argv[]) {
                             response.SetBody(results.toString());
                             response.status = 200;
 
-                            PE_INFO("ES Query: keyword='" + keyword + "' hours=" + std::to_string(hours));
+                            PE_INFO("Database Query: keyword='" + keyword + "' hours=" + std::to_string(hours));
 
                         }
                         catch (const std::exception& e) {
                             response.SetBody("{\"error\":\"Query failed: " + std::string(e.what()) + "\"}");
                             response.status = 500;
-                            PE_ERROR("ES query failed: " + std::string(e.what()));
+                            PE_ERROR("Database query failed: " + std::string(e.what()));
                         }
                     }
                     else if (request.path == "/dashboard" || request.path == "/" && request.method == "GET") {

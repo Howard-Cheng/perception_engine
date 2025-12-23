@@ -124,48 +124,48 @@ std::string ContextCollector::GenerateFusedContext() const {
 }
 
 // ========================================
-// Elasticsearch Integration
+// PostgreSQL Integration
 // ========================================
 
-bool ContextCollector::InitializeDatabase(const std::string& esHost,
-                                          const std::string& indexName) {
+bool ContextCollector::InitializeDatabase(const std::string& connectionString,
+                                          const std::string& tableName) {
     try {
-        std::lock_guard<std::mutex> lock(esClientMutex_);
+        std::lock_guard<std::mutex> lock(dbClientMutex_);
         
-        std::cout << "[InitializeDatabase] Creating ES client for: " << esHost << std::endl;
-        esClient_ = database::DatabaseClientFactory::createElasticsearch(esHost);
-        esIndexName_ = indexName;
+        std::cout << "[InitializeDatabase] Creating PostgreSQL client for: " << connectionString << std::endl;
+        dbClient_ = database::DatabaseClientFactory::createPostgreSQL(connectionString);
+        dbCollectionName_ = tableName;
         
-        if (!esClient_) {
+        if (!dbClient_) {
             std::cerr << "[InitializeDatabase] CRITICAL: Factory returned nullptr!" << std::endl;
             return false;
         }
         
         std::cout << "[InitializeDatabase] Testing connection..." << std::endl;
-        if (!esClient_->testConnection()) {
-            std::cerr << "[ContextCollector] Failed to connect to Elasticsearch at " << esHost << std::endl;
-            esClient_.reset();
-            std::cerr << "[InitializeDatabase] esClient_ reset to nullptr due to connection failure" << std::endl;
+        if (!dbClient_->testConnection()) {
+            std::cerr << "[ContextCollector] Failed to connect to PostgreSQL at " << connectionString << std::endl;
+            dbClient_.reset();
+            std::cerr << "[InitializeDatabase] dbClient_ reset to nullptr due to connection failure" << std::endl;
             return false;
         }
         
-        std::cout << "[ContextCollector] Connected to Elasticsearch at " << esHost << std::endl;
+        std::cout << "[ContextCollector] Connected to PostgreSQL at " << connectionString << std::endl;
         
-        std::cout << "[InitializeDatabase] Initializing index: " << indexName << std::endl;
-        if (!esClient_->initializeCollection(indexName)) {
-            std::cerr << "[ContextCollector] Failed to initialize index: " << indexName << std::endl;
-            esClient_.reset();
-            std::cerr << "[InitializeDatabase] esClient_ reset to nullptr due to index init failure" << std::endl;
+        std::cout << "[InitializeDatabase] Initializing table: " << tableName << std::endl;
+        if (!dbClient_->initializeCollection(tableName)) {
+            std::cerr << "[ContextCollector] Failed to initialize table: " << tableName << std::endl;
+            dbClient_.reset();
+            std::cerr << "[InitializeDatabase] dbClient_ reset to nullptr due to table init failure" << std::endl;
             return false;
         }
         
-        std::cout << "[ContextCollector] Elasticsearch index initialized: " << indexName << std::endl;
-        esStorageRunning_.store(true);
-        std::cout << "[InitializeDatabase] ES storage flag set to true" << std::endl;
+        std::cout << "[ContextCollector] PostgreSQL table initialized: " << tableName << std::endl;
+        dbStorageRunning_.store(true);
+        std::cout << "[InitializeDatabase] Database storage flag set to true" << std::endl;
         
         sessionManager_ = std::make_unique<sessionmanager::SessionManager>(
-            esClient_,
-            indexName
+            dbClient_,
+            tableName
         );
         sessionManager_->Start();
         std::cout << "[ContextCollector] Session manager initialized and started" << std::endl;
@@ -176,47 +176,47 @@ bool ContextCollector::InitializeDatabase(const std::string& esHost,
         return true;
         
     } catch (const std::exception& e) {
-        std::cerr << "[ContextCollector] Exception initializing Elasticsearch: " << e.what() << std::endl;
+        std::cerr << "[ContextCollector] Exception initializing PostgreSQL: " << e.what() << std::endl;
         {
-            std::lock_guard<std::mutex> lock(esClientMutex_);
-            esClient_.reset();
-            std::cerr << "[InitializeDatabase] esClient_ reset to nullptr due to exception" << std::endl;
+            std::lock_guard<std::mutex> lock(dbClientMutex_);
+            dbClient_.reset();
+            std::cerr << "[InitializeDatabase] dbClient_ reset to nullptr due to exception" << std::endl;
         }
         return false;
     }
 }
 
 void ContextCollector::ShutdownDatabase() {
-    esStorageRunning_.store(false);
+    dbStorageRunning_.store(false);
     
-    std::lock_guard<std::mutex> lock(esClientMutex_);
-    esClient_.reset();
+    std::lock_guard<std::mutex> lock(dbClientMutex_);
+    dbClient_.reset();
 }
 
 void ContextCollector::StoreContextToES(const pe_base::Json& context) {
-    std::lock_guard<std::mutex> lock(esClientMutex_);
+    std::lock_guard<std::mutex> lock(dbClientMutex_);
     
-    if (!esClient_) {
+    if (!dbClient_) {
         // Add detailed logging for debugging
-        std::cerr << "[StoreContextToES] Warning: esClient_ is nullptr, cannot store to ES" << std::endl;
-        std::cerr << "[StoreContextToES] ES storage running flag: " << esStorageRunning_.load() << std::endl;
+        std::cerr << "[StoreContextToES] Warning: dbClient_ is nullptr, cannot store to database" << std::endl;
+        std::cerr << "[StoreContextToES] Database storage running flag: " << dbStorageRunning_.load() << std::endl;
         return;
     }
     
     try {
         database::RawEvent event = jsonContextToRawEvent(context);
         
-        std::string eventId = esClient_->indexDocument(esIndexName_, event);
+        std::string eventId = dbClient_->indexDocument(dbCollectionName_, event);
         
         if (!eventId.empty()) {
-            std::cout << "[ESStorage] Stored event: " << event.eventId
+            std::cout << "[DBStorage] Stored event: " << event.eventId
                       << " | App: " << event.appName << std::endl;
         } else {
-            std::cerr << "[ESStorage] Failed to store event" << std::endl;
+            std::cerr << "[DBStorage] Failed to store event" << std::endl;
         }
         
     } catch (const std::exception& e) {
-        std::cerr << "[ESStorage] Exception: " << e.what() << std::endl;
+        std::cerr << "[DBStorage] Exception: " << e.what() << std::endl;
     }
 }
 
@@ -306,11 +306,11 @@ pe_base::Json ContextCollector::GetESDBData(const std::string& keyword,
                                     int maxResults) {
     pe_base::Json result;
     
-    std::lock_guard<std::mutex> lock(esClientMutex_);
+    std::lock_guard<std::mutex> lock(dbClientMutex_);
     
-    if (!esClient_) {
-        std::cerr << "[GetESDBData] Elasticsearch client not initialized" << std::endl;
-        result.setRaw("error", "\"Elasticsearch not initialized\"");
+    if (!dbClient_) {
+        std::cerr << "[GetESDBData] Database client not initialized" << std::endl;
+        result.setRaw("error", "\"Database not initialized\"");
         result.setRaw("results", "[]");
         return result;
     }
@@ -319,44 +319,17 @@ pe_base::Json ContextCollector::GetESDBData(const std::string& keyword,
         long long startTimeMs = static_cast<long long>(startTime) * 1000;
         long long endTimeMs = static_cast<long long>(endTime) * 1000;
         
-        // Build query
+        // Build PostgreSQL query (simple JSON format)
         std::ostringstream queryBuilder;
         queryBuilder << "{"
-                     << "\"query\":{"
-                     << "  \"bool\":{"
-                     << "    \"must\":[";
-        
-        if (!keyword.empty()) {
-            queryBuilder << "      {"
-                         << "        \"multi_match\":{"
-                         << "          \"query\":\"" << pe_base::Json::escapeJsonString(keyword) << "\","
-                         << "          \"fields\":[\"screen_content\",\"voice_transcription\","
-                         << "                     \"camera_description\",\"app_name\","
-                         << "                     \"window_title\"],"
-                         << "          \"type\":\"best_fields\","
-                         << "          \"fuzziness\":\"AUTO\""
-                         << "        }"
-                         << "      },";
-        }
-        
-        queryBuilder << "      {"
-                     << "        \"range\":{"
-                     << "          \"timestamp\":{"
-                     << "            \"gte\":" << startTimeMs << ","
-                     << "            \"lte\":" << endTimeMs
-                     << "          }"
-                     << "        }"
-                     << "      }";
-        
-        queryBuilder << "    ]"
-                     << "  }"
-                     << "},"
-                     << "\"sort\":[{\"timestamp\":{\"order\":\"desc\"}}],"
+                     << "\"keyword\":\"" << pe_base::Json::escapeJsonString(keyword) << "\","
+                     << "\"startTime\":" << startTimeMs << ","
+                     << "\"endTime\":" << endTimeMs << ","
                      << "\"size\":" << maxResults
                      << "}";
         
         std::string query = queryBuilder.str();
-        database::SearchResult searchResult = esClient_->search(esIndexName_, query, 0, maxResults);
+        database::SearchResult searchResult = dbClient_->search(dbCollectionName_, query, 0, maxResults);
         
         // Convert to pe_base::Json
         std::ostringstream resultsArray;
@@ -444,20 +417,20 @@ pe_base::Json ContextCollector::GetESDBData(const std::string& keyword,
 }
 
 bool ContextCollector::IsElasticsearchAvailable() const {
-    std::lock_guard<std::mutex> lock(esClientMutex_);
-    return esClient_ != nullptr && esClient_->testConnection();
+    std::lock_guard<std::mutex> lock(dbClientMutex_);
+    return dbClient_ != nullptr && dbClient_->testConnection();
 }
 
 void ContextCollector::OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& record) {
     std::cout << "[ContextCollector] User switched window: " << record.appName << std::endl;
-    std::cout << "[OnUserSwitchWindow] ES storage running: " << esStorageRunning_.load() << std::endl;
-    std::cout << "[OnUserSwitchWindow] ES client valid: " << (esClient_ ? "YES" : "NO") << std::endl;
+    std::cout << "[OnUserSwitchWindow] Database storage running: " << dbStorageRunning_.load() << std::endl;
+    std::cout << "[OnUserSwitchWindow] Database client valid: " << (dbClient_ ? "YES" : "NO") << std::endl;
     
     try {
         // Collect current context
         pe_base::Json context = CollectCurrentContext();
         
-        // Store to Elasticsearch
+        // Store to PostgreSQL
         StoreContextToES(context);
         
         // NOTE: Compression is now handled by timer (CompressionTimerCallback)

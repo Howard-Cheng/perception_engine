@@ -76,21 +76,21 @@ public:
     std::string GenerateFusedContext() const;
     
     // ========================================
-    // Elasticsearch Integration
+    // Database Integration (PostgreSQL)
     // ========================================
     
     /**
-     * @brief Initialize Database client
+     * @brief Initialize Database client (PostgreSQL)
      */
-    bool InitializeDatabase(const std::string& esHost = "http://localhost:9200",
-                                 const std::string& indexName = "perception_context");
+    bool InitializeDatabase(const std::string& connectionString = "host=127.0.0.1 port=5432 dbname=perception_engine user=postgres",
+                                 const std::string& tableName = "perception_context");
     
     /**
-     * @brief Shutdown Elasticsearch client
+     * @brief Shutdown Database client
      */
     void ShutdownDatabase();
     /**
-     * @brief Query Elasticsearch data
+     * @brief Query Database data
      */
     pe_base::Json GetESDBData(const std::string& keyword,
                     std::time_t startTime,
@@ -98,12 +98,12 @@ public:
                     int maxResults = 100);
     
     /**
-     * @brief Check if Elasticsearch is available
+     * @brief Check if Database is available
      */
     bool IsElasticsearchAvailable() const;
     
     /**
-     * @brief Store context to Elasticsearch
+     * @brief Store context to Database
      */
     void StoreContextToES(const pe_base::Json& context);
     
@@ -161,13 +161,13 @@ private:
     std::thread updateThread_;
     
     // ========================================
-    // Elasticsearch Storage
+    // Database Storage (Generic - PostgreSQL/Elasticsearch compatible)
     // ========================================
     
-    std::shared_ptr<database::IDatabaseClient> esClient_;
-    std::string esIndexName_;
-    std::atomic<bool> esStorageRunning_{false};
-    mutable std::mutex esClientMutex_;
+    std::shared_ptr<database::IDatabaseClient> dbClient_;
+    std::string dbCollectionName_;
+    std::atomic<bool> dbStorageRunning_{false};
+    mutable std::mutex dbClientMutex_;
     
     // ========================================
     // Session Management (Replaces old compression code)

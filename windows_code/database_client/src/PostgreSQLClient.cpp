@@ -35,7 +35,22 @@ static std::time_t postgresqlToTimestamp(const std::string& pgTimestamp) {
     return std::mktime(&tm_val);
 }
 
-// Helper: Escape string for PostgreSQL
+// Helper: Escape string for SQL (without adding quotes)
+static std::string escapeStringForSQL(PGconn* conn, const std::string& input) {
+    if (!conn || input.empty()) return input;
+    
+    // PQescapeStringConn doesn't add quotes, just escapes special characters
+    size_t length = input.length();
+    char* escaped = new char[length * 2 + 1];  // Max possible size
+    
+    size_t escapedLength = PQescapeStringConn(conn, escaped, input.c_str(), length, nullptr);
+    std::string result(escaped, escapedLength);
+    
+    delete[] escaped;
+    return result;
+}
+
+// Helper: Escape string for PostgreSQL (with quotes for SQL literals)
 static std::string escapeString(PGconn* conn, const std::string& input) {
     if (!conn) return input;
     
@@ -483,7 +498,6 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
     SearchResult result;
     
     // Build SQL query from JSON query
-    // For simplicity, we'll support basic queries
     std::ostringstream sqlQuery;
     sqlQuery << "SELECT * FROM " << tableName;
     
@@ -493,7 +507,72 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
         // Build WHERE clause
         std::vector<std::string> conditions;
         
-        if (queryJson.contains("query")) {
+        // ========================================
+        // NEW: Handle simplified format
+        // {"keyword": "...", "startTime": ..., "endTime": ..., "size": ...}
+        // ========================================
+        if (queryJson.contains("keyword") && !queryJson.contains("query")) {
+            std::string keyword = queryJson["keyword"].get<std::string>();
+            
+            // Apply multi-field fuzzy search (equivalent to multi_match + fuzziness: AUTO)
+            if (!keyword.empty()) {
+                std::vector<std::string> searchFields = {
+                    "screen_content",
+                    "voice_transcription",
+                    "camera_description",
+                    "app_name",
+                    "window_title"
+                };
+                
+                std::vector<std::string> fieldConditions;
+                std::string escapedKeyword = escapeString(pImpl_->conn_, keyword);
+                
+                for (const auto& field : searchFields) {
+                    // Use fuzzy matching with pg_trgm (similar to Elasticsearch fuzziness: AUTO)
+                    // Strategy: % operator + word_similarity
+                    std::string fuzzyCondition = "(" + field + " IS NOT NULL AND (";
+                    fuzzyCondition += field + " % " + escapedKeyword;
+                    fuzzyCondition += " OR word_similarity(" + escapedKeyword + ", " + field + ") > 0.3";
+                    fuzzyCondition += "))";
+                    fieldConditions.push_back(fuzzyCondition);
+                }
+                
+                if (!fieldConditions.empty()) {
+                    // Combine with OR (at least one field matches)
+                    std::string combined = "(";
+                    for (size_t i = 0; i < fieldConditions.size(); ++i) {
+                        if (i > 0) combined += " OR ";
+                        combined += fieldConditions[i];
+                    }
+                    combined += ")";
+                    conditions.push_back(combined);
+                }
+            }
+            
+            // Handle time range
+            if (queryJson.contains("startTime") && queryJson.contains("endTime")) {
+                long long startTime = queryJson["startTime"].get<long long>();
+                long long endTime = queryJson["endTime"].get<long long>();
+                
+                // Convert milliseconds to seconds for to_timestamp()
+                conditions.push_back("timestamp >= to_timestamp(" + std::to_string(startTime / 1000) + ")");
+                conditions.push_back("timestamp <= to_timestamp(" + std::to_string(endTime / 1000) + ")");
+            }
+            
+            // Handle compressed filter (default: only uncompressed)
+            if (!queryJson.contains("includeCompressed") || !queryJson["includeCompressed"].get<bool>()) {
+                conditions.push_back("compressed = FALSE");
+            }
+            
+            // Override size if specified in JSON
+            if (queryJson.contains("size")) {
+                size = queryJson["size"].get<int>();
+            }
+        }
+        // ========================================
+        // Existing: Handle full Elasticsearch DSL format
+        // ========================================
+        else if (queryJson.contains("query")) {
             auto q = queryJson["query"];
             
             // Handle match query
@@ -505,7 +584,7 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
                 }
             }
             
-            // Handle fuzzy query (NEW)
+            // Handle fuzzy query
             if (q.contains("fuzzy")) {
                 for (auto it = q["fuzzy"].begin(); it != q["fuzzy"].end(); ++it) {
                     std::string field = it.key();
@@ -566,7 +645,7 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
                             }
                         }
                         
-                        // Handle multi_match (NEW!)
+                        // Handle multi_match
                         if (mustClause.contains("multi_match")) {
                             auto multiMatch = mustClause["multi_match"];
                             std::string queryText = multiMatch["query"].get<std::string>();
@@ -592,26 +671,37 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
                                         // Use pg_trgm fuzzy matching with proper NULL handling
                                         std::string escapedQuery = escapeString(pImpl_->conn_, queryText);
                                         
-                                        // Build fuzzy condition with multiple strategies:
-                                        // 1. % operator (trigram similarity - best for short text)
-                                        // 2. word_similarity() for finding similar words in longer text
                                         std::string fuzzyCondition = "(" + fieldName + " IS NOT NULL AND (";
-                                        
-                                        // Strategy 1: % operator (trigram matching)
-                                        // This works well for short strings and typos
                                         fuzzyCondition += fieldName + " % " + escapedQuery;
-                                        
-                                        // Strategy 2: word_similarity for longer text
-                                        // This finds similar words within the text
                                         fuzzyCondition += " OR word_similarity(" + escapedQuery + ", " + fieldName + ") > 0.3";
-                                        
                                         fuzzyCondition += "))";
                                         fieldConditions.push_back(fuzzyCondition);
                                     } else {
-                                        // Regular ILIKE search (also add NULL check)
-                                        fieldConditions.push_back(
-                                            "(" + fieldName + " IS NOT NULL AND " + fieldName + " ILIKE '%" + queryText + "%')"
-                                        );
+                                        // Regular LIKE search (use LIKE instead of ILIKE for better Unicode support)
+                                        std::string escapedQuery = escapeStringForSQL(pImpl_->conn_, queryText);
+                                        
+                                        // Check if query contains non-ASCII characters (e.g., Chinese)
+                                        bool hasNonASCII = false;
+                                        for (char c : queryText) {
+                                            if (static_cast<unsigned char>(c) > 127) {
+                                                hasNonASCII = true;
+                                                break;
+                                            }
+                                        }
+                                        
+                                        if (hasNonASCII) {
+                                            // Use LIKE for Unicode (case-sensitive but reliable)
+                                            fieldConditions.push_back(
+                                                "(" + fieldName + " IS NOT NULL AND " + 
+                                                fieldName + " LIKE '%" + escapedQuery + "%')"
+                                            );
+                                        } else {
+                                            // Use ILIKE for ASCII (case-insensitive)
+                                            fieldConditions.push_back(
+                                                "(" + fieldName + " IS NOT NULL AND " + 
+                                                fieldName + " ILIKE '%" + escapedQuery + "%')"
+                                            );
+                                        }
                                     }
                                 }
                                 
@@ -624,52 +714,6 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
                                     }
                                     combined += ")";
                                     conditions.push_back(combined);
-                                }
-                            }
-                        }
-                        
-                        // Handle range
-                        if (mustClause.contains("range")) {
-                            for (auto it = mustClause["range"].begin(); it != mustClause["range"].end(); ++it) {
-                                std::string field = it.key();
-                                auto rangeObj = it.value();
-                                
-                                // Special handling for timestamp field (TIMESTAMP type in PostgreSQL)
-                                bool isTimestampField = (field == "timestamp" || field == "created_at");
-                                
-                                if (rangeObj.contains("gte")) {
-                                    long long value = rangeObj["gte"].get<long long>();
-                                    if (isTimestampField) {
-                                        // Convert Unix timestamp to PostgreSQL TIMESTAMP
-                                        conditions.push_back(field + " >= to_timestamp(" + std::to_string(value) + ")");
-                                    } else {
-                                        conditions.push_back(field + " >= " + std::to_string(value));
-                                    }
-                                }
-                                if (rangeObj.contains("lte")) {
-                                    long long value = rangeObj["lte"].get<long long>();
-                                    if (isTimestampField) {
-                                        // Convert Unix timestamp to PostgreSQL TIMESTAMP
-                                        conditions.push_back(field + " <= to_timestamp(" + std::to_string(value) + ")");
-                                    } else {
-                                        conditions.push_back(field + " <= " + std::to_string(value));
-                                    }
-                                }
-                                if (rangeObj.contains("gt")) {
-                                    long long value = rangeObj["gt"].get<long long>();
-                                    if (isTimestampField) {
-                                        conditions.push_back(field + " > to_timestamp(" + std::to_string(value) + ")");
-                                    } else {
-                                        conditions.push_back(field + " > " + std::to_string(value));
-                                    }
-                                }
-                                if (rangeObj.contains("lt")) {
-                                    long long value = rangeObj["lt"].get<long long>();
-                                    if (isTimestampField) {
-                                        conditions.push_back(field + " < to_timestamp(" + std::to_string(value) + ")");
-                                    } else {
-                                        conditions.push_back(field + " < " + std::to_string(value));
-                                    }
                                 }
                             }
                         }
@@ -706,6 +750,7 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
         }
     }
     
+    // Add ORDER BY and LIMIT
     sqlQuery << " ORDER BY timestamp DESC LIMIT " << size << " OFFSET " << from << ";";
     
     // DEBUG: Print generated SQL
@@ -994,6 +1039,35 @@ bool PostgreSQLClient::deleteDocumentByAppName(const std::string& tableName,
                        " WHERE app_name = " + escapeString(pImpl_->conn_, appName) + ";";
     
     return pImpl_->executeQuery(query);
+}
+
+bool PostgreSQLClient::executeRawQuery(const std::string& query) {
+    if (!pImpl_ || !pImpl_->conn_) {
+        std::cerr << "[executeRawQuery] Database not connected" << std::endl;
+        return false;
+    }
+    
+    std::cout << "[executeRawQuery] Executing: " << query << std::endl;
+    
+    PGresult* res = PQexec(pImpl_->conn_, query.c_str());
+    
+    if (!res) {
+        std::cerr << "[executeRawQuery] Query failed (null result)" << std::endl;
+        return false;
+    }
+    
+    ExecStatusType status = PQresultStatus(res);
+    
+    // Accept both PGRES_COMMAND_OK (for DDL) and PGRES_TUPLES_OK (for SELECT)
+    bool success = (status == PGRES_COMMAND_OK || status == PGRES_TUPLES_OK);
+    
+    if (!success) {
+        std::cerr << "[executeRawQuery] Query failed: " << PQerrorMessage(pImpl_->conn_) << std::endl;
+        std::cerr << "[executeRawQuery] Query: " << query << std::endl;
+    }
+    
+    PQclear(res);
+    return success;
 }
 
 SearchResult PostgreSQLClient::fuzzySearch(

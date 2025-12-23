@@ -56,13 +56,13 @@ int main(int argc, char** argv) {
         
         std::vector<RawEvent> events = {
             createTestEvent("fuzzy_001", "chrome.exe", 
-                "Working on project with PostgreSQL"),
+                "Working on project with PostgreSQL and design"),
             createTestEvent("fuzzy_002", "vscode.exe", 
-                "Editing code and testing queries"),  // Typo!
+                "Editing code and testing database queries"),
             createTestEvent("fuzzy_003", "firefox.exe", 
-                "Browsing documentation for elasticsarch"),  // Typo!
+                "Browsing documentation for elasticsearch"),
             createTestEvent("fuzzy_004", "chrome.exe", 
-                "Testing integration with postgrs"),  // Typo!
+                "Testing integration with postgres database"),
             createTestEvent("fuzzy_005", "vscode.exe", 
                 "Developing features for search engine using elasticsearch")
         };

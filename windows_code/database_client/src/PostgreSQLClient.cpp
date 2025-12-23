@@ -1007,22 +1007,31 @@ SearchResult PostgreSQLClient::fuzzySearch(
     SearchResult result;
     
     // Build fuzzy search query using pg_trgm similarity
+    // Use both % operator and word_similarity for better results
     std::ostringstream query;
-    query << "SELECT *, similarity(" << field << ", " 
-          << escapeString(pImpl_->conn_, searchValue) << ") AS sim_score "
+    query << "SELECT *, "
+          << "GREATEST(similarity(" << field << ", " << escapeString(pImpl_->conn_, searchValue) << "), "
+          << "word_similarity(" << escapeString(pImpl_->conn_, searchValue) << ", " << field << ")) AS sim_score "
           << "FROM " << tableName 
-          << " WHERE " << field << " % " << escapeString(pImpl_->conn_, searchValue)
-          << " AND similarity(" << field << ", " << escapeString(pImpl_->conn_, searchValue) 
-          << ") > " << similarityThreshold
+          << " WHERE " << field << " IS NOT NULL AND ("
+          << field << " % " << escapeString(pImpl_->conn_, searchValue)
+          << " OR word_similarity(" << escapeString(pImpl_->conn_, searchValue) << ", " << field << ") > " << similarityThreshold
+          << ")"
           << " ORDER BY sim_score DESC"
           << " LIMIT " << size << " OFFSET " << from << ";";
     
+    // DEBUG: Print generated SQL
+    std::cout << "[DEBUG fuzzySearch] SQL: " << query.str() << std::endl;
+    
     PGresult* res = nullptr;
     if (!pImpl_->executeQuery(query.str(), &res)) {
+        std::cerr << "[ERROR fuzzySearch] Query failed!" << std::endl;
         return result;
     }
     
     int rows = PQntuples(res);
+    std::cout << "[DEBUG fuzzySearch] Returned " << rows << " rows" << std::endl;
+    
     for (int i = 0; i < rows; ++i) {
         result.events.push_back(pImpl_->resultToEvent(res, i));
     }

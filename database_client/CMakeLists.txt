@@ -1,3 +1,8 @@
+# Force UTF-8 encoding for source files (for Chinese characters)
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
+
 # Database Client Library (for PerceptionEngine)
 
 cmake_minimum_required(VERSION 3.15)

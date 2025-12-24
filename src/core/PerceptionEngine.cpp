@@ -16,6 +16,42 @@
 
 // #include "CameraVisionEngine.h"  // Removed - using Python client instead
 
+// ========================================
+// NEW: URL Decode Helper Function
+// ========================================
+// Helper: URL decode (convert %XX to actual characters for UTF-8 support)
+std::string urlDecode(const std::string& encoded) {
+    std::string decoded;
+    char ch;
+    size_t i = 0;
+
+    while (i < encoded.length()) {
+        if (encoded[i] == '%' && i + 2 < encoded.length()) {
+            // Convert %XX to character
+            int value;
+            if (sscanf_s(encoded.substr(i + 1, 2).c_str(), "%x", &value) == 1) {
+                ch = static_cast<char>(value);
+                decoded += ch;
+                i += 3;
+            }
+            else {
+                decoded += encoded[i];
+                i++;
+            }
+        }
+        else if (encoded[i] == '+') {
+            decoded += ' ';
+            i++;
+        }
+        else {
+            decoded += encoded[i];
+            i++;
+        }
+    }
+
+    return decoded;
+}
+
 class PerceptionEngineService : public WindowsService {
 private:
     std::unique_ptr<HttpServer> httpServer;
@@ -204,16 +240,20 @@ private:
                     if (queryPos != std::string::npos) {
                         std::string queryString = request.path.substr(queryPos + 1);
 
-                        // Parse keyword
+                        // Parse keyword - FIX: Apply URL decoding for Chinese/UTF-8 support
                         size_t keywordPos = queryString.find("keyword=");
                         if (keywordPos != std::string::npos) {
                             size_t keywordEnd = queryString.find('&', keywordPos);
+                            std::string encodedKeyword;
                             if (keywordEnd == std::string::npos) {
-                                keyword = queryString.substr(keywordPos + 8);
+                                encodedKeyword = queryString.substr(keywordPos + 8);
                             }
                             else {
-                                keyword = queryString.substr(keywordPos + 8, keywordEnd - keywordPos - 8);
+                                encodedKeyword = queryString.substr(keywordPos + 8, keywordEnd - keywordPos - 8);
                             }
+                            // FIX: URL decode the keyword to support Chinese characters
+                            keyword = urlDecode(encodedKeyword);
+                            PE_INFO("Decoded keyword: '" + keyword + "'");
                         }
 
                         // Parse hours
@@ -451,16 +491,20 @@ int main(int argc, char* argv[]) {
                             if (queryPos != std::string::npos) {
                                 std::string queryString = request.path.substr(queryPos + 1);
 
-                                // Parse keyword
+                                // Parse keyword - FIX: Apply URL decoding for Chinese/UTF-8 support
                                 size_t keywordPos = queryString.find("keyword=");
                                 if (keywordPos != std::string::npos) {
                                     size_t keywordEnd = queryString.find('&', keywordPos);
+                                    std::string encodedKeyword;
                                     if (keywordEnd == std::string::npos) {
-                                        keyword = queryString.substr(keywordPos + 8);
+                                        encodedKeyword = queryString.substr(keywordPos + 8);
                                     }
                                     else {
-                                        keyword = queryString.substr(keywordPos + 8, keywordEnd - keywordPos - 8);
+                                        encodedKeyword = queryString.substr(keywordPos + 8, keywordEnd - keywordPos - 8);
                                     }
+                                    // FIX: URL decode the keyword to support Chinese characters
+                                    keyword = urlDecode(encodedKeyword);
+                                    PE_INFO("Decoded keyword: '" + keyword + "'");
                                 }
 
                                 // Parse hours

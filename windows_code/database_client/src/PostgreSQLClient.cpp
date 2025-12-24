@@ -13,10 +13,11 @@ using json = nlohmann::json;
 
 namespace database {
 
-// Helper: Convert time_t to PostgreSQL timestamp string
+// Helper: Convert time_t to PostgreSQL timestamp string (Local Time)
 static std::string timestampToPostgreSQL(std::time_t timestamp) {
     std::tm tm_val;
 #ifdef _WIN32
+    // Use localtime_s to store as local time
     localtime_s(&tm_val, &timestamp);
 #else
     localtime_r(&timestamp, &tm_val);
@@ -27,11 +28,13 @@ static std::string timestampToPostgreSQL(std::time_t timestamp) {
     return oss.str();
 }
 
-// Helper: Convert PostgreSQL timestamp string to time_t
+// Helper: Convert PostgreSQL timestamp string to time_t (Local Time)
 static std::time_t postgresqlToTimestamp(const std::string& pgTimestamp) {
     std::tm tm_val = {};
     std::istringstream ss(pgTimestamp);
     ss >> std::get_time(&tm_val, "%Y-%m-%d %H:%M:%S");
+    
+    // Use mktime to convert local time tm to time_t
     return std::mktime(&tm_val);
 }
 
@@ -556,7 +559,8 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
         if (queryJson.contains("keyword") && !queryJson.contains("query")) {
             std::string keyword = queryJson["keyword"].get<std::string>();
             
-            // Apply multi-field fuzzy search (equivalent to multi_match + fuzziness: AUTO)
+            // Apply multi-field search with EXACT substring matching (LIKE)
+            // Remove fuzzy matching to avoid false positives with short keywords
             if (!keyword.empty()) {
                 std::vector<std::string> searchFields = {
                     "screen_content",
@@ -567,16 +571,14 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
                 };
                 
                 std::vector<std::string> fieldConditions;
-                std::string escapedKeyword = escapeString(pImpl_->conn_, keyword);
+                std::string escapedKeyword = escapeStringForSQL(pImpl_->conn_, keyword);
                 
                 for (const auto& field : searchFields) {
-                    // Use fuzzy matching with pg_trgm (similar to Elasticsearch fuzziness: AUTO)
-                    // Strategy: % operator + word_similarity
-                    std::string fuzzyCondition = "(" + field + " IS NOT NULL AND (";
-                    fuzzyCondition += field + " % " + escapedKeyword;
-                    fuzzyCondition += " OR word_similarity(" + escapedKeyword + ", " + field + ") > 0.3";
-                    fuzzyCondition += "))";
-                    fieldConditions.push_back(fuzzyCondition);
+                    // Use ONLY exact substring match (LIKE) for precision
+                    // No fuzzy matching - this prevents false positives with short keywords
+                    std::string likeCondition = "(" + field + " IS NOT NULL AND " + 
+                                               field + " LIKE '%" + escapedKeyword + "%')";
+                    fieldConditions.push_back(likeCondition);
                 }
                 
                 if (!fieldConditions.empty()) {
@@ -597,8 +599,24 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
                 long long endTime = queryJson["endTime"].get<long long>();
                 
                 // Convert milliseconds to seconds for to_timestamp()
+                // Both storage and query use local time, so direct comparison works
                 conditions.push_back("timestamp >= to_timestamp(" + std::to_string(startTime / 1000) + ")");
                 conditions.push_back("timestamp <= to_timestamp(" + std::to_string(endTime / 1000) + ")");
+                
+                // DEBUG: Print time range for verification (in local time)
+                std::time_t start_t = static_cast<std::time_t>(startTime / 1000);
+                std::time_t end_t = static_cast<std::time_t>(endTime / 1000);
+                
+                char start_buf[100], end_buf[100];
+                std::tm start_tm, end_tm;
+                localtime_s(&start_tm, &start_t);
+                localtime_s(&end_tm, &end_t);
+                std::strftime(start_buf, sizeof(start_buf), "%Y-%m-%d %H:%M:%S", &start_tm);
+                std::strftime(end_buf, sizeof(end_buf), "%Y-%m-%d %H:%M:%S", &end_tm);
+                
+                std::cout << "[DEBUG] Time range query (Local Time):" << std::endl;
+                std::cout << "  startTime: " << startTime << " ms -> " << start_buf << std::endl;
+                std::cout << "  endTime:   " << endTime << " ms -> " << end_buf << std::endl;
             }
             
             // Handle compressed filter (default: only uncompressed)

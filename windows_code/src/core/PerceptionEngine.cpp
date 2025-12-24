@@ -246,7 +246,7 @@ private:
                     std::time_t endTime = std::time(nullptr);
                     std::time_t startTime = endTime - (hours * 3600);
 
-                    // Query ES
+                    // Query DB
                     pe_base::Json results = contextCollector->GetESDBData(keyword, startTime, endTime, maxResults);
 
                     response.SetHeader("Content-Type", "application/json");

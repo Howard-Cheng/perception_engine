@@ -2,24 +2,51 @@
 #include <iostream>
 #include <filesystem>
 #include <cstring>
+#include <memory>
 
-// Singleton instance
+// Singleton instance - use Meyer's singleton with destruction safety
 Logger& Logger::GetInstance() {
     static Logger instance;
     return instance;
 }
 
+// Helper function to check if static destructors are running
+static bool IsStaticDestructionInProgress() {
+    // This flag is set when any static object starts destruction
+    static std::atomic<bool> destructionStarted{false};
+    
+    // If we're being called during static destruction, mark it
+    // This happens when GetInstance() is called from another static destructor
+    static struct DestructionDetector {
+        ~DestructionDetector() {
+            destructionStarted.store(true, std::memory_order_release);
+        }
+    } detector;
+    
+    return destructionStarted.load(std::memory_order_acquire);
+}
+
 Logger::Logger()
-    : minLogLevel(LogLevel::INFO_L)  // Changed from INFO to INFO_L
+    : minLogLevel(LogLevel::INFO_L)
     , initialized(false)
-    , enableConsole(true) {
+    , enableConsole(true)
+    , isDestroying(false) {
 }
 
 Logger::~Logger() {
+    // Set destroying flag FIRST before touching any resources
+    isDestroying.store(true, std::memory_order_release);
+    
+    // Now safe to shutdown
     Shutdown();
 }
 
 void Logger::Initialize(const std::string& logFilePath, LogLevel minLevel) {
+    // Early exit if destroying or in static destruction
+    if (isDestroying.load(std::memory_order_acquire) || IsStaticDestructionInProgress()) {
+        return;
+    }
+    
     std::lock_guard<std::mutex> lock(logMutex);
 
     if (initialized) {
@@ -54,11 +81,21 @@ void Logger::Initialize(const std::string& logFilePath, LogLevel minLevel) {
 }
 
 void Logger::SetMinLevel(LogLevel level) {
+    // Early exit if destroying or in static destruction
+    if (isDestroying.load(std::memory_order_acquire) || IsStaticDestructionInProgress()) {
+        return;
+    }
+    
     std::lock_guard<std::mutex> lock(logMutex);
     minLogLevel = level;
 }
 
 void Logger::Log(LogLevel level, const char* file, int line, const std::string& message) {
+    // Early exit if destroying or in static destruction - DO NOT access mutex
+    if (isDestroying.load(std::memory_order_acquire) || IsStaticDestructionInProgress()) {
+        return;
+    }
+    
     // Check if level is high enough
     if (level < minLogLevel) {
         return;
@@ -95,6 +132,11 @@ void Logger::Log(LogLevel level, const char* file, int line, const std::string& 
 }
 
 void Logger::Flush() {
+    // Early exit if destroying or in static destruction
+    if (isDestroying.load(std::memory_order_acquire) || IsStaticDestructionInProgress()) {
+        return;
+    }
+    
     std::lock_guard<std::mutex> lock(logMutex);
     if (logFile.is_open()) {
         logFile.flush();
@@ -102,6 +144,16 @@ void Logger::Flush() {
 }
 
 void Logger::Shutdown() {
+    // Double-check: if destroying flag is already set, mutex might be invalid
+    if (isDestroying.load(std::memory_order_acquire) || IsStaticDestructionInProgress()) {
+        // Try to close file without locking
+        if (logFile.is_open()) {
+            logFile.close();
+        }
+        initialized = false;
+        return;
+    }
+    
     std::lock_guard<std::mutex> lock(logMutex);
 
     if (!initialized) {

@@ -559,8 +559,7 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
         if (queryJson.contains("keyword") && !queryJson.contains("query")) {
             std::string keyword = queryJson["keyword"].get<std::string>();
             
-            // Apply multi-field search with EXACT substring matching (LIKE)
-            // Remove fuzzy matching to avoid false positives with short keywords
+            // Apply multi-field search with EXACT substring matching (ILIKE for case-insensitive)
             if (!keyword.empty()) {
                 std::vector<std::string> searchFields = {
                     "screen_content",
@@ -574,11 +573,11 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
                 std::string escapedKeyword = escapeStringForSQL(pImpl_->conn_, keyword);
                 
                 for (const auto& field : searchFields) {
-                    // Use ONLY exact substring match (LIKE) for precision
-                    // No fuzzy matching - this prevents false positives with short keywords
-                    std::string likeCondition = "(" + field + " IS NOT NULL AND " + 
-                                               field + " LIKE '%" + escapedKeyword + "%')";
-                    fieldConditions.push_back(likeCondition);
+                    // FIX: Use ILIKE for case-insensitive matching
+                    // ILIKE is PostgreSQL's case-insensitive LIKE operator
+                    std::string iLikeCondition = "(" + field + " IS NOT NULL AND " + 
+                                                 field + " ILIKE '%" + escapedKeyword + "%')";
+                    fieldConditions.push_back(iLikeCondition);
                 }
                 
                 if (!fieldConditions.empty()) {

@@ -318,17 +318,31 @@ pe_base::Json ContextCollector::GetESDBData(const std::string& keyword,
         long long startTimeMs = static_cast<long long>(startTime) * 1000;
         long long endTimeMs = static_cast<long long>(endTime) * 1000;
         
-        // Build PostgreSQL query (simple JSON format)
+        // DEBUG: Log query parameters
+        std::cout << "[GetESDBData] Query parameters:" << std::endl;
+        std::cout << "  keyword: " << keyword << std::endl;
+        std::cout << "  startTime: " << startTime << " (" << startTimeMs << " ms)" << std::endl;
+        std::cout << "  endTime: " << endTime << " (" << endTimeMs << " ms)" << std::endl;
+        std::cout << "  maxResults: " << maxResults << std::endl;
+        
+        // FIX: Include compressed events by default (set includeCompressed: true)
+        // This ensures we return all matching events, not just uncompressed ones
         std::ostringstream queryBuilder;
         queryBuilder << "{"
                      << "\"keyword\":\"" << pe_base::Json::escapeJsonString(keyword) << "\","
                      << "\"startTime\":" << startTimeMs << ","
                      << "\"endTime\":" << endTimeMs << ","
-                     << "\"size\":" << maxResults
+                     << "\"size\":" << maxResults << ","
+                     << "\"includeCompressed\":true"  // ← FIX: 包含已压缩的数据
                      << "}";
         
         std::string query = queryBuilder.str();
+        std::cout << "[GetESDBData] Generated JSON query: " << query << std::endl;
+        
         database::SearchResult searchResult = dbClient_->search(dbCollectionName_, query, 0, maxResults);
+        
+        std::cout << "[GetESDBData] Search returned: " << searchResult.events.size() 
+                  << " events (totalHits: " << searchResult.totalHits << ")" << std::endl;
         
         // Convert to pe_base::Json
         std::ostringstream resultsArray;

@@ -1,6 +1,5 @@
 ﻿#include "context/ContextCollector.h"
 #include "DatabaseClientFactory.h"
-#include "PostgreSQLClient.h"  // Add this for executeRawQuery
 #include <random>
 #include <iostream>
 #include <sstream>
@@ -135,21 +134,7 @@ bool ContextCollector::InitializeDatabase(const std::string& connectionString,
         
         std::cout << "[InitializeDatabase] Creating PostgreSQL client for: " << connectionString << std::endl;
         
-        // Parse connection string to extract database name
-        std::string dbName;
-        size_t dbNamePos = connectionString.find("dbname=");
-        if (dbNamePos != std::string::npos) {
-            size_t startPos = dbNamePos + 7; // Length of "dbname="
-            size_t endPos = connectionString.find_first_of(" \t\n\r", startPos);
-            if (endPos == std::string::npos) {
-                dbName = connectionString.substr(startPos);
-            } else {
-                dbName = connectionString.substr(startPos, endPos - startPos);
-            }
-        }
-        
-        // Try to connect with the specified database
-        std::cout << "[InitializeDatabase] Attempting to connect to database: " << dbName << std::endl;
+        // Create PostgreSQL client (with automatic database creation if needed)
         dbClient_ = database::DatabaseClientFactory::createPostgreSQL(connectionString);
         dbCollectionName_ = tableName;
         
@@ -160,98 +145,17 @@ bool ContextCollector::InitializeDatabase(const std::string& connectionString,
         
         std::cout << "[InitializeDatabase] Testing connection..." << std::endl;
         if (!dbClient_->testConnection()) {
-            std::cerr << "[InitializeDatabase] Failed to connect to database: " << dbName << std::endl;
-            
-            // Check if the error is likely "database does not exist"
-            if (!dbName.empty() && dbName != "postgres") {
-                std::cout << "\n========================================" << std::endl;
-                std::cout << "DATABASE '" << dbName << "' DOES NOT EXIST" << std::endl;
-                std::cout << "========================================" << std::endl;
-                std::cout << "\nAttempting to create database automatically...\n" << std::endl;
-                
-                // Build connection string to 'postgres' database (always exists)
-                std::string postgresConnStr = connectionString;
-                size_t dbNameStart = postgresConnStr.find("dbname=");
-                if (dbNameStart != std::string::npos) {
-                    size_t valueStart = dbNameStart + 7;
-                    size_t valueEnd = postgresConnStr.find_first_of(" \t\n\r", valueStart);
-                    
-                    if (valueEnd == std::string::npos) {
-                        postgresConnStr.replace(valueStart, std::string::npos, "postgres");
-                    } else {
-                        postgresConnStr.replace(valueStart, valueEnd - valueStart, "postgres");
-                    }
-                }
-                
-                // Connect to 'postgres' database to create the new database
-                std::cout << "[InitializeDatabase] Connecting to 'postgres' database..." << std::endl;
-                auto postgresClient = database::DatabaseClientFactory::createPostgreSQL(postgresConnStr);
-                
-                if (!postgresClient || !postgresClient->testConnection()) {
-                    std::cerr << "[InitializeDatabase] Failed to connect to 'postgres' database" << std::endl;
-                    std::cerr << "\nPlease create the database manually:" << std::endl;
-                    std::cerr << "  psql -h 127.0.0.1 -p 5432 -U postgres -d postgres" << std::endl;
-                    std::cerr << "  CREATE DATABASE " << dbName << " WITH ENCODING 'UTF8';" << std::endl;
-                    std::cerr << "  \\q" << std::endl;
-                    dbClient_.reset();
-                    return false;
-                }
-                
-                std::cout << "[InitializeDatabase] Successfully connected to 'postgres' database" << std::endl;
-                
-                // Cast to PostgreSQLClient to access executeRawQuery
-                // Use dynamic_cast with raw pointer
-                database::PostgreSQLClient* pgClient = dynamic_cast<database::PostgreSQLClient*>(postgresClient.get());
-                if (!pgClient) {
-                    std::cerr << "[InitializeDatabase] Failed to cast to PostgreSQLClient" << std::endl;
-                    std::cerr << "\nPlease create the database manually:" << std::endl;
-                    std::cerr << "  psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -c \"CREATE DATABASE " << dbName << " WITH ENCODING 'UTF8';\"" << std::endl;
-                    dbClient_.reset();
-                    return false;
-                }
-                
-                // Execute CREATE DATABASE command
-                std::string createDbQuery = "CREATE DATABASE " + dbName + " WITH ENCODING 'UTF8'";
-                std::cout << "[InitializeDatabase] Executing: " << createDbQuery << std::endl;
-                
-                bool dbCreated = pgClient->executeRawQuery(createDbQuery);
-                
-                if (!dbCreated) {
-                    std::cerr << "[InitializeDatabase] Failed to create database" << std::endl;
-                    std::cerr << "\nPlease create the database manually:" << std::endl;
-                    std::cerr << "  psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -c \"CREATE DATABASE " << dbName << " WITH ENCODING 'UTF8';\"" << std::endl;
-                    dbClient_.reset();
-                    return false;
-                }
-                
-                std::cout << "[InitializeDatabase] ✓ Database '" << dbName << "' created successfully!" << std::endl;
-                
-                // Now reconnect to the newly created database
-                std::cout << "[InitializeDatabase] Reconnecting to new database..." << std::endl;
-                dbClient_.reset();
-                dbClient_ = database::DatabaseClientFactory::createPostgreSQL(connectionString);
-                
-                if (!dbClient_ || !dbClient_->testConnection()) {
-                    std::cerr << "[InitializeDatabase] Failed to reconnect to newly created database" << std::endl;
-                    return false;
-                }
-                
-                std::cout << "[InitializeDatabase] ✓ Successfully reconnected to database: " << dbName << std::endl;
-                
-            } else {
-                dbClient_.reset();
-                std::cerr << "[InitializeDatabase] dbClient_ reset to nullptr due to connection failure" << std::endl;
-                return false;
-            }
+            std::cerr << "[InitializeDatabase] Failed to connect to database" << std::endl;
+            dbClient_.reset();
+            return false;
         }
         
-        std::cout << "[ContextCollector] Connected to PostgreSQL database: " << dbName << std::endl;
+        std::cout << "[ContextCollector] Connected to PostgreSQL database successfully" << std::endl;
         
         std::cout << "[InitializeDatabase] Initializing table: " << tableName << std::endl;
         if (!dbClient_->initializeCollection(tableName)) {
             std::cerr << "[ContextCollector] Failed to initialize table: " << tableName << std::endl;
             dbClient_.reset();
-            std::cerr << "[InitializeDatabase] dbClient_ reset to nullptr due to table init failure" << std::endl;
             return false;
         }
         
@@ -276,7 +180,6 @@ bool ContextCollector::InitializeDatabase(const std::string& connectionString,
         {
             std::lock_guard<std::mutex> lock(dbClientMutex_);
             dbClient_.reset();
-            std::cerr << "[InitializeDatabase] dbClient_ reset to nullptr due to exception" << std::endl;
         }
         return false;
     }

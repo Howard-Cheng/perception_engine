@@ -21,7 +21,8 @@ DatabaseClientFactory::createMongoDB(const std::string& connectionString) {
 
 std::unique_ptr<IDatabaseClient> 
 DatabaseClientFactory::createPostgreSQL(const std::string& connectionString) {
-    return std::make_unique<PostgreSQLClient>(connectionString);
+    // Default: automatically create database if it doesn't exist
+    return std::make_unique<PostgreSQLClient>(connectionString, true);
 }
 
 std::unique_ptr<IDatabaseClient> 

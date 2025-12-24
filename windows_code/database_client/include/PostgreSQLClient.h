@@ -22,8 +22,9 @@ public:
      *        Examples:
      *          "host=localhost port=5432 dbname=perception user=postgres password=yourpass"
      *          "postgresql://postgres:yourpass@localhost:5432/perception"
+     * @param autoCreateDatabase If true, automatically create database if it doesn't exist (default: true)
      */
-    explicit PostgreSQLClient(const std::string& connectionString);
+    explicit PostgreSQLClient(const std::string& connectionString, bool autoCreateDatabase = true);
     
     /**
      * @brief Destroy the PostgreSQL Client
@@ -33,6 +34,19 @@ public:
     // Delete copy constructor and assignment operator
     PostgreSQLClient(const PostgreSQLClient&) = delete;
     PostgreSQLClient& operator=(const PostgreSQLClient&) = delete;
+    
+    /**
+     * @brief Ensure the target database exists, create it if not
+     * 
+     * This method checks if the database specified in the connection string exists.
+     * If not, it connects to the 'postgres' database and creates the target database.
+     * 
+     * @return true if database exists or was created successfully, false otherwise
+     * 
+     * @note This is called automatically in the constructor if autoCreateDatabase=true
+     * @note Requires connection to 'postgres' database to create new databases
+     */
+    bool ensureDatabaseExists();
     
     // IDatabaseClient interface implementation
     DatabaseType getType() const override;
@@ -90,29 +104,27 @@ public:
                                 const std::string& appName) override;
     
     /**
-     * @brief Execute raw SQL query (for administrative tasks)
+     * @brief Perform fuzzy search on a specific field using PostgreSQL pg_trgm extension
      * 
-     * This method is intended for administrative operations like CREATE DATABASE,
-     * DROP DATABASE, etc. Use with caution!
+     * This method provides fuzzy string matching similar to Elasticsearch's fuzzy query.
+     * It uses trigram similarity matching to find strings that are similar to the search value,
+     * even with typos or slight variations.
      * 
-     * @param query Raw SQL query to execute
-     * @return true if successful, false otherwise
-     */
-    bool executeRawQuery(const std::string& query);
-    
-    /**
-     * @brief Fuzzy search using PostgreSQL pg_trgm extension
+     * @param tableName Name of the table to search
+     * @param field Field name to search (e.g., "screen_content", "window_title")
+     * @param searchValue Value to search for (can have typos)
+     * @param similarityThreshold Minimum similarity threshold (0.0 to 1.0, default 0.3)
+     * @param from Starting position for pagination (default 0)
+     * @param size Number of results to return (default 100)
+     * @return SearchResult containing matching events sorted by similarity
      * 
-     * Performs fuzzy/similarity search on a specific field using trigram matching.
-     * This is useful for typo-tolerant searches.
+     * @note Requires pg_trgm extension to be enabled (automatically done in initializeCollection)
+     * @note Results are ordered by similarity score (highest first)
+     * @note similarityThreshold of 0.3 is similar to Elasticsearch's "AUTO" fuzziness
      * 
-     * @param tableName Table name to search
-     * @param field Field name to search in
-     * @param searchValue Value to search for (with fuzzy matching)
-     * @param similarityThreshold Minimum similarity score (0.0 - 1.0, default 0.3)
-     * @param from Starting position for pagination
-     * @param size Number of results to return
-     * @return SearchResult with matching events
+     * @example
+     * // Find documents with "elasticsarch" (typo) in screen_content
+     * auto results = client.fuzzySearch("events", "screen_content", "elasticsarch", 0.3);
      */
     SearchResult fuzzySearch(
         const std::string& tableName,

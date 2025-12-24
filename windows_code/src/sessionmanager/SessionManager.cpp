@@ -15,10 +15,10 @@ namespace {
     std::string sanitizeUtf8(const std::string& input) {
         std::string output;
         output.reserve(input.size());
-        
+
         for (size_t i = 0; i < input.size(); ) {
             unsigned char c = static_cast<unsigned char>(input[i]);
-            
+
             // Single-byte character (ASCII: 0x00-0x7F)
             if (c <= 0x7F) {
                 // Filter out control characters except newline, tab, and carriage return
@@ -80,7 +80,7 @@ namespace {
                 i++;
             }
         }
-        
+
         return output;
     }
 }
@@ -110,11 +110,11 @@ namespace sessionmanager {
             PE_INFO("E5 model loaded successfully");
         }
 
-        if(pe_base::ConfigManager::GetInstance().IsLoaded()) {
+        if (pe_base::ConfigManager::GetInstance().IsLoaded()) {
             config_.compressionThreshold = pe_base::ConfigManager::GetInstance().GetCompressionThreshold();
             config_.similarityThreshold = pe_base::ConfigManager::GetInstance().GetSimilarityThreshold();
             config_.batchSize = pe_base::ConfigManager::GetInstance().GetBatchSize();
-            
+
             // Initialize retry configuration with sensible defaults
             config_.maxRetries = 3;
             config_.retryDelayMs = 1000;
@@ -201,13 +201,13 @@ namespace sessionmanager {
         try {
             // Query to count uncompressed records
             std::string query = R"({
-            "query": {
-                "term": {
-                    "compressed": false
-                }
-            },
-            "size": 0
-        })";
+                "query": {
+                    "term": {
+                        "compressed": false
+                    }
+                },
+                "size": 0
+            })";
 
             database::SearchResult result = dbClient_->search(indexName_, query, 0, 0);
             return result.totalHits;
@@ -218,7 +218,7 @@ namespace sessionmanager {
                 << e.what() << std::endl;
             return 0;
         }
-    }   
+    }
 
     void SessionManager::PostCompressionTask() {
         std::lock_guard<std::mutex> lock(taskMutex_);
@@ -523,7 +523,7 @@ namespace sessionmanager {
                 // Sanitize UTF-8 for combined summary
                 std::string textA = sanitizeUtf8(std::string(chunks[i].text_A));
                 std::string textB = sanitizeUtf8(std::string(chunks[i].text_B));
-                
+
                 combined << (i + 1) << ". Score: " << chunks[i].similarity_score << "\n";
                 combined << "   Content A: " << textA.substr(0, std::min<size_t>(100, textA.length())) << "...\n";
                 combined << "   Content B: " << textB.substr(0, std::min<size_t>(100, textB.length())) << "...\n\n";
@@ -635,12 +635,12 @@ namespace sessionmanager {
                     if (!content.similarScreenContent.empty()) {
                         // Sanitize the similarity content before sending to Elasticsearch
                         std::string sanitizedContent = sanitizeUtf8(content.similarScreenContent);
-                        
+
                         // Validate that sanitization produced valid content
                         if (sanitizedContent.empty() && !content.similarScreenContent.empty()) {
-                            PE_WARN("[SessionManager] Similarity content for event " << content.eventId 
-                                   << " was completely invalid UTF-8, skipping similarity field");
-                            
+                            PE_WARN("[SessionManager] Similarity content for event " << content.eventId
+                                << " was completely invalid UTF-8, skipping similarity field");
+
                             // Fall back to update without similarity
                             bool success = esClient->markEventsAsCompressed(
                                 indexName_,
@@ -722,17 +722,17 @@ namespace sessionmanager {
         }
         catch (const std::exception& e) {
             PE_ERROR("[SessionManager] MarkRecordsCompressed exception: " << e.what());
-            
+
             // Log detailed information about the problematic content
             PE_ERROR("[SessionManager] Session ID: " << sessionId);
             PE_ERROR("[SessionManager] Number of events: " << sessionContents.size());
-            
+
             for (size_t i = 0; i < sessionContents.size(); i++) {
                 const auto& content = sessionContents[i];
-                PE_ERROR("[SessionManager]   Event[" << i << "]: " << content.eventId 
-                        << " (similarity length: " << content.similarScreenContent.length() << ")");
+                PE_ERROR("[SessionManager]   Event[" << i << "]: " << content.eventId
+                    << " (similarity length: " << content.similarScreenContent.length() << ")");
             }
-            
+
             return false;
         }
     }
@@ -754,10 +754,10 @@ namespace sessionmanager {
                 std::lock_guard<std::mutex> lock(statsMutex_);
                 stats_.totalRetryAttempts++;
 
-                PE_INFO("[SessionManager] Retry attempt " << attempt 
-                         << " of " << config_.maxRetries 
-                         << " for session " << sessionId 
-                         << " (delay: " << retryDelay << "ms)");
+                PE_INFO("[SessionManager] Retry attempt " << attempt
+                    << " of " << config_.maxRetries
+                    << " for session " << sessionId
+                    << " (delay: " << retryDelay << "ms)");
 
                 // Wait before retry
                 std::this_thread::sleep_for(std::chrono::milliseconds(retryDelay));
@@ -777,8 +777,8 @@ namespace sessionmanager {
                         // Successful retry
                         std::lock_guard<std::mutex> lock(statsMutex_);
                         stats_.successfulRetries++;
-                        PE_INFO("[SessionManager] Session " << sessionId 
-                                 << " succeeded on retry attempt " << attempt);
+                        PE_INFO("[SessionManager] Session " << sessionId
+                            << " succeeded on retry attempt " << attempt);
                     }
                     finalSuccess = true;
                     break;
@@ -792,21 +792,21 @@ namespace sessionmanager {
                     if (attempt == config_.maxRetries) {
                         // Final attempt failed
                         stats_.failedRetries++;
-                        PE_ERROR("[SessionManager] Session " << sessionId 
-                                 << " failed after " << (attempt + 1) 
-                                 << " attempts");
+                        PE_ERROR("[SessionManager] Session " << sessionId
+                            << " failed after " << (attempt + 1)
+                            << " attempts");
                     }
                     else {
-                        PE_WARN("[SessionManager] Attempt " << (attempt + 1) 
-                                 << " failed for session " << sessionId 
-                                 << ", will retry...");
+                        PE_WARN("[SessionManager] Attempt " << (attempt + 1)
+                            << " failed for session " << sessionId
+                            << ", will retry...");
                     }
                 }
             }
             catch (const std::exception& e) {
-                PE_ERROR("[SessionManager] Exception during attempt " << (attempt + 1) 
-                         << " for session " << sessionId << ": " 
-                         << e.what());
+                PE_ERROR("[SessionManager] Exception during attempt " << (attempt + 1)
+                    << " for session " << sessionId << ": "
+                    << e.what());
 
                 if (attempt == config_.maxRetries) {
                     std::lock_guard<std::mutex> lock(statsMutex_);

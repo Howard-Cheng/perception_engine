@@ -1,4 +1,4 @@
-// src/PostgreSQLClient.cpp
+﻿// src/PostgreSQLClient.cpp
 #include "PostgreSQLClient.h"
 #include <libpq-fe.h>
 #include <nlohmann/json.hpp>
@@ -121,9 +121,10 @@ class PostgreSQLClient::Impl {
 public:
     PGconn* conn_;
     std::string connectionString_;
+    bool autoCreateDatabase_;
     
-    explicit Impl(const std::string& connectionString) 
-        : conn_(nullptr), connectionString_(connectionString) {
+    explicit Impl(const std::string& connectionString, bool autoCreateDatabase) 
+        : conn_(nullptr), connectionString_(connectionString), autoCreateDatabase_(autoCreateDatabase) {
         connect();
     }
     
@@ -149,6 +150,43 @@ public:
         }
         
         return true;
+    }
+    
+    /**
+     * @brief Parse database name from connection string
+     */
+    std::string parseDbName() const {
+        std::string dbName;
+        size_t dbNamePos = connectionString_.find("dbname=");
+        if (dbNamePos != std::string::npos) {
+            size_t startPos = dbNamePos + 7; // Length of "dbname="
+            size_t endPos = connectionString_.find_first_of(" \t\n\r", startPos);
+            if (endPos == std::string::npos) {
+                dbName = connectionString_.substr(startPos);
+            } else {
+                dbName = connectionString_.substr(startPos, endPos - startPos);
+            }
+        }
+        return dbName;
+    }
+    
+    /**
+     * @brief Create a connection string pointing to 'postgres' database
+     */
+    std::string buildPostgresConnStr() const {
+        std::string postgresConnStr = connectionString_;
+        size_t dbNameStart = postgresConnStr.find("dbname=");
+        if (dbNameStart != std::string::npos) {
+            size_t valueStart = dbNameStart + 7;
+            size_t valueEnd = postgresConnStr.find_first_of(" \t\n\r", valueStart);
+            
+            if (valueEnd == std::string::npos) {
+                postgresConnStr.replace(valueStart, std::string::npos, "postgres");
+            } else {
+                postgresConnStr.replace(valueStart, valueEnd - valueStart, "postgres");
+            }
+        }
+        return postgresConnStr;
     }
     
     bool executeQuery(const std::string& query, PGresult** result = nullptr) {
@@ -314,8 +352,12 @@ public:
 };
 
 // PostgreSQLClient implementation
-PostgreSQLClient::PostgreSQLClient(const std::string& connectionString)
-    : pImpl_(std::make_unique<Impl>(connectionString)) {
+PostgreSQLClient::PostgreSQLClient(const std::string& connectionString, bool autoCreateDatabase)
+    : pImpl_(std::make_unique<Impl>(connectionString, autoCreateDatabase)) {
+    
+    if (autoCreateDatabase) {
+        ensureDatabaseExists();
+    }
 }
 
 PostgreSQLClient::~PostgreSQLClient() = default;
@@ -1041,35 +1083,6 @@ bool PostgreSQLClient::deleteDocumentByAppName(const std::string& tableName,
     return pImpl_->executeQuery(query);
 }
 
-bool PostgreSQLClient::executeRawQuery(const std::string& query) {
-    if (!pImpl_ || !pImpl_->conn_) {
-        std::cerr << "[executeRawQuery] Database not connected" << std::endl;
-        return false;
-    }
-    
-    std::cout << "[executeRawQuery] Executing: " << query << std::endl;
-    
-    PGresult* res = PQexec(pImpl_->conn_, query.c_str());
-    
-    if (!res) {
-        std::cerr << "[executeRawQuery] Query failed (null result)" << std::endl;
-        return false;
-    }
-    
-    ExecStatusType status = PQresultStatus(res);
-    
-    // Accept both PGRES_COMMAND_OK (for DDL) and PGRES_TUPLES_OK (for SELECT)
-    bool success = (status == PGRES_COMMAND_OK || status == PGRES_TUPLES_OK);
-    
-    if (!success) {
-        std::cerr << "[executeRawQuery] Query failed: " << PQerrorMessage(pImpl_->conn_) << std::endl;
-        std::cerr << "[executeRawQuery] Query: " << query << std::endl;
-    }
-    
-    PQclear(res);
-    return success;
-}
-
 SearchResult PostgreSQLClient::fuzzySearch(
     const std::string& tableName,
     const std::string& field,
@@ -1113,6 +1126,105 @@ SearchResult PostgreSQLClient::fuzzySearch(
     
     PQclear(res);
     return result;
+}
+
+bool PostgreSQLClient::ensureDatabaseExists() {
+    // Parse database name from connection string
+    std::string dbName = pImpl_->parseDbName();
+    
+    if (dbName.empty()) {
+        std::cerr << "[PostgreSQL] Failed to parse database name from connection string" << std::endl;
+        return false;
+    }
+    
+    // If database is 'postgres', assume it exists
+    if (dbName == "postgres") {
+        std::cout << "[PostgreSQL] Using default 'postgres' database" << std::endl;
+        return true;
+    }
+    
+    // Try to connect to the target database
+    std::cout << "[PostgreSQL] Attempting to connect to database: " << dbName << std::endl;
+    
+    if (pImpl_->connect()) {
+        std::cout << "[PostgreSQL] ✓ Successfully connected to database: " << dbName << std::endl;
+        return true;
+    }
+    
+    // Connection failed - database might not exist
+    std::cout << "\n========================================" << std::endl;
+    std::cout << "DATABASE '" << dbName << "' MAY NOT EXIST" << std::endl;
+    std::cout << "========================================" << std::endl;
+    std::cout << "\nAttempting to create database automatically...\n" << std::endl;
+    
+    // Build connection string to 'postgres' database (always exists)
+    std::string postgresConnStr = pImpl_->buildPostgresConnStr();
+    
+    // Create temporary connection to 'postgres' database
+    std::cout << "[PostgreSQL] Connecting to 'postgres' database..." << std::endl;
+    PGconn* tempConn = PQconnectdb(postgresConnStr.c_str());
+    
+    if (PQstatus(tempConn) != CONNECTION_OK) {
+        std::cerr << "[PostgreSQL] Failed to connect to 'postgres' database: " 
+                  << PQerrorMessage(tempConn) << std::endl;
+        std::cerr << "\nPlease create the database manually:" << std::endl;
+        std::cerr << "  psql -h 127.0.0.1 -p 5432 -U postgres -d postgres" << std::endl;
+        std::cerr << "  CREATE DATABASE " << dbName << " WITH ENCODING 'UTF8';" << std::endl;
+        std::cerr << "  \\q" << std::endl;
+        
+        PQfinish(tempConn);
+        return false;
+    }
+    
+    std::cout << "[PostgreSQL] ✓ Successfully connected to 'postgres' database" << std::endl;
+    
+    // Execute CREATE DATABASE command
+    std::string createDbQuery = "CREATE DATABASE " + dbName + " WITH ENCODING 'UTF8'";
+    std::cout << "[PostgreSQL] Executing: " << createDbQuery << std::endl;
+    
+    PGresult* res = PQexec(tempConn, createDbQuery.c_str());
+    bool dbCreated = false;
+    
+    if (res) {
+        ExecStatusType status = PQresultStatus(res);
+        dbCreated = (status == PGRES_COMMAND_OK);
+        
+        if (!dbCreated) {
+            std::string errorMsg = PQerrorMessage(tempConn);
+            // Check if error is "database already exists"
+            if (errorMsg.find("already exists") != std::string::npos) {
+                std::cout << "[PostgreSQL] Database already exists (created by another process)" << std::endl;
+                dbCreated = true;
+            } else {
+                std::cerr << "[PostgreSQL] Failed to create database: " << errorMsg << std::endl;
+            }
+        }
+        
+        PQclear(res);
+    }
+    
+    // Close temporary connection
+    PQfinish(tempConn);
+    
+    if (!dbCreated) {
+        std::cerr << "\nPlease create the database manually:" << std::endl;
+        std::cerr << "  psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -c \"CREATE DATABASE " 
+                  << dbName << " WITH ENCODING 'UTF8';\"" << std::endl;
+        return false;
+    }
+    
+    std::cout << "[PostgreSQL] ✓ Database '" << dbName << "' created successfully!" << std::endl;
+    
+    // Now reconnect to the newly created database
+    std::cout << "[PostgreSQL] Reconnecting to new database..." << std::endl;
+    
+    if (!pImpl_->connect()) {
+        std::cerr << "[PostgreSQL] Failed to reconnect to newly created database" << std::endl;
+        return false;
+    }
+    
+    std::cout << "[PostgreSQL] ✓ Successfully reconnected to database: " << dbName << std::endl;
+    return true;
 }
 
 } // namespace database

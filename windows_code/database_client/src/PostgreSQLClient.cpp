@@ -546,6 +546,9 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
     std::ostringstream sqlQuery;
     sqlQuery << "SELECT * FROM " << tableName;
     
+    // NEW: Declare sortOrder outside try block so it's available for ORDER BY clause
+    std::string sortOrder = "DESC";  // Default: newest first
+    
     try {
         auto queryJson = json::parse(query);
         
@@ -659,6 +662,18 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
             // Override size if specified in JSON
             if (queryJson.contains("size")) {
                 size = queryJson["size"].get<int>();
+            }
+            
+            // NEW: Handle sort order (default: DESC for newest first)
+            if (queryJson.contains("sortOrder")) {
+                std::string order = queryJson["sortOrder"].get<std::string>();
+                // Convert to uppercase for comparison
+                std::transform(order.begin(), order.end(), order.begin(), ::toupper);
+                if (order == "ASC" || order == "ASCENDING") {
+                    sortOrder = "ASC";  // Oldest first
+                } else if (order == "DESC" || order == "DESCENDING") {
+                    sortOrder = "DESC";  // Newest first
+                }
             }
         }
         // ========================================
@@ -843,7 +858,8 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
     }
     
     // Add ORDER BY and LIMIT
-    sqlQuery << " ORDER BY timestamp DESC LIMIT " << size << " OFFSET " << from << ";";
+    // Use sortOrder variable determined earlier (default: DESC)
+    sqlQuery << " ORDER BY timestamp " << sortOrder << " LIMIT " << size << " OFFSET " << from << ";";
     
     // DEBUG: Print generated SQL
     std::cout << "[DEBUG] Generated SQL: " << sqlQuery.str() << std::endl;

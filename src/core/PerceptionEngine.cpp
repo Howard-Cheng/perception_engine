@@ -8,6 +8,8 @@
 #include <memory>
 #include <thread>
 #include <atomic>
+#include <sstream>  // NEW: For std::istringstream (ISO time parsing)
+#include <iomanip>  // NEW: For std::get_time (ISO time parsing)
 #include "core/WindowsService.h"
 #include "communication/HttpServer.h"
 #include "context/ContextCollector.h"  // UPDATED: Use context folder
@@ -230,9 +232,10 @@ private:
                 }
 
                 try {
-                    // Parse query parameters
+                    // Parse query parameters - FIX: Support new time format (starttime/endtime ISO format)
                     std::string keyword;
-                    int hours = 24;  // Default: last 24 hours
+                    std::time_t startTime = 0;
+                    std::time_t endTime = std::time(nullptr);  // Default: now
                     int maxResults = 100;
 
                     // Simple query parameter parsing
@@ -240,7 +243,7 @@ private:
                     if (queryPos != std::string::npos) {
                         std::string queryString = request.path.substr(queryPos + 1);
 
-                        // Parse keyword - FIX: Apply URL decoding for Chinese/UTF-8 support
+                        // Parse keyword - Apply URL decoding for Chinese/UTF-8 support
                         size_t keywordPos = queryString.find("keyword=");
                         if (keywordPos != std::string::npos) {
                             size_t keywordEnd = queryString.find('&', keywordPos);
@@ -251,23 +254,57 @@ private:
                             else {
                                 encodedKeyword = queryString.substr(keywordPos + 8, keywordEnd - keywordPos - 8);
                             }
-                            // FIX: URL decode the keyword to support Chinese characters
+                            // URL decode the keyword to support Chinese characters
                             keyword = urlDecode(encodedKeyword);
                             PE_INFO("Decoded keyword: '" + keyword + "'");
                         }
 
-                        // Parse hours
-                        size_t hoursPos = queryString.find("hours=");
-                        if (hoursPos != std::string::npos) {
-                            size_t hoursEnd = queryString.find('&', hoursPos);
-                            std::string hoursStr;
-                            if (hoursEnd == std::string::npos) {
-                                hoursStr = queryString.substr(hoursPos + 6);
+                        // Parse starttime (ISO 8601 format: 2025-12-02T15)
+                        size_t startTimePos = queryString.find("starttime=");
+                        if (startTimePos != std::string::npos) {
+                            size_t startTimeEnd = queryString.find('&', startTimePos);
+                            std::string startTimeStr;
+                            if (startTimeEnd == std::string::npos) {
+                                startTimeStr = queryString.substr(startTimePos + 10);
                             }
                             else {
-                                hoursStr = queryString.substr(hoursPos + 6, hoursEnd - hoursPos - 6);
+                                startTimeStr = queryString.substr(startTimePos + 10, startTimeEnd - startTimePos - 10);
                             }
-                            hours = std::stoi(hoursStr);
+                            // URL decode
+                            startTimeStr = urlDecode(startTimeStr);
+                            
+                            // Parse ISO 8601 format
+                            std::tm tm_start = {};
+                            std::istringstream ss_start(startTimeStr);
+                            ss_start >> std::get_time(&tm_start, "%Y-%m-%dT%H");
+                            if (!ss_start.fail()) {
+                                startTime = std::mktime(&tm_start);
+                            }
+                            PE_INFO("Parsed starttime: '" + startTimeStr + "' -> " + std::to_string(startTime));
+                        }
+
+                        // Parse endtime (ISO 8601 format: 2025-12-03T15)
+                        size_t endTimePos = queryString.find("endtime=");
+                        if (endTimePos != std::string::npos) {
+                            size_t endTimeEnd = queryString.find('&', endTimePos);
+                            std::string endTimeStr;
+                            if (endTimeEnd == std::string::npos) {
+                                endTimeStr = queryString.substr(endTimePos + 8);
+                            }
+                            else {
+                                endTimeStr = queryString.substr(endTimePos + 8, endTimeEnd - endTimePos - 8);
+                            }
+                            // URL decode
+                            endTimeStr = urlDecode(endTimeStr);
+                            
+                            // Parse ISO 8601 format
+                            std::tm tm_end = {};
+                            std::istringstream ss_end(endTimeStr);
+                            ss_end >> std::get_time(&tm_end, "%Y-%m-%dT%H");
+                            if (!ss_end.fail()) {
+                                endTime = std::mktime(&tm_end);
+                            }
+                            PE_INFO("Parsed endtime: '" + endTimeStr + "' -> " + std::to_string(endTime));
                         }
 
                         // Parse maxResults
@@ -280,11 +317,25 @@ private:
                             }
                             maxResults = std::stoi(maxStr);
                         }
+                        
+                        // Fallback: Support old 'hours' parameter for backward compatibility
+                        if (startTime == 0) {
+                            size_t hoursPos = queryString.find("hours=");
+                            if (hoursPos != std::string::npos) {
+                                size_t hoursEnd = queryString.find('&', hoursPos);
+                                std::string hoursStr;
+                                if (hoursEnd == std::string::npos) {
+                                    hoursStr = queryString.substr(hoursPos + 6);
+                                }
+                                else {
+                                    hoursStr = queryString.substr(hoursPos + 6, hoursEnd - hoursPos - 6);
+                                }
+                                int hours = std::stoi(hoursStr);
+                                startTime = endTime - (hours * 3600);
+                                PE_INFO("Using legacy 'hours' parameter: " + std::to_string(hours));
+                            }
+                        }
                     }
-
-                    // Calculate time range
-                    std::time_t endTime = std::time(nullptr);
-                    std::time_t startTime = endTime - (hours * 3600);
 
                     // Query DB
                     pe_base::Json results = contextCollector->GetESDBData(keyword, startTime, endTime, maxResults);
@@ -293,7 +344,7 @@ private:
                     response.SetBody(results.toString());
                     response.status = 200;
 
-                    PE_INFO("Database Query: keyword='" + keyword + "' hours=" + std::to_string(hours));
+                    PE_INFO("Database Query: keyword='" + keyword + "' startTime=" + std::to_string(startTime) + " endTime=" + std::to_string(endTime));
 
                 }
                 catch (const std::exception& e) {
@@ -482,9 +533,10 @@ int main(int argc, char* argv[]) {
                         }
 
                         try {
-                            // Parse query parameters (same as service mode)
+                            // Parse query parameters - FIX: Support new time format (starttime/endtime ISO format)
                             std::string keyword;
-                            int hours = 0;
+                            std::time_t startTime = 0;
+                            std::time_t endTime = std::time(nullptr);  // Default: now
                             int maxResults = 100;
 
                             size_t queryPos = request.path.find('?');
@@ -507,18 +559,52 @@ int main(int argc, char* argv[]) {
                                     PE_INFO("Decoded keyword: '" + keyword + "'");
                                 }
 
-                                // Parse hours
-                                size_t hoursPos = queryString.find("hours=");
-                                if (hoursPos != std::string::npos) {
-                                    size_t hoursEnd = queryString.find('&', hoursPos);
-                                    std::string hoursStr;
-                                    if (hoursEnd == std::string::npos) {
-                                        hoursStr = queryString.substr(hoursPos + 6);
+                                // Parse starttime (ISO 8601 format: 2025-12-02T15)
+                                size_t startTimePos = queryString.find("starttime=");
+                                if (startTimePos != std::string::npos) {
+                                    size_t startTimeEnd = queryString.find('&', startTimePos);
+                                    std::string startTimeStr;
+                                    if (startTimeEnd == std::string::npos) {
+                                        startTimeStr = queryString.substr(startTimePos + 10);
                                     }
                                     else {
-                                        hoursStr = queryString.substr(hoursPos + 6, hoursEnd - hoursPos - 6);
+                                        startTimeStr = queryString.substr(startTimePos + 10, startTimeEnd - startTimePos - 10);
                                     }
-                                    hours = std::stoi(hoursStr);
+                                    // URL decode
+                                    startTimeStr = urlDecode(startTimeStr);
+                                    
+                                    // Parse ISO 8601 format
+                                    std::tm tm_start = {};
+                                    std::istringstream ss_start(startTimeStr);
+                                    ss_start >> std::get_time(&tm_start, "%Y-%m-%dT%H");
+                                    if (!ss_start.fail()) {
+                                        startTime = std::mktime(&tm_start);
+                                    }
+                                    PE_INFO("Parsed starttime: '" + startTimeStr + "' -> " + std::to_string(startTime));
+                                }
+
+                                // Parse endtime (ISO 8601 format: 2025-12-03T15)
+                                size_t endTimePos = queryString.find("endtime=");
+                                if (endTimePos != std::string::npos) {
+                                    size_t endTimeEnd = queryString.find('&', endTimePos);
+                                    std::string endTimeStr;
+                                    if (endTimeEnd == std::string::npos) {
+                                        endTimeStr = queryString.substr(endTimePos + 8);
+                                    }
+                                    else {
+                                        endTimeStr = queryString.substr(endTimePos + 8, endTimeEnd - endTimePos - 8);
+                                    }
+                                    // URL decode
+                                    endTimeStr = urlDecode(endTimeStr);
+                                    
+                                    // Parse ISO 8601 format
+                                    std::tm tm_end = {};
+                                    std::istringstream ss_end(endTimeStr);
+                                    ss_end >> std::get_time(&tm_end, "%Y-%m-%dT%H");
+                                    if (!ss_end.fail()) {
+                                        endTime = std::mktime(&tm_end);
+                                    }
+                                    PE_INFO("Parsed endtime: '" + endTimeStr + "' -> " + std::to_string(endTime));
                                 }
 
                                 // Parse maxResults
@@ -531,11 +617,25 @@ int main(int argc, char* argv[]) {
                                     }
                                     maxResults = std::stoi(maxStr);
                                 }
+                                
+                                // Fallback: Support old 'hours' parameter for backward compatibility
+                                if (startTime == 0) {
+                                    size_t hoursPos = queryString.find("hours=");
+                                    if (hoursPos != std::string::npos) {
+                                        size_t hoursEnd = queryString.find('&', hoursPos);
+                                        std::string hoursStr;
+                                        if (hoursEnd == std::string::npos) {
+                                            hoursStr = queryString.substr(hoursPos + 6);
+                                        }
+                                        else {
+                                            hoursStr = queryString.substr(hoursPos + 6, hoursEnd - hoursPos - 6);
+                                        }
+                                        int hours = std::stoi(hoursStr);
+                                        startTime = endTime - (hours * 3600);
+                                        PE_INFO("Using legacy 'hours' parameter: " + std::to_string(hours));
+                                    }
+                                }
                             }
-
-                            // Calculate time range
-                            std::time_t endTime = std::time(nullptr);
-                            std::time_t startTime = endTime - (hours * 3600);
 
                             // Query ES
                             pe_base::Json results = collector.GetESDBData(keyword, startTime, endTime, maxResults);
@@ -544,7 +644,7 @@ int main(int argc, char* argv[]) {
                             response.SetBody(results.toString());
                             response.status = 200;
 
-                            PE_INFO("Database Query: keyword='" + keyword + "' hours=" + std::to_string(hours));
+                            PE_INFO("Database Query: keyword='" + keyword + "' startTime=" + std::to_string(startTime) + " endTime=" + std::to_string(endTime));
 
                         }
                         catch (const std::exception& e) {

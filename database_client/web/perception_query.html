@@ -290,8 +290,12 @@
                 <input type="text" id="keyword" placeholder="Enter search keyword..." value="">
             </div>
             <div class="form-group">
-                <label for="hours">⏰ Hours (小时数)</label>
-                <input type="number" id="hours" placeholder="Past hours..." value="24" min="1">
+                <label for="starttime">⏰ Start Time (开始时间)</label>
+                <input type="datetime-local" id="starttime" placeholder="Start time..." value="">
+            </div>
+            <div class="form-group">
+                <label for="endtime">⏰ End Time (结束时间)</label>
+                <input type="datetime-local" id="endtime" placeholder="End time..." value="">
             </div>
             <div class="form-group">
                 <label for="maxcount">📊 Max Count (最大数量)</label>
@@ -324,7 +328,36 @@
         // Check server connection on load
         window.addEventListener('load', function() {
             checkServerConnection();
+            // Set default time range: last 24 hours
+            setDefaultTimeRange();
         });
+
+        // Set default time range (last 24 hours)
+        function setDefaultTimeRange() {
+            const now = new Date();
+            const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+            
+            // Format: YYYY-MM-DDTHH:MM
+            document.getElementById('endtime').value = formatDateTimeLocal(now);
+            document.getElementById('starttime').value = formatDateTimeLocal(yesterday);
+        }
+
+        // Format date for datetime-local input
+        function formatDateTimeLocal(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+
+        // Format date for API (ISO 8601: YYYY-MM-DDTHH)
+        function formatDateTimeISO(dateTimeLocal) {
+            if (!dateTimeLocal) return '';
+            // Extract YYYY-MM-DDTHH from YYYY-MM-DDTHH:MM
+            return dateTimeLocal.substring(0, 13);
+        }
 
         // Check server connection
         async function checkServerConnection() {
@@ -364,7 +397,8 @@
         // Send query to server
         async function sendQuery() {
             const keyword = document.getElementById('keyword').value.trim();
-            const hours = document.getElementById('hours').value;
+            const starttime = document.getElementById('starttime').value;
+            const endtime = document.getElementById('endtime').value;
             const maxcount = document.getElementById('maxcount').value;
             const resultBox = document.getElementById('resultBox');
             const sendBtn = document.getElementById('sendBtn');
@@ -375,8 +409,13 @@
                 return;
             }
 
-            if (!hours || hours < 1) {
-                resultBox.innerHTML = '<span class="error">❌ Error: Hours must be at least 1!</span>';
+            if (!starttime) {
+                resultBox.innerHTML = '<span class="error">❌ Error: Start time cannot be empty!</span>';
+                return;
+            }
+
+            if (!endtime) {
+                resultBox.innerHTML = '<span class="error">❌ Error: End time cannot be empty!</span>';
                 return;
             }
 
@@ -385,15 +424,28 @@
                 return;
             }
 
+            // Validate time range
+            const startDate = new Date(starttime);
+            const endDate = new Date(endtime);
+            if (startDate >= endDate) {
+                resultBox.innerHTML = '<span class="error">❌ Error: Start time must be before end time!</span>';
+                return;
+            }
+
             // Disable button during request
             sendBtn.disabled = true;
             resultBox.innerHTML = '<span class="loading">⏳ Sending query to server...</span>';
 
             try {
-                // Build query URL - use 'max' parameter to match backend
-                const queryUrl = `${SERVER_URL}/query?keyword=${encodeURIComponent(keyword)}&hours=${hours}&max=${maxcount}`;
+                // Format times for API (ISO 8601: YYYY-MM-DDTHH)
+                const starttimeISO = formatDateTimeISO(starttime);
+                const endtimeISO = formatDateTimeISO(endtime);
+                
+                // Build query URL with new time format
+                const queryUrl = `${SERVER_URL}/query?keyword=${encodeURIComponent(keyword)}&starttime=${encodeURIComponent(starttimeISO)}&endtime=${encodeURIComponent(endtimeISO)}&max=${maxcount}`;
                 
                 console.log('Sending request to:', queryUrl);
+                console.log('Time range:', starttimeISO, 'to', endtimeISO);
 
                 // Send request
                 const response = await fetch(queryUrl, {

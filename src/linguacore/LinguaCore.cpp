@@ -298,7 +298,7 @@ std::vector<database::RawEvent> LinguaCore::queryUnsummarizedEvents(
     std::time_t last_processed_time) {
     
     // Build PostgreSQL query using nlohmann::json
-    // UPDATED: Changed from Elasticsearch DSL to simple JSON format for PostgreSQL
+    // OPTIMIZED: Get all events from one session, ordered by timestamp
     json query;
     query["keyword"] = "";  // Empty keyword to get all events
     query["startTime"] = 0LL;  // From beginning (milliseconds)
@@ -306,20 +306,24 @@ std::vector<database::RawEvent> LinguaCore::queryUnsummarizedEvents(
     // FIX: Convert to milliseconds (PostgreSQL client expects milliseconds)
     query["endTime"] = static_cast<long long>(std::time(nullptr)) * 1000LL;  // Current time in milliseconds
     
-    query["size"] = config_.batch_size;
+    // OPTIMIZED: Request more results to get full session
+    query["size"] = config_.batch_size * 10;  // Multiply by 10 to get full session
     
     // FIX: Use includeSummarized to filter for unsummarized events at database level
     query["includeCompressed"] = true;    // Include compressed events (we want grouped events)
     query["includeSummarized"] = false;   // Exclude summarized events (only unsummarized)
     
+    // NEW: Sort by timestamp ascending (oldest first) for chronological processing
+    query["sortOrder"] = "asc";  // "asc" for oldest first, "desc" for newest first
+    
     try {
         // Call search with PostgreSQL client
-        // PostgreSQL client expects: keyword, startTime (ms), endTime (ms), maxResults
+        // PostgreSQL returns events ordered by timestamp ASC (oldest first)
         auto result = pg_client_->search(
             config_.pg_table,
             query.dump(),
             0,
-            config_.batch_size
+            config_.batch_size * 10  // Get more results
         );
         
         if (result.events.empty()) {
@@ -344,18 +348,25 @@ std::vector<database::RawEvent> LinguaCore::queryUnsummarizedEvents(
             return {};
         }
         
-        // Group by session_id and return first group
-        std::map<std::string, std::vector<database::RawEvent>> grouped;
+        // OPTIMIZED: Since database already sorted by timestamp ASC,
+        // the first event is the earliest one, so we just need its session_id
+        std::string target_session_id = *unsummarized[0].sessionId;
+        
+        log("Selected session (earliest event): " + target_session_id);
+        
+        // Collect all events with the same session_id (maintain chronological order)
+        std::vector<database::RawEvent> session_events;
         for (const auto& event : unsummarized) {
-            if (event.sessionId.has_value()) {
-                grouped[*event.sessionId].push_back(event);
+            if (event.sessionId.has_value() && *event.sessionId == target_session_id) {
+                session_events.push_back(event);
             }
         }
         
-        // Return first session group
-        if (!grouped.empty()) {
-            return grouped.begin()->second;
-        }
+        log("Collected " + std::to_string(session_events.size()) + 
+            " event(s) for session " + target_session_id);
+        
+        // Events are already in chronological order from database query
+        return session_events;
         
     } catch (const std::exception& e) {
         log("ERROR querying PostgreSQL: " + std::string(e.what()));

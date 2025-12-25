@@ -651,6 +651,11 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
                 conditions.push_back("compressed = FALSE");
             }
             
+            // NEW: Handle summarized filter (default: only unsummarized)
+            if (!queryJson.contains("includeSummarized") || !queryJson["includeSummarized"].get<bool>()) {
+                conditions.push_back("summarized = FALSE");
+            }
+            
             // Override size if specified in JSON
             if (queryJson.contains("size")) {
                 size = queryJson["size"].get<int>();

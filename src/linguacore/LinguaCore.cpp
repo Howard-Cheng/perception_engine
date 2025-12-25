@@ -77,13 +77,20 @@ LinguaCoreConfig loadConfiguration(const std::string& config_path) {
             } else if (key == "verbose") {
                 config.verbose = (value == "true" || value == "1");
             }
-        } else if (current_section == "elasticsearch") {
+        } else if (current_section == "postgresql" || current_section == "postgres") {
+            // UPDATED: Changed from "elasticsearch" to "postgresql"
             if (key == "host") {
-                config.es_host = value;
+                config.pg_host = value;
             } else if (key == "port") {
-                config.es_port = std::stoi(value);
-            } else if (key == "index") {
-                config.es_index = value;
+                config.pg_port = std::stoi(value);
+            } else if (key == "dbname" || key == "database") {
+                config.pg_dbname = value;
+            } else if (key == "user" || key == "username") {
+                config.pg_user = value;
+            } else if (key == "password") {
+                config.pg_password = value;
+            } else if (key == "table") {
+                config.pg_table = value;
             }
         } else if (current_section == "llm") {
             if (key == "model_path") {
@@ -120,14 +127,28 @@ LinguaCore::LinguaCore(const LinguaCoreConfig& config)
     
     log("Initializing LinguaCore service...");
     
-    // Initialize Elasticsearch client
+    // Initialize PostgreSQL client (UPDATED: Changed from Elasticsearch)
     try {
-        std::string es_url = "http://" + config_.es_host + ":" + 
-                            std::to_string(config_.es_port);
-        es_client_ = database::DatabaseClientFactory::createElasticsearch(es_url);
-        log("Connected to Elasticsearch at " + es_url);
+        // Build PostgreSQL connection string
+        std::string pg_conn_str = "host=" + config_.pg_host + 
+                                 " port=" + std::to_string(config_.pg_port) +
+                                 " dbname=" + config_.pg_dbname +
+                                 " user=" + config_.pg_user;
+        
+        if (!config_.pg_password.empty()) {
+            pg_conn_str += " password=" + config_.pg_password;
+        }
+        
+        // Create PostgreSQL client (only takes connection string parameter)
+        pg_client_ = database::DatabaseClientFactory::createPostgreSQL(pg_conn_str);
+        
+        // Initialize the table (PostgreSQL client handles table name in initializeCollection)
+        pg_client_->initializeCollection(config_.pg_table);
+        
+        log("Connected to PostgreSQL at " + config_.pg_host + ":" + 
+            std::to_string(config_.pg_port) + "/" + config_.pg_dbname);
     } catch (const std::exception& e) {
-        log("ERROR: Failed to connect to Elasticsearch: " + std::string(e.what()));
+        log("ERROR: Failed to connect to PostgreSQL: " + std::string(e.what()));
         throw;
     }
     
@@ -276,25 +297,26 @@ int LinguaCore::processOnce() {
 std::vector<database::RawEvent> LinguaCore::queryUnsummarizedEvents(
     std::time_t last_processed_time) {
     
-    // Build Elasticsearch query using nlohmann::json
+    // Build PostgreSQL query using nlohmann::json
+    // UPDATED: Changed from Elasticsearch DSL to simple JSON format for PostgreSQL
     json query;
+    query["keyword"] = "";  // Empty keyword to get all events
+    query["startTime"] = 0LL;  // From beginning (milliseconds)
+    
+    // FIX: Convert to milliseconds (PostgreSQL client expects milliseconds)
+    query["endTime"] = static_cast<long long>(std::time(nullptr)) * 1000LL;  // Current time in milliseconds
+    
     query["size"] = config_.batch_size;
-    query["sort"] = json::array({{{"timestamp", {{"order", "asc"}}}}});
     
-    // Build bool query
-    json must_conditions = json::array();
-    must_conditions.push_back({{"term", {{"summarized", false}}}});
-    must_conditions.push_back({{"exists", {{"field", "session_id"}}}});
-    
-    // Note: Removed timestamp filter to process all unsummarized events
-    // regardless of when they were created
-    
-    query["query"] = {{"bool", {{"must", must_conditions}}}};
+    // FIX: Use includeSummarized to filter for unsummarized events at database level
+    query["includeCompressed"] = true;    // Include compressed events (we want grouped events)
+    query["includeSummarized"] = false;   // Exclude summarized events (only unsummarized)
     
     try {
-        // Call search with correct parameters: indexName, queryString, from, size
-        auto result = es_client_->search(
-            config_.es_index,
+        // Call search with PostgreSQL client
+        // PostgreSQL client expects: keyword, startTime (ms), endTime (ms), maxResults
+        auto result = pg_client_->search(
+            config_.pg_table,
             query.dump(),
             0,
             config_.batch_size
@@ -304,9 +326,27 @@ std::vector<database::RawEvent> LinguaCore::queryUnsummarizedEvents(
             return {};
         }
         
+        // FIX: Additional client-side filter for events with session_id and compressed=true
+        // PostgreSQL returns: compressed=true, summarized=false (from database filter)
+        // We additionally require: has session_id
+        std::vector<database::RawEvent> unsummarized;
+        for (const auto& event : result.events) {
+            // Only process events that:
+            // 1. Have a session_id (required for grouping)
+            // 2. Are compressed (already filtered by database, but double-check)
+            // 3. Are NOT summarized (already filtered by database)
+            if (event.sessionId.has_value() && event.compressed) {
+                unsummarized.push_back(event);
+            }
+        }
+        
+        if (unsummarized.empty()) {
+            return {};
+        }
+        
         // Group by session_id and return first group
         std::map<std::string, std::vector<database::RawEvent>> grouped;
-        for (const auto& event : result.events) {
+        for (const auto& event : unsummarized) {
             if (event.sessionId.has_value()) {
                 grouped[*event.sessionId].push_back(event);
             }
@@ -318,7 +358,7 @@ std::vector<database::RawEvent> LinguaCore::queryUnsummarizedEvents(
         }
         
     } catch (const std::exception& e) {
-        log("ERROR querying Elasticsearch: " + std::string(e.what()));
+        log("ERROR querying PostgreSQL: " + std::string(e.what()));
     }
     
     return {};
@@ -331,7 +371,7 @@ bool LinguaCore::processSingleEvent(const database::RawEvent& event) {
     if (!event.screenContent.has_value() || event.screenContent->empty()) {
         log("WARNING: Event has no screen_content, marking as summarized without processing");
         
-        // Still mark the event as summarized in Elasticsearch
+        // Still mark the event as summarized in PostgreSQL
         std::vector<std::string> event_ids = {event.eventId};
         if (!updateSummarizedFlag(event_ids)) {
             log("ERROR: Failed to update summarized flag for empty content event");
@@ -360,7 +400,7 @@ bool LinguaCore::processSingleEvent(const database::RawEvent& event) {
         return false;
     }
     
-    // Update Elasticsearch
+    // Update PostgreSQL (UPDATED: Changed from Elasticsearch)
     std::vector<std::string> event_ids = {event.eventId};
     if (!updateSummarizedFlag(event_ids)) {
         log("ERROR: Failed to update summarized flag");
@@ -513,17 +553,19 @@ bool LinguaCore::storeSummaryInVectorDB(
 
 bool LinguaCore::updateSummarizedFlag(const std::vector<std::string>& event_ids) {
     try {
+        // UPDATED: Changed from Elasticsearch update to PostgreSQL update
         for (const auto& event_id : event_ids) {
             // Build update request using nlohmann::json
+            // FIX: Should update 'summarized' field, not 'compressed'
             json doc = {
                 {"doc", {
                     {"summarized", true}
                 }}
             };
             
-            // Update the document
-            bool success = es_client_->updateDocument(
-                config_.es_index,
+            // Update the document in PostgreSQL
+            bool success = pg_client_->updateDocument(
+                config_.pg_table,
                 event_id,
                 doc.dump()
             );
@@ -534,31 +576,14 @@ bool LinguaCore::updateSummarizedFlag(const std::vector<std::string>& event_ids)
             }
         }
         
-        // ✅ FIX: Force Elasticsearch refresh to make changes immediately visible
-        // This prevents the same events from being re-queried in the next iteration
-        try {
-            log("Refreshing Elasticsearch index to ensure changes are visible");
-            
-            // Call the refreshCollection method from IDatabaseClient
-            bool refreshSuccess = es_client_->refreshCollection(config_.es_index);
-            
-            if (!refreshSuccess) {
-                log("WARNING: Failed to refresh index, changes may not be immediately visible");
-                // Don't fail the operation, just warn and add a small delay as fallback
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            } else {
-                log("Successfully refreshed Elasticsearch index");
-            }
-            
-        } catch (const std::exception& e) {
-            log("WARNING: Exception during index refresh: " + std::string(e.what()));
-            // Fallback: add a small delay
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        }
+        // PostgreSQL changes are immediately visible (ACID properties)
+        // No need for explicit refresh like Elasticsearch
+        log("Successfully updated " + std::to_string(event_ids.size()) + 
+            " event(s) as summarized in PostgreSQL");
         
         return true;
     } catch (const std::exception& e) {
-        log("ERROR updating Elasticsearch: " + std::string(e.what()));
+        log("ERROR updating PostgreSQL: " + std::string(e.what()));
         return false;
     }
 }
@@ -570,13 +595,14 @@ std::string LinguaCore::getStatistics() const {
     stats["total_errors"] = total_errors_.load();
     stats["last_process_time"] = last_process_time_;
     
-    // Build config object
+    // Build config object (UPDATED: Changed from es_* to pg_*)
     stats["config"] = {
         {"check_interval_seconds", config_.check_interval_seconds},
         {"batch_size", config_.batch_size},
-        {"es_host", config_.es_host},
-        {"es_port", config_.es_port},
-        {"es_index", config_.es_index}
+        {"pg_host", config_.pg_host},
+        {"pg_port", config_.pg_port},
+        {"pg_dbname", config_.pg_dbname},
+        {"pg_table", config_.pg_table}
     };
     
     return stats.dump(2);  // Pretty print with 2 spaces indentation

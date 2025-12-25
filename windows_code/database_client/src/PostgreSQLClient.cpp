@@ -559,7 +559,11 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
         if (queryJson.contains("keyword") && !queryJson.contains("query")) {
             std::string keyword = queryJson["keyword"].get<std::string>();
             
-            // Apply multi-field search with EXACT substring matching (ILIKE for case-insensitive)
+            // DEBUG: Log keyword details
+            std::cout << "[DEBUG] Keyword search - Original keyword: " << keyword << std::endl;
+            std::cout << "[DEBUG] Keyword length: " << keyword.length() << " bytes" << std::endl;
+            
+            // Apply multi-field search with case-insensitive matching for both ASCII and Unicode
             if (!keyword.empty()) {
                 std::vector<std::string> searchFields = {
                     "screen_content",
@@ -572,12 +576,33 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
                 std::vector<std::string> fieldConditions;
                 std::string escapedKeyword = escapeStringForSQL(pImpl_->conn_, keyword);
                 
+                // DEBUG: Log escaped keyword
+                std::cout << "[DEBUG] Escaped keyword: " << escapedKeyword << std::endl;
+                
+                // Check if keyword contains non-ASCII characters (e.g., Chinese)
+                bool hasNonASCII = false;
+                for (char c : keyword) {
+                    if (static_cast<unsigned char>(c) > 127) {
+                        hasNonASCII = true;
+                        break;
+                    }
+                }
+                
+                std::cout << "[DEBUG] Has non-ASCII characters: " << (hasNonASCII ? "YES (Unicode/Chinese)" : "NO (ASCII)") << std::endl;
+                
                 for (const auto& field : searchFields) {
-                    // FIX: Use ILIKE for case-insensitive matching
-                    // ILIKE is PostgreSQL's case-insensitive LIKE operator
-                    std::string iLikeCondition = "(" + field + " IS NOT NULL AND " + 
-                                                 field + " ILIKE '%" + escapedKeyword + "%')";
-                    fieldConditions.push_back(iLikeCondition);
+                    if (hasNonASCII) {
+                        // FIX: For Unicode (Chinese, etc.), use LIKE with original case
+                        // This is more reliable for multi-byte characters
+                        std::string likeCondition = "(" + field + " IS NOT NULL AND " + 
+                                                   field + " LIKE '%" + escapedKeyword + "%')";
+                        fieldConditions.push_back(likeCondition);
+                    } else {
+                        // For ASCII, use LOWER() for true case-insensitive matching
+                        std::string lowerCondition = "(" + field + " IS NOT NULL AND " + 
+                                                    "LOWER(" + field + ") LIKE LOWER('%" + escapedKeyword + "%'))";
+                        fieldConditions.push_back(lowerCondition);
+                    }
                 }
                 
                 if (!fieldConditions.empty()) {
@@ -589,6 +614,9 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
                     }
                     combined += ")";
                     conditions.push_back(combined);
+                    
+                    // DEBUG: Log search condition
+                    std::cout << "[DEBUG] Search condition: " << combined.substr(0, 200) << "..." << std::endl;
                 }
             }
             

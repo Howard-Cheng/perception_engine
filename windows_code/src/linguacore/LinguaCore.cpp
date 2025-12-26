@@ -404,9 +404,9 @@ bool LinguaCore::processSingleEvent(const database::RawEvent& event) {
     
     log("Generated summary (" + std::to_string(summary.length()) + " chars)");
     
-    // Store in vector database
+    // Store in vector database with created_at timestamp
     std::string session_id = event.sessionId.value_or(event.eventId);
-    if (!storeSummaryInVectorDB(session_id, summary, content)) {
+    if (!storeSummaryInVectorDB(session_id, summary, content, event.createdAt)) {
         log("ERROR: Failed to store summary in vector DB");
         return false;
     }
@@ -462,8 +462,8 @@ bool LinguaCore::processMultipleEvents(const std::vector<database::RawEvent>& ev
     
     log("Generated summary (" + std::to_string(summary.length()) + " chars)");
     
-    // Store in vector database
-    if (!storeSummaryInVectorDB(session_id, summary, content)) {
+    // Store in vector database with first event's created_at timestamp
+    if (!storeSummaryInVectorDB(session_id, summary, content, events[0].createdAt)) {
         log("ERROR: Failed to store summary in vector DB");
         return false;
     }
@@ -490,7 +490,8 @@ std::string LinguaCore::generateSummary(const std::string& content) {
 bool LinguaCore::storeSummaryInVectorDB(
     const std::string& session_id,
     const std::string& summary,
-    const std::string& original_content) {
+    const std::string& original_content,
+    std::time_t created_at) {
     
     try {
         // Check if vector store is properly initialized
@@ -516,11 +517,13 @@ bool LinguaCore::storeSummaryInVectorDB(
         metadata["session_id"] = session_id;
         metadata["summary"] = summary;
         metadata["timestamp"] = static_cast<int64_t>(std::time(nullptr));
+        metadata["created_at"] = static_cast<int64_t>(created_at);
         metadata["original_length"] = static_cast<int64_t>(original_content.length());
         metadata["summary_length"] = static_cast<int64_t>(summary.length());
         
         log("Storing in Qdrant - session_id: " + session_id + 
-            ", summary length: " + std::to_string(summary.length()));
+            ", summary length: " + std::to_string(summary.length()) +
+            ", created_at: " + std::to_string(created_at));
         
         // ? FIX: Use session_id as point_id to prevent duplicates
         // If the same session is processed multiple times, it will update the existing point

@@ -376,8 +376,8 @@ namespace vectordb
 
     std::vector<SearchResult> VectorStore::querySessionSummaries(
         const std::string& keyword,
-        std::time_t startTime,
-        std::time_t endTime,
+        time_t startTime,
+        time_t endTime,
         int maxResults,
         std::optional<float> scoreThreshold)
     {

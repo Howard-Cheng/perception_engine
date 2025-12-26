@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <functional>
+#include <ctime>
 
 namespace vectordb {
 
@@ -167,8 +168,8 @@ public:
      */
     std::vector<SearchResult> querySessionSummaries(
         const std::string& keyword,
-        std::time_t startTime,
-        std::time_t endTime,
+        time_t startTime,
+        time_t endTime,
         int maxResults = 100,
         std::optional<float> scoreThreshold = {}
     );

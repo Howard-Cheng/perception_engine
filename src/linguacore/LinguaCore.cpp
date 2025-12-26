@@ -3,6 +3,7 @@
  * @brief Implementation of LinguaCore service
  */
 
+#include "pe_base/logger.h"  // Add logger first
 #include "linguacore/LinguaCore.h"
 #include "DatabaseClientFactory.h"
 #include "IDatabaseClient.h"
@@ -12,7 +13,6 @@
 #include "QdrantClient.h"
 
 #include <windows.h>
-#include <iostream>
 #include <fstream>
 #include <sstream>
 #include <algorithm>
@@ -33,8 +33,7 @@ LinguaCoreConfig loadConfiguration(const std::string& config_path) {
     
     std::ifstream file(config_path);
     if (!file.is_open()) {
-        std::cerr << "Warning: Could not open " << config_path 
-                  << ", using defaults" << std::endl;
+        PE_WARN("Could not open " << config_path << ", using defaults");
         return config;
     }
     
@@ -125,7 +124,7 @@ LinguaCoreConfig loadConfiguration(const std::string& config_path) {
 LinguaCore::LinguaCore(const LinguaCoreConfig& config)
     : config_(config) {
     
-    log("Initializing LinguaCore service...");
+    PE_INFO("Initializing LinguaCore service...");
     
     // Initialize PostgreSQL client (UPDATED: Changed from Elasticsearch)
     try {
@@ -145,10 +144,10 @@ LinguaCore::LinguaCore(const LinguaCoreConfig& config)
         // Initialize the table (PostgreSQL client handles table name in initializeCollection)
         pg_client_->initializeCollection(config_.pg_table);
         
-        log("Connected to PostgreSQL at " + config_.pg_host + ":" + 
-            std::to_string(config_.pg_port) + "/" + config_.pg_dbname);
+        PE_INFO("Connected to PostgreSQL at " << config_.pg_host << ":" << 
+            config_.pg_port << "/" << config_.pg_dbname);
     } catch (const std::exception& e) {
-        log("ERROR: Failed to connect to PostgreSQL: " + std::string(e.what()));
+        PE_ERROR("Failed to connect to PostgreSQL: " << e.what());
         throw;
     }
     
@@ -161,9 +160,9 @@ LinguaCore::LinguaCore(const LinguaCoreConfig& config)
         llm_config.verbose = config_.verbose;
         
         llm_client_ = std::make_unique<perception::LLMClient>(llm_config);
-        log("Initialized LLM client with model: " + config_.llm_model_path);
+        PE_INFO("Initialized LLM client with model: " << config_.llm_model_path);
     } catch (const std::exception& e) {
-        log("ERROR: Failed to initialize LLM client: " + std::string(e.what()));
+        PE_ERROR("Failed to initialize LLM client: " << e.what());
         throw;
     }
     
@@ -186,13 +185,13 @@ LinguaCore::LinguaCore(const LinguaCoreConfig& config)
             throw std::runtime_error("Failed to initialize VectorStore");
         }
         
-        log("Connected to Qdrant at " + qdrant_url);
+        PE_INFO("Connected to Qdrant at " << qdrant_url);
     } catch (const std::exception& e) {
-        log("ERROR: Failed to initialize Vector Store: " + std::string(e.what()));
+        PE_ERROR("Failed to initialize Vector Store: " << e.what());
         throw;
     }
     
-    log("LinguaCore initialization complete");
+    PE_INFO("LinguaCore initialization complete");
 }
 
 LinguaCore::~LinguaCore() {
@@ -201,17 +200,17 @@ LinguaCore::~LinguaCore() {
 
 bool LinguaCore::start() {
     if (running_) {
-        log("WARNING: Service already running");
+        PE_WARN("Service already running");
         return false;
     }
     
-    log("Starting LinguaCore service...");
-    log("Check interval: " + std::to_string(config_.check_interval_seconds) + " seconds");
+    PE_INFO("Starting LinguaCore service...");
+    PE_INFO("Check interval: " << config_.check_interval_seconds << " seconds");
     
     running_ = true;
     worker_thread_ = std::thread(&LinguaCore::serviceLoop, this);
     
-    log("LinguaCore service started successfully");
+    PE_INFO("LinguaCore service started successfully");
     return true;
 }
 
@@ -220,29 +219,29 @@ void LinguaCore::stop() {
         return;
     }
     
-    log("Stopping LinguaCore service...");
+    PE_INFO("Stopping LinguaCore service...");
     running_ = false;
     
     if (worker_thread_.joinable()) {
         worker_thread_.join();
     }
     
-    log("LinguaCore service stopped");
+    PE_INFO("LinguaCore service stopped");
 }
 
 void LinguaCore::serviceLoop() {
-    log("Service loop started");
+    PE_INFO("Service loop started");
     
     while (running_) {
         try {
             int processed = processOnce();
             
             if (processed > 0) {
-                log("Processed " + std::to_string(processed) + " events in this cycle");
+                PE_INFO("Processed " << processed << " events in this cycle");
             }
             
         } catch (const std::exception& e) {
-            log("ERROR in service loop: " + std::string(e.what()));
+            PE_ERROR("ERROR in service loop: " << e.what());
             total_errors_++;
         }
         
@@ -255,7 +254,7 @@ void LinguaCore::serviceLoop() {
         }
     }
     
-    log("Service loop ended");
+    PE_INFO("Service loop ended");
 }
 
 int LinguaCore::processOnce() {
@@ -272,7 +271,7 @@ int LinguaCore::processOnce() {
         return 0;
     }
     
-    log("Found " + std::to_string(events.size()) + " unsummarized event(s)");
+    PE_INFO("Found " << events.size() << " unsummarized event(s)");
     
     // Process based on count
     bool success = false;
@@ -287,7 +286,7 @@ int LinguaCore::processOnce() {
         total_processed_ += events.size();
         last_process_time_ = std::time(nullptr);
     } else {
-        log("ERROR: Failed to process events");
+        PE_ERROR("Failed to process events");
         total_errors_++;
     }
     
@@ -352,7 +351,7 @@ std::vector<database::RawEvent> LinguaCore::queryUnsummarizedEvents(
         // the first event is the earliest one, so we just need its session_id
         std::string target_session_id = *unsummarized[0].sessionId;
         
-        log("Selected session (earliest event): " + target_session_id);
+        PE_INFO("Selected session (earliest event): " << target_session_id);
         
         // Collect all events with the same session_id (maintain chronological order)
         std::vector<database::RawEvent> session_events;
@@ -362,34 +361,34 @@ std::vector<database::RawEvent> LinguaCore::queryUnsummarizedEvents(
             }
         }
         
-        log("Collected " + std::to_string(session_events.size()) + 
-            " event(s) for session " + target_session_id);
-        
+        PE_INFO("Collected " << session_events.size() << 
+            " event(s) for session " << target_session_id);
+
         // Events are already in chronological order from database query
         return session_events;
         
     } catch (const std::exception& e) {
-        log("ERROR querying PostgreSQL: " + std::string(e.what()));
+        PE_ERROR("ERROR querying PostgreSQL: " << e.what());
     }
     
     return {};
 }
 
 bool LinguaCore::processSingleEvent(const database::RawEvent& event) {
-    log("Processing single event: " + event.eventId);
+    PE_INFO("Processing single event: " << event.eventId);
     
     // Check if screen_content is available
     if (!event.screenContent.has_value() || event.screenContent->empty()) {
-        log("WARNING: Event has no screen_content, marking as summarized without processing");
+        PE_WARN("Event has no screen_content, marking as summarized without processing");
         
         // Still mark the event as summarized in PostgreSQL
         std::vector<std::string> event_ids = {event.eventId};
         if (!updateSummarizedFlag(event_ids)) {
-            log("ERROR: Failed to update summarized flag for empty content event");
+            PE_ERROR("Failed to update summarized flag for empty content event");
             return false;
         }
         
-        log("Successfully marked empty content event as summarized: " + event.eventId);
+        PE_INFO("Successfully marked empty content event as summarized: " << event.eventId);
         return true;  // Return true since we successfully handled the case
     }
     
@@ -398,32 +397,32 @@ bool LinguaCore::processSingleEvent(const database::RawEvent& event) {
     // Generate summary
     std::string summary = generateSummary(content);
     if (summary.empty()) {
-        log("ERROR: Failed to generate summary");
+        PE_ERROR("Failed to generate summary");
         return false;
     }
     
-    log("Generated summary (" + std::to_string(summary.length()) + " chars)");
+    PE_INFO("Generated summary (" << summary.length() << " chars)");
     
     // Store in vector database with created_at timestamp
     std::string session_id = event.sessionId.value_or(event.eventId);
     if (!storeSummaryInVectorDB(session_id, summary, content, event.createdAt)) {
-        log("ERROR: Failed to store summary in vector DB");
+        PE_ERROR("Failed to store summary in vector DB");
         return false;
     }
     
     // Update PostgreSQL (UPDATED: Changed from Elasticsearch)
     std::vector<std::string> event_ids = {event.eventId};
     if (!updateSummarizedFlag(event_ids)) {
-        log("ERROR: Failed to update summarized flag");
+        PE_ERROR("Failed to update summarized flag");
         return false;
     }
     
-    log("Successfully processed event: " + event.eventId);
+    PE_INFO("Successfully processed event: " << event.eventId);
     return true;
 }
 
 bool LinguaCore::processMultipleEvents(const std::vector<database::RawEvent>& events) {
-    log("Processing " + std::to_string(events.size()) + " events with same session_id");
+    PE_INFO("Processing " << events.size() << " events with same session_id");
     
     // Extract session_id (all events should have the same one)
     std::string session_id = events[0].sessionId.value_or(events[0].eventId);
@@ -447,34 +446,34 @@ bool LinguaCore::processMultipleEvents(const std::vector<database::RawEvent>& ev
     std::string content = combined_content.str();
     
     if (content.empty()) {
-        log("WARNING: No similar_screen_content found in any event, skipping");
+        PE_WARN("No similar_screen_content found in any event, skipping");
         return false;
     }
     
-    log("Combined content length: " + std::to_string(content.length()) + " chars");
+    PE_INFO("Combined content length: " << content.length() << " chars");
     
     // Generate summary
     std::string summary = generateSummary(content);
     if (summary.empty()) {
-        log("ERROR: Failed to generate summary");
+        PE_ERROR("Failed to generate summary");
         return false;
     }
     
-    log("Generated summary (" + std::to_string(summary.length()) + " chars)");
+    PE_INFO("Generated summary (" << summary.length() << " chars)");
     
     // Store in vector database with first event's created_at timestamp
     if (!storeSummaryInVectorDB(session_id, summary, content, events[0].createdAt)) {
-        log("ERROR: Failed to store summary in vector DB");
+        PE_ERROR("Failed to store summary in vector DB");
         return false;
     }
     
     // Update Elasticsearch for all events
     if (!updateSummarizedFlag(event_ids)) {
-        log("ERROR: Failed to update summarized flags");
+        PE_ERROR("Failed to update summarized flags");
         return false;
     }
     
-    log("Successfully processed " + std::to_string(events.size()) + " events");
+    PE_INFO("Successfully processed " << events.size() << " events");
     return true;
 }
 
@@ -482,7 +481,7 @@ std::string LinguaCore::generateSummary(const std::string& content) {
     try {
         return llm_client_->summarize(content, config_.llm_max_tokens);
     } catch (const std::exception& e) {
-        log("ERROR generating summary: " + std::string(e.what()));
+        PE_ERROR("ERROR generating summary: " << e.what());
         return "";
     }
 }
@@ -496,21 +495,21 @@ bool LinguaCore::storeSummaryInVectorDB(
     try {
         // Check if vector store is properly initialized
         if (!vector_store_) {
-            log("ERROR: Vector store is null");
+            PE_ERROR("Vector store is null");
             return false;
         }
         
         // Check if embedding model is loaded
         if (vector_store_->getEmbeddingDimension() == 0) {
-            log("ERROR: Embedding model is not loaded (dimension = 0)");
-            log("ERROR: Embedding model error: " + 
+            PE_ERROR("Embedding model is not loaded (dimension = 0)");
+            PE_ERROR("Embedding model error: " << 
                 (vector_store_->getEmbeddingModel().has_value() 
                  ? vector_store_->getEmbeddingModel().value().get().getLastError()
                  : "Model not initialized"));
             return false;
         }
         
-        log("Embedding model dimension: " + std::to_string(vector_store_->getEmbeddingDimension()));
+        PE_INFO("Embedding model dimension: " << vector_store_->getEmbeddingDimension());
         
         // Create metadata payload using vectordb::Payload
         vectordb::Payload metadata;
@@ -521,9 +520,9 @@ bool LinguaCore::storeSummaryInVectorDB(
         metadata["original_length"] = static_cast<int64_t>(original_content.length());
         metadata["summary_length"] = static_cast<int64_t>(summary.length());
         
-        log("Storing in Qdrant - session_id: " + session_id + 
-            ", summary length: " + std::to_string(summary.length()) +
-            ", created_at: " + std::to_string(created_at));
+        PE_INFO("Storing in Qdrant - session_id: " << session_id << 
+            ", summary length: " << summary.length() <<
+            ", created_at: " << created_at);
         
         // ? FIX: Use session_id as point_id to prevent duplicates
         // If the same session is processed multiple times, it will update the existing point
@@ -531,36 +530,36 @@ bool LinguaCore::storeSummaryInVectorDB(
         bool success = vector_store_->storeText(summary, metadata, session_id);
         
         if (!success) {
-            log("ERROR: VectorStore::storeText returned false");
-            log("ERROR: Qdrant client error: " + vector_store_->getClient().getLastError());
+            PE_ERROR("VectorStore::storeText returned false");
+            PE_ERROR("Qdrant client error: " << vector_store_->getClient().getLastError());
             
             // Check collection exists
             if (!vector_store_->getClient().collectionExists(vector_store_->getCollectionName())) {
-                log("ERROR: Collection does not exist: " + vector_store_->getCollectionName());
+                PE_ERROR("Collection does not exist: " << vector_store_->getCollectionName());
             } else {
-                log("Collection exists: " + vector_store_->getCollectionName());
+                PE_INFO("Collection exists: " << vector_store_->getCollectionName());
                 
                 // Get collection info
                 auto collectionInfo = vector_store_->getClient().getCollectionInfo(vector_store_->getCollectionName());
                 if (collectionInfo.has_value()) {
-                    log("Collection info - Points: " + std::to_string(collectionInfo->pointsCount) +
-                        ", Vector size: " + std::to_string(collectionInfo->vectorSize));
+                    PE_INFO("Collection info - Points: " << collectionInfo->pointsCount <<
+                        ", Vector size: " << collectionInfo->vectorSize);
                 }
             }
             return false;
         }
         
-        log("Successfully stored summary in Qdrant");
+        PE_INFO("Successfully stored summary in Qdrant");
         
         // Verify by checking collection point count
         auto collectionInfo = vector_store_->getClient().getCollectionInfo(vector_store_->getCollectionName());
         if (collectionInfo.has_value()) {
-            log("Collection now has " + std::to_string(collectionInfo->pointsCount) + " points");
+            PE_INFO("Collection now has " << collectionInfo->pointsCount << " points");
         }
         
         return true;
     } catch (const std::exception& e) {
-        log("ERROR storing in vector DB (exception): " + std::string(e.what()));
+        PE_ERROR("ERROR storing in vector DB (exception): " << e.what());
         return false;
     }
 }
@@ -585,19 +584,19 @@ bool LinguaCore::updateSummarizedFlag(const std::vector<std::string>& event_ids)
             );
             
             if (!success) {
-                log("ERROR: Failed to update event " + event_id);
+                PE_ERROR("Failed to update event " << event_id);
                 return false;
             }
         }
         
         // PostgreSQL changes are immediately visible (ACID properties)
         // No need for explicit refresh like Elasticsearch
-        log("Successfully updated " + std::to_string(event_ids.size()) + 
+        PE_INFO("Successfully updated " << event_ids.size() << 
             " event(s) as summarized in PostgreSQL");
         
         return true;
     } catch (const std::exception& e) {
-        log("ERROR updating PostgreSQL: " + std::string(e.what()));
+        PE_ERROR("ERROR updating PostgreSQL: " << e.what());
         return false;
     }
 }
@@ -620,18 +619,6 @@ std::string LinguaCore::getStatistics() const {
     };
     
     return stats.dump(2);  // Pretty print with 2 spaces indentation
-}
-
-void LinguaCore::log(const std::string& message) const {
-    if (!config_.verbose) return;
-    
-    // Get current time
-    auto now = std::time(nullptr);
-    char timestamp[32];
-    std::strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", 
-                 std::localtime(&now));
-    
-    std::cout << "[" << timestamp << "] [LinguaCore] " << message << std::endl;
 }
 
 } // namespace linguacore

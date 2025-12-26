@@ -374,4 +374,59 @@ namespace vectordb
         return nextPointId_++;
     }
 
+    std::vector<SearchResult> VectorStore::querySessionSummaries(
+        const std::string& keyword,
+        std::time_t startTime,
+        std::time_t endTime,
+        int maxResults,
+        std::optional<float> scoreThreshold)
+    {
+        try {
+            if (!embeddingModel_ || !embeddingModel_->isLoaded()) {
+                std::cerr << "Embedding model not loaded" << std::endl;
+                return {};
+            }
+
+            // Build filter for time range
+            std::vector<FilterCondition> conditions;
+
+            // Convert time_t to int64_t (Unix timestamps)
+            int64_t startTimeInt = static_cast<int64_t>(startTime);
+            int64_t endTimeInt = static_cast<int64_t>(endTime);
+
+            // Add timestamp range filter
+            conditions.push_back(
+                FilterCondition::createRange(
+                    "timestamp",
+                    std::nullopt,         // gt (greater than)
+                    startTimeInt,         // gte (greater than or equal)
+                    std::nullopt,         // lt (less than)
+                    endTimeInt            // lte (less than or equal)
+                )
+            );
+
+            Filter filter = Filter::createMust(conditions);
+
+            // Perform semantic search
+            std::vector<SearchResult> results = search(
+                keyword,
+                maxResults,
+                scoreThreshold,
+                filter
+            );
+
+            std::cout << "[QuerySessionSummaries] Found " << results.size()
+                << " sessions matching query '" << keyword << "' "
+                << "in time range [" << startTime << ", " << endTime << "]"
+                << std::endl;
+
+            return results;
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Exception in querySessionSummaries: " << e.what() << std::endl;
+            return {};
+        }
+    }
+
+
 } // namespace vectordb

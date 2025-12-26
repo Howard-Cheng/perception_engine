@@ -3,8 +3,10 @@
  * @brief Main entry point for LinguaCore service
  */
 
+#include "pe_base/logger.h"  // Add logger first
 #include "linguacore/LinguaCore.h"
 #include <iostream>
+#include <filesystem>
 #include <csignal>
 #include <atomic>
 #include <thread>
@@ -16,31 +18,41 @@ std::atomic<bool> g_shutdown_requested{false};
 // Signal handler for Ctrl+C
 void signalHandler(int signal) {
     if (signal == SIGINT || signal == SIGTERM) {
-        std::cout << "\nShutdown signal received..." << std::endl;
+        PE_INFO("Shutdown signal received...");
         g_shutdown_requested = true;
     }
 }
 
 void printUsage(const char* program_name) {
-    std::cout << "LinguaCore - Automatic Content Summarization Service\n\n";
-    std::cout << "Usage: " << program_name << " [options]\n\n";
-    std::cout << "Options:\n";
-    std::cout << "  -c, --config <path>    Path to config.ini file (default: config.ini)\n";
-    std::cout << "  -h, --help             Show this help message\n";
-    std::cout << "  -v, --version          Show version information\n";
-    std::cout << "\n";
+    PE_INFO("LinguaCore - Automatic Content Summarization Service");
+    PE_INFO("Usage: " << program_name << " [options]");
+    PE_INFO("Options:");
+    PE_INFO("  -c, --config <path>    Path to config.ini file (default: config.ini)");
+    PE_INFO("  -h, --help             Show this help message");
+    PE_INFO("  -v, --version          Show version information");
 }
 
 void printVersion() {
-    std::cout << "LinguaCore version 1.0.0\n";
-    std::cout << "Part of PerceptionEngine v2.0.0\n";
+    PE_INFO("LinguaCore version 1.0.0");
+    PE_INFO("Part of PerceptionEngine v2.0.0");
 }
 
 int main(int argc, char* argv[]) {
-    std::cout << "========================================\n";
-    std::cout << "    LinguaCore Service\n";
-    std::cout << "    Automatic Content Summarization\n";
-    std::cout << "========================================\n\n";
+    // =========================================
+    // Initialize Logger FIRST (before anything)
+    // =========================================
+    std::filesystem::path log_path = "";
+    if (auto* p_appdata = getenv("APPDATA")) {
+        log_path =
+            std::filesystem::path(p_appdata) / "Lenovo" / "PerceptionEngine" / "logs";
+    }
+    pe_base::LogWriter::SetLogFilePrefix(
+        (log_path / "LinguaCore").generic_string());
+
+    PE_INFO("========================================");
+    PE_INFO("    LinguaCore Service");
+    PE_INFO("    Automatic Content Summarization");
+    PE_INFO("========================================");
     
     // Parse command line arguments
     std::string config_path = "config.ini";
@@ -58,11 +70,11 @@ int main(int argc, char* argv[]) {
             if (i + 1 < argc) {
                 config_path = argv[++i];
             } else {
-                std::cerr << "Error: --config requires a path argument\n";
+                PE_ERROR("Error: --config requires a path argument");
                 return 1;
             }
         } else {
-            std::cerr << "Error: Unknown option: " << arg << "\n";
+            PE_ERROR("Error: Unknown option: " << arg);
             printUsage(argv[0]);
             return 1;
         }
@@ -74,20 +86,20 @@ int main(int argc, char* argv[]) {
     
     try {
         // Load configuration
-        std::cout << "Loading configuration from: " << config_path << "\n\n";
+        PE_INFO("Loading configuration from: " << config_path);
         auto config = linguacore::loadConfiguration(config_path);
         
         // Create and start LinguaCore service
         linguacore::LinguaCore service(config);
         
         if (!service.start()) {
-            std::cerr << "Failed to start LinguaCore service\n";
+            PE_ERROR("Failed to start LinguaCore service");
             return 1;
         }
         
-        std::cout << "\n========================================\n";
-        std::cout << "Service is running. Press Ctrl+C to stop.\n";
-        std::cout << "========================================\n\n";
+        PE_INFO("========================================");
+        PE_INFO("Service is running. Press Ctrl+C to stop.");
+        PE_INFO("========================================");
         
         // Main loop - wait for shutdown signal
         while (!g_shutdown_requested) {
@@ -100,26 +112,26 @@ int main(int argc, char* argv[]) {
                 now - last_stats_time).count();
             
             if (elapsed >= 60) {
-                std::cout << "\n--- Service Statistics ---\n";
-                std::cout << service.getStatistics() << "\n";
-                std::cout << "-------------------------\n\n";
+                PE_INFO("--- Service Statistics ---");
+                PE_INFO(service.getStatistics());
+                PE_INFO("-------------------------");
                 last_stats_time = now;
             }
         }
         
         // Graceful shutdown
-        std::cout << "\nStopping LinguaCore service...\n";
+        PE_INFO("Stopping LinguaCore service...");
         service.stop();
         
-        std::cout << "\n--- Final Statistics ---\n";
-        std::cout << service.getStatistics() << "\n";
-        std::cout << "------------------------\n\n";
+        PE_INFO("--- Final Statistics ---");
+        PE_INFO(service.getStatistics());
+        PE_INFO("------------------------");
         
-        std::cout << "LinguaCore service stopped successfully.\n";
+        PE_INFO("LinguaCore service stopped successfully.");
         return 0;
         
     } catch (const std::exception& e) {
-        std::cerr << "FATAL ERROR: " << e.what() << std::endl;
+        PE_ERROR("FATAL ERROR: " << e.what());
         return 1;
     }
 }

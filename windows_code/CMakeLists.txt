@@ -443,7 +443,10 @@ target_link_libraries(DataProcessServer PRIVATE
 
 # LinguaCore links to database_client, llm_summary, and vectordb_client
 target_link_libraries(LinguaCore PRIVATE
-    # Database client (Elasticsearch)
+    # PE Base (for logging)
+    pe_base
+    
+    # Database client (PostgreSQL)
     database_client
     
     # LLM Summary library

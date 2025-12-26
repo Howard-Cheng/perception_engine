@@ -153,6 +153,26 @@ public:
      */
     const std::string& getCollectionName() const { return collectionName_; }
 
+    /**
+     * Query session summaries from vector database (similar to GetESDBData).
+     *
+     * Performs semantic search with optional filters on metadata.
+     *
+     * @param keyword Query text for semantic search (will be embedded)
+     * @param startTime Start time filter (Unix timestamp in seconds)
+     * @param endTime End time filter (Unix timestamp in seconds)
+     * @param maxResults Maximum number of results to return (default: 100)
+     * @param scoreThreshold Optional minimum similarity score (0.0-1.0)
+     * @return Vector of search results with metadata
+     */
+    std::vector<SearchResult> querySessionSummaries(
+        const std::string& keyword,
+        std::time_t startTime,
+        std::time_t endTime,
+        int maxResults = 100,
+        std::optional<float> scoreThreshold = {}
+    );
+
 private:
     std::string collectionName_;
     std::string embeddingModelPath_;

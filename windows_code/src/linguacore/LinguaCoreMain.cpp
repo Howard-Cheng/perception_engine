@@ -4,6 +4,7 @@
  */
 
 #include "pe_base/logger.h"  // Add logger first
+#include "pe_base/config_manager.h"  // Add ConfigManager
 #include "linguacore/LinguaCore.h"
 #include <iostream>
 #include <filesystem>
@@ -80,14 +81,87 @@ int main(int argc, char* argv[]) {
         }
     }
     
-    // Install signal handler
-    std::signal(SIGINT, signalHandler);
-    std::signal(SIGTERM, signalHandler);
+    // =========================================
+    // Load Configuration using ConfigManager
+    // =========================================
+    PE_INFO("Loading configuration from: " << config_path);
+    
+    auto& configManager = pe_base::ConfigManager::GetInstance();
+    
+    if (!configManager.LoadConfig(config_path)) {
+        PE_WARN("Failed to load config.ini, using default values");
+        PE_WARN("Error: " << configManager.GetLastError());
+    } else {
+        PE_INFO("Configuration loaded successfully");
+    }
+    
+    // Validate configuration
+    if (!configManager.ValidateConfiguration()) {
+        PE_ERROR("Configuration validation failed:");
+        PE_ERROR(configManager.GetLastError());
+        PE_WARN("Continuing with best-effort configuration...");
+    } else {
+        PE_INFO("Configuration validated successfully");
+    }
     
     try {
-        // Load configuration
-        PE_INFO("Loading configuration from: " << config_path);
-        auto config = linguacore::loadConfiguration(config_path);
+        // =========================================
+        // Build LinguaCore Configuration from ConfigManager
+        // =========================================
+        PE_INFO("Building LinguaCore configuration from ConfigManager");
+        
+        linguacore::LinguaCoreConfig config;
+        
+        // Get model paths (already resolved to absolute paths)
+        config.embedding_model_path = configManager.GetEmbeddingModelPathUtf8();
+        config.llm_model_path = configManager.GetLLMModelPath();
+        
+        // Get LinguaCore settings
+        config.check_interval_seconds = configManager.GetCheckIntervalSeconds();
+        config.batch_size = configManager.GetLinguaCoreBatchSize();
+        config.verbose = configManager.IsLinguaCoreVerbose();
+        
+        // Get PostgreSQL settings
+        config.pg_host = configManager.GetPostgreSQLHost();
+        config.pg_port = configManager.GetPostgreSQLPort();
+        config.pg_dbname = configManager.GetPostgreSQLDatabase();
+        config.pg_user = configManager.GetPostgreSQLUser();
+        config.pg_password = configManager.GetPostgreSQLPassword();
+        config.pg_table = configManager.GetPostgreSQLTable();
+        
+        // Get LLM settings
+        config.llm_max_tokens = configManager.GetLLMMaxTokens();
+        config.llm_temperature = configManager.GetLLMTemperature();
+        
+        // Get Qdrant settings
+        config.qdrant_host = configManager.GetQdrantHost();
+        config.qdrant_port = configManager.GetQdrantPort();
+        config.qdrant_collection = configManager.GetQdrantCollection();
+        
+        PE_INFO("Configuration summary:");
+        PE_INFO("  Embedding model: " << config.embedding_model_path);
+        PE_INFO("  LLM model: " << config.llm_model_path);
+        PE_INFO("  Check interval: " << config.check_interval_seconds << " seconds");
+        PE_INFO("  Batch size: " << config.batch_size);
+        PE_INFO("  PostgreSQL: " << config.pg_host << ":" << config.pg_port << "/" << config.pg_dbname);
+        PE_INFO("  Qdrant: " << config.qdrant_host << ":" << config.qdrant_port);
+        
+        // Verify model files exist
+        if (!std::filesystem::exists(config.embedding_model_path)) {
+            PE_ERROR("Embedding model file not found: " << config.embedding_model_path);
+            return 1;
+        }
+        
+        if (!std::filesystem::exists(config.llm_model_path)) {
+            PE_ERROR("LLM model file not found: " << config.llm_model_path);
+            return 1;
+        }
+        
+        PE_INFO("All configurations validated successfully");
+        
+        // Install signal handler
+        std::signal(SIGINT, signalHandler);
+        std::signal(SIGTERM, signalHandler);
         
         // Create and start LinguaCore service
         linguacore::LinguaCore service(config);

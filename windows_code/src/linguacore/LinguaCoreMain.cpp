@@ -163,9 +163,18 @@ int main(int argc, char* argv[]) {
         std::signal(SIGINT, signalHandler);
         std::signal(SIGTERM, signalHandler);
         
-        // Create and start LinguaCore service
+        // Create LinguaCore service
         linguacore::LinguaCore service(config);
         
+        // Initialize all components
+        PE_INFO("Initializing LinguaCore components...");
+        if (!service.initialize()) {
+            PE_ERROR("Failed to initialize LinguaCore service");
+            return 1;
+        }
+        PE_INFO("LinguaCore components initialized successfully");
+        
+        // Start the service
         if (!service.start()) {
             PE_ERROR("Failed to start LinguaCore service");
             return 1;

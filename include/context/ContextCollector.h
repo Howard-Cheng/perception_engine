@@ -6,6 +6,7 @@
 #include "IDatabaseClient.h"
 #include "DatabaseTypes.h"
 #include "sessionmanager/SessionManager.h"  // Add SessionManager
+#include "VectorStore.h"  // Add VectorStore (from vectordb_client)
 #include <chrono>
 #include <mutex>
 #include <string>
@@ -98,6 +99,22 @@ public:
                     int maxResults = 100);
     
     /**
+     * @brief Query VectorDB (Qdrant) session summaries data
+     * 
+     * Performs semantic search over session summaries stored in vector database.
+     * 
+     * @param keyword Query text for semantic search (will be embedded)
+     * @param startTime Start time filter (Unix timestamp in seconds)
+     * @param endTime End time filter (Unix timestamp in seconds)
+     * @param maxResults Maximum number of results to return (default: 100)
+     * @return JSON object containing search results with metadata
+     */
+    pe_base::Json GetVectorDBData(const std::string& keyword,
+                    std::time_t startTime,
+                    std::time_t endTime,
+                    int maxResults = 100);
+    
+    /**
      * @brief Check if Database is available
      */
     bool IsElasticsearchAvailable() const;
@@ -174,6 +191,12 @@ private:
     // ========================================
     
     std::unique_ptr<sessionmanager::SessionManager> sessionManager_;
+    
+    // ========================================
+    // Vector Database (Qdrant for session summaries)
+    // ========================================
+    
+    std::unique_ptr<vectordb::VectorStore> vectorStore_;
     
     // ========================================
     // Compression Timer (Windows Threadpool Timer)

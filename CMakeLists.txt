@@ -352,6 +352,7 @@ target_include_directories(PerceptionEngine PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/embeddingmodel/include
     ${CMAKE_CURRENT_SOURCE_DIR}/pe_base/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/vectordb_client/include
     ${WHISPER_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/ggml/include
     ${JSON_INCLUDE_DIR}
@@ -424,6 +425,9 @@ target_link_libraries(PerceptionEngine PRIVATE
 
     # PE Base
     pe_base
+    
+    # Vector DB library (Qdrant)
+    vectordb_client
 )
 
 # Link E5 Embedding library
@@ -529,6 +533,12 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
         $<TARGET_FILE:E5EmbeddingDLL>
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/E5EmbeddingDLL.dll
 
+    # Copy vectordb_client DLL to bin/
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying vectordb_client DLL..."
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:vectordb_client>
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/vectordb_client.dll
+
     # Copy DataProcessServer.exe to bin/ (same directory as PerceptionEngine.exe)
     COMMAND ${CMAKE_COMMAND} -E echo "Copying DataProcessServer.exe to output directory..."
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -559,6 +569,11 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/onnxruntime.dll
+    
+    # Copy vectordb_client DLL to bin/$<CONFIG>/}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:vectordb_client>
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/vectordb_client.dll
 
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/models

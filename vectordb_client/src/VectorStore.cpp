@@ -5,8 +5,15 @@
 #include <iostream>
 #include <sstream>
 #include <iomanip>
+#include <algorithm>
 
+// Fix for Windows min/max macro conflicts
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#undef min
+#undef max
 #include <windows.h>
 #include <wincrypt.h>  // For SHA1 hashing
 #pragma comment(lib, "advapi32.lib")
@@ -335,17 +342,42 @@ namespace vectordb
         {
             if (!embeddingModel_ || !embeddingModel_->isLoaded())
             {
+                std::cerr << "[VectorStore::search] Embedding model not loaded" << std::endl;
                 return {};
             }
 
+            // ? DEBUG: Log query info
+            std::cout << "[VectorStore::search] Query text: '" << queryText << "'" << std::endl;
+            std::cout << "[VectorStore::search] Collection: " << collectionName_ << std::endl;
+            std::cout << "[VectorStore::search] Limit: " << limit << std::endl;
+            
             // Generate query embedding
             std::vector<float> queryVector = embeddingModel_->encode(queryText);
+            
+            // ? DEBUG: Check query vector
+            std::cout << "[VectorStore::search] Query vector dimension: " << queryVector.size() << std::endl;
+            
+            // Check if vector is all zeros
+            bool allZero = std::all_of(queryVector.begin(), queryVector.end(), 
+                                       [](float v) { return v == 0.0f; });
+            if (allZero) {
+                std::cerr << "[VectorStore::search] ERROR: Query vector is all zeros!" << std::endl;
+                std::cerr << "[VectorStore::search] This means embedding model failed to encode the text" << std::endl;
+            }
+            
+            // Print first few values
+            std::cout << "[VectorStore::search] First 5 vector values: ";
+            for (size_t i = 0; i < std::min(size_t(5), queryVector.size()); ++i) {
+                std::cout << queryVector[i] << " ";
+            }
+            std::cout << std::endl;
 
             // Search in Qdrant
             return client_->search(collectionName_, queryVector, limit, scoreThreshold, filter);
         }
         catch (const std::exception &e)
         {
+            std::cerr << "[VectorStore::search] Exception: " << e.what() << std::endl;
             return {};
         }
     }
@@ -397,7 +429,7 @@ namespace vectordb
             // Add timestamp range filter
             conditions.push_back(
                 FilterCondition::createRange(
-                    "timestamp",
+                    "created_at",
                     std::nullopt,         // gt (greater than)
                     startTimeInt,         // gte (greater than or equal)
                     std::nullopt,         // lt (less than)

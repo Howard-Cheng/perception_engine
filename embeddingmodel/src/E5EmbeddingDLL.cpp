@@ -13,7 +13,15 @@
 #include <fstream>
 #include <filesystem>
 #include <algorithm>
+#include <sstream>
 #include <windows.h>
+
+// Fix for Windows min/max macro conflicts
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#undef min
+#undef max
 
 // Global state (initialized once)
 namespace {
@@ -59,6 +67,9 @@ void AveragePool(
     std::fill(output, output + EMBEDDING_DIM, 0.0f);
     int token_count = 0;
 
+    // ? DEBUG: Log pooling details
+    PE_INFO("[AveragePool] seq_length: " + std::to_string(seq_length) + ", EMBEDDING_DIM: " + std::to_string(EMBEDDING_DIM));
+
     for (int i = 0; i < seq_length; i++) {
         if (attention_mask[i] == 1) {
             for (int j = 0; j < EMBEDDING_DIM; j++) {
@@ -68,10 +79,34 @@ void AveragePool(
         }
     }
 
+    PE_INFO("[AveragePool] token_count: " + std::to_string(token_count));
+
     if (token_count > 0) {
         for (int j = 0; j < EMBEDDING_DIM; j++) {
             output[j] /= token_count;
         }
+        
+        // ? DEBUG: Check if sum before division is all zeros
+        float sum_check = 0.0f;
+        for (int j = 0; j < EMBEDDING_DIM; j++) {
+            sum_check += std::abs(output[j]);
+        }
+        
+        if (sum_check < 1e-10f) {
+            PE_ERROR("[AveragePool] ERROR: Pooled values are all zeros BEFORE normalization!");
+            PE_ERROR("[AveragePool] This means hidden_states from ONNX are all zeros!");
+        } else {
+            // ? DEBUG: Log first few pooled values after division
+            std::ostringstream oss;
+            oss << "[AveragePool] After averaging, first 5 values: ";
+            for (int i = 0; i < std::min(5, EMBEDDING_DIM); ++i) {
+                oss << output[i] << " ";
+            }
+            PE_INFO(oss.str());
+        }
+    } else {
+        PE_ERROR("[AveragePool] FATAL ERROR: token_count is 0! All attention_mask values are 0!");
+        PE_ERROR("[AveragePool] This will result in all-zero embeddings!");
     }
 }
 
@@ -122,7 +157,7 @@ E5_API int E5_Initialize(const wchar_t* model_path) {
 
     if (g_initialized) {
         SetError("Already initialized");
-        return -1;
+        return 0;
     }
 
 
@@ -201,7 +236,30 @@ E5_API int E5_ComputeEmbedding(
         return -1;
     }
 
+    // ? FIX: Clear old error messages before starting
+    g_last_error.clear();
+    
+    // ? DEBUG: Log computation start
+    PE_INFO("[E5_ComputeEmbedding] Starting computation with length: " + std::to_string(length));
+
     try {
+        // ? DEBUG: Count valid tokens in attention mask BEFORE doing anything else
+        int valid_tokens = 0;
+        for (int i = 0; i < length; ++i) {
+            if (attention_mask[i] == 1) {
+                valid_tokens++;
+            }
+        }
+        PE_INFO("[E5_ComputeEmbedding] Valid tokens in attention_mask: " + std::to_string(valid_tokens) + " / " + std::to_string(length));
+        
+        if (valid_tokens == 0) {
+            PE_ERROR("[E5_ComputeEmbedding] FATAL ERROR: attention_mask has NO valid tokens (all zeros)!");
+            PE_ERROR("[E5_ComputeEmbedding] This will cause AveragePool to return all zeros!");
+            PE_ERROR("[E5_ComputeEmbedding] Check tokenization process!");
+            SetError("attention_mask has no valid tokens (all zeros)");
+            return -1;
+        }
+        
         // Prepare input tensors (batch size = 1)
         Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
 
@@ -211,6 +269,22 @@ E5_API int E5_ComputeEmbedding(
         std::vector<int64_t> input_ids_copy(input_ids, input_ids + length);
         std::vector<int64_t> attention_mask_copy(attention_mask, attention_mask + length);
         std::vector<int64_t> token_type_ids_copy(token_type_ids, token_type_ids + length);
+        
+        // ? DEBUG: Log first few token IDs
+        std::ostringstream oss;
+        oss << "[E5_ComputeEmbedding] First 10 token IDs: ";
+        for (int i = 0; i < std::min(10, length); ++i) {
+            oss << input_ids[i] << " ";
+        }
+        PE_INFO(oss.str());
+        
+        // ? DEBUG: Log attention mask
+        std::ostringstream oss_mask;
+        oss_mask << "[E5_ComputeEmbedding] First 10 attention_mask values: ";
+        for (int i = 0; i < std::min(10, length); ++i) {
+            oss_mask << attention_mask[i] << " ";
+        }
+        PE_INFO(oss_mask.str());
 
         Ort::Value input_ids_tensor = Ort::Value::CreateTensor<int64_t>(
             memory_info, input_ids_copy.data(), length, input_shape.data(), input_shape.size());
@@ -226,6 +300,8 @@ E5_API int E5_ComputeEmbedding(
         std::vector<Ort::Value> input_tensors;
         input_tensors.push_back(std::move(input_ids_tensor));
         input_tensors.push_back(std::move(attention_mask_tensor));
+        
+        PE_INFO("[E5_ComputeEmbedding] Running ONNX inference...");
 
         auto output_tensors = g_session->Run(
             Ort::RunOptions{nullptr},
@@ -235,23 +311,101 @@ E5_API int E5_ComputeEmbedding(
             output_names,
             1
         );
+        
+        PE_INFO("[E5_ComputeEmbedding] ONNX inference complete");
 
         // Extract output
         float* output_data = output_tensors[0].GetTensorMutableData<float>();
+        
+        // ? DEBUG: Check if output_data is valid
+        if (!output_data) {
+            PE_ERROR("[E5_ComputeEmbedding] ERROR: output_data is nullptr!");
+            SetError("ONNX inference returned null data");
+            return -1;
+        }
+        
+        // ? DEBUG: Check if ONNX output is all zeros (model problem!)
+        bool onnx_output_all_zero = true;
+        for (int i = 0; i < std::min(length * EMBEDDING_DIM, 1000); ++i) {
+            if (output_data[i] != 0.0f) {
+                onnx_output_all_zero = false;
+                break;
+            }
+        }
+        
+        if (onnx_output_all_zero) {
+            PE_ERROR("[E5_ComputeEmbedding] ERROR: ONNX model returned all zeros!");
+            PE_ERROR("[E5_ComputeEmbedding] This indicates a model loading or inference problem!");
+            PE_ERROR("[E5_ComputeEmbedding] Check model file and ONNX Runtime version!");
+        }
+        
+        // ? DEBUG: Print first few output values
+        std::ostringstream oss2;
+        oss2 << "[E5_ComputeEmbedding] First 5 hidden state values: ";
+        for (int i = 0; i < std::min(5, EMBEDDING_DIM); ++i) {
+            oss2 << output_data[i] << " ";
+        }
+        PE_INFO(oss2.str());
 
         // Average pool
+        PE_INFO("[E5_ComputeEmbedding] Performing average pooling...");
         AveragePool(output_data, attention_mask, length, embedding_out);
+        
+        // ? DEBUG: Print embedding after pooling
+        std::ostringstream oss3;
+        oss3 << "[E5_ComputeEmbedding] After pooling, first 5 values: ";
+        for (int i = 0; i < std::min(5, EMBEDDING_DIM); ++i) {
+            oss3 << embedding_out[i] << " ";
+        }
+        PE_INFO(oss3.str());
 
         // Normalize
+        PE_INFO("[E5_ComputeEmbedding] Normalizing...");
         Normalize(embedding_out);
+        
+        // ? DEBUG: Print embedding after normalization
+        std::ostringstream oss4;
+        oss4 << "[E5_ComputeEmbedding] After normalization, first 5 values: ";
+        for (int i = 0; i < std::min(5, EMBEDDING_DIM); ++i) {
+            oss4 << embedding_out[i] << " ";
+        }
+        PE_INFO(oss4.str());
+        
+        // ? DEBUG: Check if result is all zeros
+        bool allZero = true;
+        for (int i = 0; i < EMBEDDING_DIM; ++i) {
+            if (embedding_out[i] != 0.0f) {
+                allZero = false;
+                break;
+            }
+        }
+        
+        if (allZero) {
+            PE_ERROR("[E5_ComputeEmbedding] FATAL ERROR: Output embedding is all zeros!");
+            if (valid_tokens == 0) {
+                PE_ERROR("[E5_ComputeEmbedding] Root cause: attention_mask has no valid tokens");
+            } else if (onnx_output_all_zero) {
+                PE_ERROR("[E5_ComputeEmbedding] Root cause: ONNX model returned all zeros");
+            } else {
+                PE_ERROR("[E5_ComputeEmbedding] Root cause: Unknown (check AveragePool implementation)");
+            }
+            SetError("Embedding computation resulted in all zeros");
+            return -1;
+        } else {
+            PE_INFO("[E5_ComputeEmbedding] SUCCESS: Embedding computation successful (non-zero)");
+        }
 
         return 0;
 
     } catch (const Ort::Exception& e) {
-        SetError(std::string("ONNX Runtime inference error: ") + e.what());
+        std::string error_msg = std::string("ONNX Runtime inference error: ") + e.what();
+        PE_ERROR("[E5_ComputeEmbedding] " + error_msg);
+        SetError(error_msg);
         return -1;
     } catch (const std::exception& e) {
-        SetError(std::string("Embedding computation error: ") + e.what());
+        std::string error_msg = std::string("Embedding computation error: ") + e.what();
+        PE_ERROR("[E5_ComputeEmbedding] " + error_msg);
+        SetError(error_msg);
         return -1;
     }
 }
@@ -527,6 +681,9 @@ E5_API int E5_ComputeEmbeddingFromText(
         return -1;
     }
 
+    // ? FIX: Clear old error messages before starting
+    g_last_error.clear();
+
     try {
         // Get paths from ConfigManager
         std::string python_executable = pe_base::ConfigManager::GetInstance().GetPythonExecutable();
@@ -596,23 +753,66 @@ E5_API int E5_ComputeEmbeddingFromText(
             return -1;
         }
 
-        // Read tokens
-        std::vector<int64_t> input_ids(num_tokens);
-        std::vector<int64_t> attention_mask(num_tokens);
-        std::vector<int64_t> token_type_ids(num_tokens);
+        // ? FIX: Read the FULL padded arrays (512 elements), not just num_tokens
+        // Python writes: num_tokens (int64), then 512 input_ids, 512 attention_mask, 512 token_type_ids
+        std::vector<int64_t> input_ids(MAX_SEQ_LENGTH);
+        std::vector<int64_t> attention_mask(MAX_SEQ_LENGTH);
+        std::vector<int64_t> token_type_ids(MAX_SEQ_LENGTH);
 
-        token_file.read(reinterpret_cast<char*>(input_ids.data()), num_tokens * sizeof(int64_t));
-        token_file.read(reinterpret_cast<char*>(attention_mask.data()), num_tokens * sizeof(int64_t));
-        token_file.read(reinterpret_cast<char*>(token_type_ids.data()), num_tokens * sizeof(int64_t));
+        token_file.read(reinterpret_cast<char*>(input_ids.data()), MAX_SEQ_LENGTH * sizeof(int64_t));
+        token_file.read(reinterpret_cast<char*>(attention_mask.data()), MAX_SEQ_LENGTH * sizeof(int64_t));
+        token_file.read(reinterpret_cast<char*>(token_type_ids.data()), MAX_SEQ_LENGTH * sizeof(int64_t));
 
         token_file.close();
+        
+        // ? DEBUG: Verify attention_mask has valid values
+        int valid_mask_count = 0;
+        for (int i = 0; i < MAX_SEQ_LENGTH; ++i) {
+            if (attention_mask[i] == 1) {
+                valid_mask_count++;
+            }
+        }
+        PE_INFO("[E5_ComputeEmbeddingFromText] Read " + std::to_string(num_tokens) + " tokens, valid attention_mask count: " + std::to_string(valid_mask_count));
+        
+        // ? CRITICAL FIX: Verify data integrity
+        if (valid_mask_count == 0) {
+            PE_ERROR("[E5_ComputeEmbeddingFromText] FATAL ERROR: attention_mask is all zeros!");
+            PE_ERROR("[E5_ComputeEmbeddingFromText] This indicates tokenization failed or file corruption!");
+            PE_ERROR("[E5_ComputeEmbeddingFromText] Text was: '" + std::string(text).substr(0, 100) + "...'");
+            SetError("Tokenization produced no valid tokens (attention_mask all zeros)");
+            DeleteFileA(temp_text_file.c_str());
+            DeleteFileA(temp_tokens_file.c_str());
+            return -1;
+        }
+        
+        if (valid_mask_count != num_tokens) {
+            PE_WARN("[E5_ComputeEmbeddingFromText] WARNING: Mismatch between num_tokens (" + std::to_string(num_tokens) + 
+                   ") and valid_mask_count (" + std::to_string(valid_mask_count) + ")");
+            PE_WARN("[E5_ComputeEmbeddingFromText] Using valid_mask_count as ground truth");
+        }
+        
+        // ? DEBUG: Log first few tokens and masks
+        std::ostringstream oss_ids;
+        oss_ids << "[E5_ComputeEmbeddingFromText] First 10 input_ids: ";
+        for (int i = 0; i < std::min(10, MAX_SEQ_LENGTH); ++i) {
+            oss_ids << input_ids[i] << " ";
+        }
+        PE_INFO(oss_ids.str());
+        
+        std::ostringstream oss_mask;
+        oss_mask << "[E5_ComputeEmbeddingFromText] First 10 attention_mask: ";
+        for (int i = 0; i < std::min(10, MAX_SEQ_LENGTH); ++i) {
+            oss_mask << attention_mask[i] << " ";
+        }
+        PE_INFO(oss_mask.str());
 
         // Compute embedding using existing function
+        // Note: We pass MAX_SEQ_LENGTH, not num_tokens, because we now have padded arrays
         int result = E5_ComputeEmbedding(
             input_ids.data(),
             attention_mask.data(),
             token_type_ids.data(),
-            (int)num_tokens,
+            MAX_SEQ_LENGTH,  // ¡û Changed from (int)num_tokens to MAX_SEQ_LENGTH
             embedding_out
         );
 

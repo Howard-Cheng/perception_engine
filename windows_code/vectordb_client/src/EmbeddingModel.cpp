@@ -69,6 +69,11 @@ namespace vectordb
 
             try
             {
+                // ? DEBUG: Log encoding attempt
+                std::cout << "[EmbeddingModel::encode] Encoding text: '" << text.substr(0, std::min(size_t(50), text.length())) << "...'" << std::endl;
+                std::cout << "[EmbeddingModel::encode] Text length: " << text.length() << " chars" << std::endl;
+                std::cout << "[EmbeddingModel::encode] Expected dimension: " << dimension << std::endl;
+                
                 std::vector<float> embedding(dimension);
                 
                 // Use E5_ComputeEmbeddingFromText which handles tokenization internally
@@ -79,7 +84,23 @@ namespace vectordb
 
                 if (result != 0) {
                     lastError = "Encoding failed: " + std::string(E5_GetLastError());
+                    std::cerr << "[EmbeddingModel::encode] ERROR: " << lastError << std::endl;
                     throw std::runtime_error(lastError);
+                }
+                
+                // ? DEBUG: Check if embedding is all zeros
+                bool allZero = std::all_of(embedding.begin(), embedding.end(), 
+                                           [](float v) { return v == 0.0f; });
+                if (allZero) {
+                    std::cerr << "[EmbeddingModel::encode] WARNING: Embedding is all zeros!" << std::endl;
+                    std::cerr << "[EmbeddingModel::encode] This usually means E5_ComputeEmbeddingFromText failed silently" << std::endl;
+                    std::cerr << "[EmbeddingModel::encode] E5 last error: " << E5_GetLastError() << std::endl;
+                } else {
+                    std::cout << "[EmbeddingModel::encode] First 5 values: ";
+                    for (size_t i = 0; i < std::min(size_t(5), embedding.size()); ++i) {
+                        std::cout << embedding[i] << " ";
+                    }
+                    std::cout << std::endl;
                 }
 
                 return embedding;
@@ -87,6 +108,7 @@ namespace vectordb
             catch (const std::exception &e)
             {
                 lastError = "Encoding failed: " + std::string(e.what());
+                std::cerr << "[EmbeddingModel::encode] Exception: " << lastError << std::endl;
                 throw std::runtime_error(lastError);
             }
         }

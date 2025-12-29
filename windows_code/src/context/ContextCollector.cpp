@@ -1,5 +1,7 @@
 ﻿#include "context/ContextCollector.h"
 #include "DatabaseClientFactory.h"
+#include "VectorStore.h"
+#include "pe_base/config_manager.h"
 #include <random>
 #include <iostream>
 #include <sstream>
@@ -46,6 +48,12 @@ ContextCollector::~ContextCollector() {
     }
     
     ShutdownDatabase();
+    
+    // Cleanup VectorStore
+    if (vectorStore_) {
+        vectorStore_.reset();
+        std::cout << "[ContextCollector] VectorStore cleaned up" << std::endl;
+    }
     
     // FIX: Clear window switch callback before shutdown
     if (auto appProvider = contextManager_.getAppActivityProvider()) {
@@ -172,6 +180,55 @@ bool ContextCollector::InitializeDatabase(const std::string& connectionString,
         
         // Start compression timer (runs every 1 minute)
         StartCompressionTimer();
+        
+        // Initialize VectorStore for session summaries (Qdrant)
+        try {
+            // Get configuration from ConfigManager
+            auto& configMgr = pe_base::ConfigManager::GetInstance();
+            
+            // Get Qdrant configuration
+            std::string qdrantHost = configMgr.GetQdrantHost();
+            int qdrantPort = configMgr.GetQdrantPort();
+            std::string qdrantCollection = configMgr.GetQdrantCollection();
+            
+            // Get embedding model path
+            std::string embeddingModelPath = configMgr.GetEmbeddingModelPathUtf8();
+            
+            // Build Qdrant URL
+            std::string qdrantUrl = "http://" + qdrantHost + ":" + std::to_string(qdrantPort);
+            
+            std::cout << "[ContextCollector] Initializing VectorStore..." << std::endl;
+            std::cout << "[ContextCollector]   Qdrant URL: " << qdrantUrl << std::endl;
+            std::cout << "[ContextCollector]   Collection: " << qdrantCollection << std::endl;
+            std::cout << "[ContextCollector]   Model path: " << embeddingModelPath << std::endl;
+            
+            // Create Qdrant config
+            auto qdrantConfig = vectordb::QdrantClient::Config::remote(qdrantUrl);
+            
+            // Create VectorStore
+            vectorStore_ = std::make_unique<vectordb::VectorStore>(
+                qdrantCollection,
+                embeddingModelPath,
+                qdrantConfig
+            );
+            
+            // Initialize VectorStore
+            if (!vectorStore_->initialize()) {
+                std::cerr << "[ContextCollector] Failed to initialize VectorStore" << std::endl;
+                vectorStore_.reset();
+                // Don't fail the whole initialization, just log warning
+                std::cerr << "[ContextCollector] Warning: Vector DB unavailable, GetVectorDBData will not work" << std::endl;
+            } else {
+                std::cout << "[ContextCollector] VectorStore initialized successfully" << std::endl;
+                std::cout << "[ContextCollector]   Embedding dimension: " << vectorStore_->getEmbeddingDimension() << std::endl;
+            }
+            
+        } catch (const std::exception& e) {
+            std::cerr << "[ContextCollector] Exception initializing VectorStore: " << e.what() << std::endl;
+            vectorStore_.reset();
+            // Don't fail the whole initialization
+            std::cerr << "[ContextCollector] Warning: Vector DB initialization failed, GetVectorDBData will not work" << std::endl;
+        }
         
         return true;
         
@@ -432,6 +489,113 @@ pe_base::Json ContextCollector::GetESDBData(const std::string& keyword,
 bool ContextCollector::IsElasticsearchAvailable() const {
     std::lock_guard<std::mutex> lock(dbClientMutex_);
     return dbClient_ != nullptr && dbClient_->testConnection();
+}
+
+pe_base::Json ContextCollector::GetVectorDBData(const std::string& keyword,
+                                    std::time_t startTime,
+                                    std::time_t endTime,
+                                    int maxResults) {
+    pe_base::Json result;
+    
+    try {
+        // Check if VectorStore is initialized
+        if (!vectorStore_) {
+            std::cerr << "[GetVectorDBData] VectorStore not initialized" << std::endl;
+            result.setRaw("error", "\"VectorStore not initialized\"");
+            result.setRaw("results", "[]");
+            return result;
+        }
+        
+        // DEBUG: Log query parameters
+        std::cout << "[GetVectorDBData] Query parameters:" << std::endl;
+        std::cout << "  keyword: " << keyword << std::endl;
+        std::cout << "  startTime: " << startTime << std::endl;
+        std::cout << "  endTime: " << endTime << std::endl;
+        std::cout << "  maxResults: " << maxResults << std::endl;
+        
+        // Call VectorStore's querySessionSummaries method
+        std::vector<vectordb::SearchResult> searchResults = vectorStore_->querySessionSummaries(
+            keyword,
+            startTime,
+            endTime,
+            maxResults,
+            std::nullopt  // No score threshold by default
+        );
+        
+        std::cout << "[GetVectorDBData] Search returned: " << searchResults.size() << " results" << std::endl;
+        
+        // Convert to pe_base::Json
+        std::ostringstream resultsArray;
+        resultsArray << "[";
+        
+        bool first = true;
+        for (const auto& searchResult : searchResults) {
+            if (!first) resultsArray << ",";
+            first = false;
+            
+            resultsArray << "{";
+            
+            // Add point ID
+            if (std::holds_alternative<std::string>(searchResult.id)) {
+                resultsArray << "\"id\":\"" << pe_base::Json::escapeJsonString(std::get<std::string>(searchResult.id)) << "\"";
+            } else {
+                resultsArray << "\"id\":" << std::get<uint64_t>(searchResult.id);
+            }
+            
+            // Add similarity score
+            resultsArray << ",\"score\":" << searchResult.score;
+            
+            // Add payload (metadata) if present
+            if (searchResult.payload.has_value()) {
+                const auto& payload = searchResult.payload.value();
+                
+                // Extract common fields from payload
+                auto it = payload.find("summary");
+                if (it != payload.end() && std::holds_alternative<std::string>(it->second)) {
+                    resultsArray << ",\"summary\":\"" << pe_base::Json::escapeJsonString(std::get<std::string>(it->second)) << "\"";
+                }
+                
+                it = payload.find("timestamp");
+                if (it != payload.end() && std::holds_alternative<int64_t>(it->second)) {
+                    resultsArray << ",\"timestamp\":" << std::get<int64_t>(it->second);
+                }
+                
+                it = payload.find("session_id");
+                if (it != payload.end() && std::holds_alternative<std::string>(it->second)) {
+                    resultsArray << ",\"sessionId\":\"" << pe_base::Json::escapeJsonString(std::get<std::string>(it->second)) << "\"";
+                }
+                
+                it = payload.find("activity_summary");
+                if (it != payload.end() && std::holds_alternative<std::string>(it->second)) {
+                    resultsArray << ",\"activitySummary\":\"" << pe_base::Json::escapeJsonString(std::get<std::string>(it->second)) << "\"";
+                }
+                
+                it = payload.find("app_name");
+                if (it != payload.end() && std::holds_alternative<std::string>(it->second)) {
+                    resultsArray << ",\"appName\":\"" << pe_base::Json::escapeJsonString(std::get<std::string>(it->second)) << "\"";
+                }
+                
+                it = payload.find("created_at");
+                if (it != payload.end() && std::holds_alternative<int64_t>(it->second)) {
+                    resultsArray << ",\"createdAt\":" << std::get<int64_t>(it->second);
+                }
+            }
+            
+            resultsArray << "}";
+        }
+        
+        resultsArray << "]";
+        
+        result.set("totalHits", static_cast<int>(searchResults.size()));
+        result.setRaw("results", resultsArray.str());
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[GetVectorDBData] Exception: " << e.what() << std::endl;
+        result.setRaw("error", "\"" + pe_base::Json::escapeJsonString(e.what()) + "\"");
+        result.setRaw("results", "[]");
+    }
+    
+    return result;
 }
 
 void ContextCollector::OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& record) {

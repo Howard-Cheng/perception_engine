@@ -8,6 +8,15 @@
 #include <nlohmann/json.hpp>
 #include <iostream>
 
+// Fix for Windows min/max macro conflicts
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#undef min
+#undef max
+#endif
+
 using json = nlohmann::json;
 
 namespace vectordb
@@ -627,6 +636,23 @@ namespace vectordb
     {
         try
         {
+            // ? DEBUG: check the searching vector
+            std::cout << "[QdrantClient::search] Query vector dimension: " << queryVector.size() << std::endl;
+            
+            // checking if the vector is all 0
+            bool allZero = std::all_of(queryVector.begin(), queryVector.end(), 
+                                       [](float v) { return v == 0.0f; });
+            if (allZero) {
+                std::cerr << "[QdrantClient::search] WARNING: Query vector is all zeros!" << std::endl;
+            }
+            
+            // print the first several value
+            std::cout << "[QdrantClient::search] First 5 values: ";
+            for (size_t i = 0; i < std::min(size_t(5), queryVector.size()); ++i) {
+                std::cout << queryVector[i] << " ";
+            }
+            std::cout << std::endl;
+            
             // Build request body
             json requestBody = json::object();
             requestBody["vector"] = queryVector;
@@ -637,6 +663,7 @@ namespace vectordb
             if (scoreThreshold.has_value())
             {
                 requestBody["score_threshold"] = scoreThreshold.value();
+                std::cout << "[QdrantClient::search] Score threshold: " << scoreThreshold.value() << std::endl;
             }
 
             if (filter.has_value())
@@ -645,6 +672,7 @@ namespace vectordb
                 if (!filterJson.is_null())
                 {
                     requestBody["filter"] = filterJson;
+                    std::cout << "[QdrantClient::search] Filter: " << filterJson.dump() << std::endl;
                 }
             }
 
@@ -653,20 +681,52 @@ namespace vectordb
             long httpCode = 0;
 
             std::string endpoint = "/collections/" + collectionName + "/points/search";
+            
+            std::cout << "[QdrantClient::search] Request endpoint: " << endpoint << std::endl;
+            std::cout << "[QdrantClient::search] Request body length: " << body.length() << " bytes" << std::endl;
+            
             if (!impl_->httpRequest("POST", endpoint, body, response, httpCode))
             {
                 return {};
             }
+
+            // Debug: Print raw response (first 500 chars to avoid spam)
+            std::cout << "[QdrantClient::search] Raw response (truncated): " 
+                      << response.substr(0, std::min(size_t(500), response.length())) 
+                      << "..." << std::endl;
 
             json result = json::parse(response);
             std::vector<SearchResult> results;
 
             if (result.contains("result"))
             {
+                std::cout << "[QdrantClient::search] Number of results: " << result["result"].size() << std::endl;
+                
                 for (const auto &item : result["result"])
                 {
                     PointId id = impl_->parsePointId(item["id"]);
-                    float score = item.contains("score") ? item["score"].get<float>() : 0.0f;
+
+                    // Fix: Handle both float and double, with better error handling
+                    float score = 0.0f;
+                    if (item.contains("score"))
+                    {
+                        try {
+                            if (item["score"].is_number_float()) {
+                                score = static_cast<float>(item["score"].get<double>());
+                            } else if (item["score"].is_number_integer()) {
+                                score = static_cast<float>(item["score"].get<int64_t>());
+                            }
+                            
+                            // ? only print when score is not 0
+                            if (score != 0.0f) {
+                                std::cout << "[QdrantClient::search] Non-zero score found: " << score << std::endl;
+                            }
+                        } catch (const std::exception& e) {
+                            std::cerr << "[QdrantClient::search] Failed to parse score: " << e.what() << std::endl;
+                        }
+                    } else {
+                        std::cerr << "[QdrantClient::search] Warning: 'score' field not found in result item" << std::endl;
+                    }
 
                     SearchResult searchResult(id, score);
 
@@ -681,6 +741,23 @@ namespace vectordb
                     }
 
                     results.push_back(searchResult);
+                }
+                
+                if (!results.empty()) {
+                    float maxScore = 0.0f;
+                    for (const auto& r : results) {
+                        maxScore = std::max(maxScore, r.score);
+                    }
+                    std::cout << "[QdrantClient::search] Max score in results: " << maxScore << std::endl;
+                    
+                    if (maxScore == 0.0f) {
+                        std::cerr << "[QdrantClient::search] *** ALL SCORES ARE ZERO! ***" << std::endl;
+                        std::cerr << "[QdrantClient::search] This indicates a problem with:" << std::endl;
+                        std::cerr << "[QdrantClient::search]   1. Query vector (may be all zeros)" << std::endl;
+                        std::cerr << "[QdrantClient::search]   2. Stored vectors (may be all zeros)" << std::endl;
+                        std::cerr << "[QdrantClient::search]   3. Vector dimension mismatch" << std::endl;
+                        std::cerr << "[QdrantClient::search]   4. Distance metric incompatibility" << std::endl;
+                    }
                 }
             }
 

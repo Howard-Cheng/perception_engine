@@ -142,7 +142,7 @@ LinguaCore::LinguaCore(const LinguaCoreConfig& config)
         pg_client_ = database::DatabaseClientFactory::createPostgreSQL(pg_conn_str);
         
         // Initialize the table (PostgreSQL client handles table name in initializeCollection)
-        pg_client_->initializeCollection(config_.pg_table);
+        bool ret = pg_client_->initializeCollection(config_.pg_table);
         
         PE_INFO("Connected to PostgreSQL at " << config_.pg_host << ":" << 
             config_.pg_port << "/" << config_.pg_dbname);

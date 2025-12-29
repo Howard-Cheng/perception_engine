@@ -28,106 +28,31 @@ namespace linguacore {
 // Configuration Loading
 // ============================================================================
 
-LinguaCoreConfig loadConfiguration(const std::string& config_path) {
-    LinguaCoreConfig config;
-    
-    std::ifstream file(config_path);
-    if (!file.is_open()) {
-        PE_WARN("Could not open " << config_path << ", using defaults");
-        return config;
-    }
-    
-    std::string line;
-    std::string current_section;
-    
-    while (std::getline(file, line)) {
-        // Trim whitespace
-        line.erase(0, line.find_first_not_of(" \t\r\n"));
-        line.erase(line.find_last_not_of(" \t\r\n") + 1);
-        
-        // Skip empty lines and comments
-        if (line.empty() || line[0] == '#') continue;
-        
-        // Check for section header
-        if (line[0] == '[' && line.back() == ']') {
-            current_section = line.substr(1, line.length() - 2);
-            continue;
-        }
-        
-        // Parse key=value
-        size_t pos = line.find('=');
-        if (pos == std::string::npos) continue;
-        
-        std::string key = line.substr(0, pos);
-        std::string value = line.substr(pos + 1);
-        
-        // Trim key and value
-        key.erase(0, key.find_first_not_of(" \t"));
-        key.erase(key.find_last_not_of(" \t") + 1);
-        value.erase(0, value.find_first_not_of(" \t"));
-        value.erase(value.find_last_not_of(" \t") + 1);
-        
-        // Process based on section
-        if (current_section == "linguacore") {
-            if (key == "check_interval_seconds") {
-                config.check_interval_seconds = std::stoi(value);
-            } else if (key == "batch_size") {
-                config.batch_size = std::stoi(value);
-            } else if (key == "verbose") {
-                config.verbose = (value == "true" || value == "1");
-            }
-        } else if (current_section == "postgresql" || current_section == "postgres") {
-            // UPDATED: Changed from "elasticsearch" to "postgresql"
-            if (key == "host") {
-                config.pg_host = value;
-            } else if (key == "port") {
-                config.pg_port = std::stoi(value);
-            } else if (key == "dbname" || key == "database") {
-                config.pg_dbname = value;
-            } else if (key == "user" || key == "username") {
-                config.pg_user = value;
-            } else if (key == "password") {
-                config.pg_password = value;
-            } else if (key == "table") {
-                config.pg_table = value;
-            }
-        } else if (current_section == "llm") {
-            if (key == "model_path") {
-                config.llm_model_path = value;
-            } else if (key == "max_tokens") {
-                config.llm_max_tokens = std::stoi(value);
-            } else if (key == "temperature") {
-                config.llm_temperature = std::stof(value);
-            }
-        } else if (current_section == "qdrant") {
-            if (key == "host") {
-                config.qdrant_host = value;
-            } else if (key == "port") {
-                config.qdrant_port = std::stoi(value);
-            } else if (key == "collection") {
-                config.qdrant_collection = value;
-            }
-        } else if (current_section == "embedding") {
-            if (key == "model_path") {
-                config.embedding_model_path = value;
-            }
-        }
-    }
-    
-    return config;
-}
-
 // ============================================================================
 // LinguaCore Implementation
 // ============================================================================
 
 LinguaCore::LinguaCore(const LinguaCoreConfig& config)
-    : config_(config) {
+    : config_(config), initialized_(false) {
+    PE_INFO("LinguaCore constructor - configuration stored");
+}
+
+LinguaCore::~LinguaCore() {
+    stop();
+}
+
+bool LinguaCore::initialize() {
+    if (initialized_) {
+        PE_WARN("LinguaCore already initialized");
+        return true;
+    }
     
     PE_INFO("Initializing LinguaCore service...");
     
-    // Initialize PostgreSQL client (UPDATED: Changed from Elasticsearch)
+    // Initialize PostgreSQL client
     try {
+        PE_INFO("Connecting to PostgreSQL...");
+        
         // Build PostgreSQL connection string
         std::string pg_conn_str = "host=" + config_.pg_host + 
                                  " port=" + std::to_string(config_.pg_port) +
@@ -138,21 +63,32 @@ LinguaCore::LinguaCore(const LinguaCoreConfig& config)
             pg_conn_str += " password=" + config_.pg_password;
         }
         
-        // Create PostgreSQL client (only takes connection string parameter)
+        // Create PostgreSQL client
         pg_client_ = database::DatabaseClientFactory::createPostgreSQL(pg_conn_str);
         
-        // Initialize the table (PostgreSQL client handles table name in initializeCollection)
-        bool ret = pg_client_->initializeCollection(config_.pg_table);
+        if (!pg_client_) {
+            PE_ERROR("Failed to create PostgreSQL client");
+            return false;
+        }
+        
+        // Initialize the table
+        if (!pg_client_->initializeCollection(config_.pg_table)) {
+            PE_ERROR("Failed to initialize PostgreSQL table: " << config_.pg_table);
+            return false;
+        }
         
         PE_INFO("Connected to PostgreSQL at " << config_.pg_host << ":" << 
             config_.pg_port << "/" << config_.pg_dbname);
+            
     } catch (const std::exception& e) {
         PE_ERROR("Failed to connect to PostgreSQL: " << e.what());
-        throw;
+        return false;
     }
     
     // Initialize LLM client
     try {
+        PE_INFO("Initializing LLM client...");
+        
         perception::LLMConfig llm_config;
         llm_config.model_path = config_.llm_model_path;
         llm_config.temperature = config_.llm_temperature;
@@ -160,14 +96,23 @@ LinguaCore::LinguaCore(const LinguaCoreConfig& config)
         llm_config.verbose = config_.verbose;
         
         llm_client_ = std::make_unique<perception::LLMClient>(llm_config);
+        
+        if (!llm_client_) {
+            PE_ERROR("Failed to create LLM client");
+            return false;
+        }
+        
         PE_INFO("Initialized LLM client with model: " << config_.llm_model_path);
+        
     } catch (const std::exception& e) {
         PE_ERROR("Failed to initialize LLM client: " << e.what());
-        throw;
+        return false;
     }
     
     // Initialize Vector Store (Qdrant)
     try {
+        PE_INFO("Connecting to Qdrant...");
+        
         std::string qdrant_url = "http://" + config_.qdrant_host + ":" + 
                                 std::to_string(config_.qdrant_port);
         
@@ -181,24 +126,34 @@ LinguaCore::LinguaCore(const LinguaCoreConfig& config)
             qdrant_config
         );
         
+        if (!vector_store_) {
+            PE_ERROR("Failed to create VectorStore");
+            return false;
+        }
+        
         if (!vector_store_->initialize()) {
-            throw std::runtime_error("Failed to initialize VectorStore");
+            PE_ERROR("Failed to initialize VectorStore");
+            return false;
         }
         
         PE_INFO("Connected to Qdrant at " << qdrant_url);
+        
     } catch (const std::exception& e) {
         PE_ERROR("Failed to initialize Vector Store: " << e.what());
-        throw;
+        return false;
     }
     
+    initialized_ = true;
     PE_INFO("LinguaCore initialization complete");
-}
-
-LinguaCore::~LinguaCore() {
-    stop();
+    return true;
 }
 
 bool LinguaCore::start() {
+    if (!initialized_) {
+        PE_ERROR("Cannot start service: not initialized. Call initialize() first.");
+        return false;
+    }
+    
     if (running_) {
         PE_WARN("Service already running");
         return false;

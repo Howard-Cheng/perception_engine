@@ -778,9 +778,6 @@
             card += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">`;
             card += `<div style="color:#1e3c72;font-weight:600;">`;
             card += `🎯 Session #${index}`;
-            if (result.sessionId) {
-                card += ` <span style="color:#5a7aa8;font-size:0.85em;">(${escapeHtml(result.sessionId.substring(0, 8))}...)</span>`;
-            }
             card += `</div>`;
             if (result.score !== undefined) {
                 const scorePercent = (result.score * 100).toFixed(1);
@@ -795,6 +792,13 @@
                 card += `<div style="background:rgba(255,255,255,0.8);padding:12px;border-radius:4px;line-height:1.6;font-size:1em;">`;
                 card += escapeHtml(result.summary);
                 card += `</div>`;
+                card += `</div>`;
+            }
+            
+            // Session ID (full display, placed after Summary)
+            if (result.sessionId) {
+                card += `<div style="margin-bottom:8px;">`;
+                card += `<strong>🆔 Session ID:</strong> <span style="color:#6c757d;font-size:0.9em;">${escapeHtml(result.sessionId)}</span>`;
                 card += `</div>`;
             }
             
@@ -814,11 +818,11 @@
                 card += `</div>`;
             }
             
-            // ID
+            // ID (point ID from Qdrant)
             if (result.id) {
                 const idStr = typeof result.id === 'string' ? result.id : result.id.toString();
                 card += `<div style="margin-bottom:8px;font-size:0.85em;color:#6c757d;">`;
-                card += `<strong>🆔 ID:</strong> ${escapeHtml(idStr.substring(0, 30))}${idStr.length > 30 ? '...' : ''}`;
+                card += `<strong>🔑 Point ID:</strong> ${escapeHtml(idStr.substring(0, 30))}${idStr.length > 30 ? '...' : ''}`;
                 card += `</div>`;
             }
             

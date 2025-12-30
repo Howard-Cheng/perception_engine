@@ -1,4 +1,4 @@
-﻿#include "context/ContextCollector.h"
+#include "context/ContextCollector.h"
 #include "DatabaseClientFactory.h"
 #include "VectorStore.h"
 #include "pe_base/config_manager.h"
@@ -512,6 +512,9 @@ pe_base::Json ContextCollector::GetVectorDBData(const std::string& keyword,
         std::cout << "  startTime: " << startTime << std::endl;
         std::cout << "  endTime: " << endTime << std::endl;
         std::cout << "  maxResults: " << maxResults << std::endl;
+        auto searchStartTime = std::chrono::steady_clock::now();
+
+
         
         // Call VectorStore's querySessionSummaries method
         std::vector<vectordb::SearchResult> searchResults = vectorStore_->querySessionSummaries(
@@ -523,6 +526,11 @@ pe_base::Json ContextCollector::GetVectorDBData(const std::string& keyword,
         );
         
         std::cout << "[GetVectorDBData] Search returned: " << searchResults.size() << " results" << std::endl;
+
+        auto searchEndTime = std::chrono::steady_clock::now();
+        auto searchDuration = std::chrono::duration_cast<std::chrono::milliseconds>(searchEndTime - searchStartTime);
+        int searchTimeMs = static_cast<int>(searchDuration.count());
+        std::cout << "[GetVectorDBData] Search completed in " << searchTimeMs << " ms" << std::endl;
         
         // Convert to pe_base::Json
         std::ostringstream resultsArray;
@@ -577,6 +585,7 @@ pe_base::Json ContextCollector::GetVectorDBData(const std::string& keyword,
         resultsArray << "]";
         
         result.set("totalHits", static_cast<int>(searchResults.size()));
+        result.set("searchTimeMs", searchTimeMs);
         result.setRaw("results", resultsArray.str());
         
     } catch (const std::exception& e) {

@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -678,6 +678,7 @@
             html += '<div style="background:#fff9e6;padding:10px;border-radius:5px;margin-bottom:15px;border-left:4px solid #ffc107;">';
             html += `<strong>🧠 Semantic Search Summary:</strong><br>`;
             html += `Total Matches: <span class="json-number">${data.totalHits || 0}</span><br>`;
+            html += `Search Time: <span class="json-number">${data.searchTimeMs || 'N/A'}</span> ms<br>`;
             html += `Results Returned: <span class="json-number">${data.results ? data.results.length : 0}</span>`;
             html += '</div>';
             

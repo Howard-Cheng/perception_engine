@@ -1,4 +1,4 @@
-﻿// src/PostgreSQLClient.cpp
+// src/PostgreSQLClient.cpp
 #include "PostgreSQLClient.h"
 #include <libpq-fe.h>
 #include <nlohmann/json.hpp>
@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <cstring>
 #include <ctime>
+#include <chrono>
 #include <iostream>
 #include <vector>
 
@@ -541,6 +542,8 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
                                       int from,
                                       int size) {
     SearchResult result;
+
+    auto searchStartTime = std::chrono::steady_clock::now();
     
     // Build SQL query from JSON query
     std::ostringstream sqlQuery;
@@ -874,7 +877,12 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
         result.events.push_back(pImpl_->resultToEvent(res, i));
     }
     result.totalHits = rows;
-    
+
+    auto searchEndTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(searchEndTime - searchStartTime);
+    result.searchTimeMs = static_cast<long>(duration.count());
+    std::cout << "[DEBUG] PostgreSQL Search completed in " << result.searchTimeMs << " ms" << std::endl;
+
     PQclear(res);
     return result;
 }
@@ -1158,6 +1166,8 @@ SearchResult PostgreSQLClient::fuzzySearch(
     int size) {
     
     SearchResult result;
+
+    auto searchStartTime = std::chrono::steady_clock::now();
     
     // Build fuzzy search query using pg_trgm similarity
     // Use both % operator and word_similarity for better results
@@ -1189,7 +1199,12 @@ SearchResult PostgreSQLClient::fuzzySearch(
         result.events.push_back(pImpl_->resultToEvent(res, i));
     }
     result.totalHits = rows;
-    
+
+    auto searchEndTime = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(searchEndTime - searchStartTime);
+    result.searchTimeMs = static_cast<long>(duration.count());
+    std::cout << "[DEBUG] PostgreSQL Search completed in " << result.searchTimeMs << " ms" << std::endl;
+
     PQclear(res);
     return result;
 }

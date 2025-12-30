@@ -82,6 +82,70 @@
             50% { opacity: 0.5; }
         }
 
+        /* NEW: Database Selection Toggle */
+        .db-selector {
+            background: linear-gradient(135deg, #e8f4f8, #d4e9f2);
+            border: 2px solid #2a5298;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        .db-selector-title {
+            color: #1e3c72;
+            font-size: 1.2em;
+            font-weight: 600;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            justify-content: center;
+        }
+
+        .toggle-option {
+            flex: 1;
+            padding: 15px;
+            border-radius: 10px;
+            border: 2px solid #2a5298;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+
+        .toggle-option:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(42, 82, 152, 0.3);
+        }
+
+        .toggle-option.active {
+            background: linear-gradient(135deg, #2a5298, #1e3c72);
+            color: white;
+            border-color: #1e3c72;
+            box-shadow: 0 5px 20px rgba(30, 60, 114, 0.4);
+        }
+
+        .toggle-option-title {
+            font-size: 1.1em;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .toggle-option-desc {
+            font-size: 0.85em;
+            opacity: 0.8;
+        }
+
+        .toggle-option.active .toggle-option-desc {
+            opacity: 0.9;
+        }
+
         .form-section {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -250,6 +314,22 @@
             color: #6f42c1;
         }
 
+        /* NEW: Vector DB specific styles */
+        .vector-result-card {
+            background: linear-gradient(135deg, #fff9e6, #fff3cd);
+            border-left: 4px solid #ffc107;
+        }
+
+        .similarity-score {
+            display: inline-block;
+            padding: 4px 8px;
+            background: #ffc107;
+            color: #000;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 20px;
@@ -264,6 +344,10 @@
             }
 
             .button-group {
+                flex-direction: column;
+            }
+
+            .toggle-container {
                 flex-direction: column;
             }
         }
@@ -282,6 +366,23 @@
                 <span id="statusText">Connecting to server...</span>
             </div>
             <div id="serverUrl">http://localhost:8777</div>
+        </div>
+
+        <!-- NEW: Database Selection -->
+        <div class="db-selector">
+            <div class="db-selector-title">
+                🗄️ Select Database Type
+            </div>
+            <div class="toggle-container">
+                <div class="toggle-option" id="option-postgres" onclick="selectDatabase(1)">
+                    <div class="toggle-option-title">🐘 PostgreSQL</div>
+                    <div class="toggle-option-desc">Raw Events - Detailed screen content, mouse events, and interactions</div>
+                </div>
+                <div class="toggle-option active" id="option-vectordb" onclick="selectDatabase(2)">
+                    <div class="toggle-option-title">🧠 VectorDB (Qdrant)</div>
+                    <div class="toggle-option-desc">Session Summaries - AI-generated semantic search results</div>
+                </div>
+            </div>
         </div>
 
         <div class="form-section">
@@ -324,6 +425,7 @@
         // Configuration
         const SERVER_URL = 'http://localhost:8777';
         let isConnected = false;
+        let selectedRequestType = 2; // Default: VectorDB
 
         // Check server connection on load
         window.addEventListener('load', function() {
@@ -331,6 +433,23 @@
             // Set default time range: last 24 hours
             setDefaultTimeRange();
         });
+
+        // NEW: Database selection function
+        function selectDatabase(type) {
+            selectedRequestType = type;
+            
+            // Update UI
+            document.getElementById('option-postgres').classList.remove('active');
+            document.getElementById('option-vectordb').classList.remove('active');
+            
+            if (type === 1) {
+                document.getElementById('option-postgres').classList.add('active');
+            } else {
+                document.getElementById('option-vectordb').classList.add('active');
+            }
+            
+            console.log('Selected database type:', type);
+        }
 
         // Set default time range (last 24 hours)
         function setDefaultTimeRange() {
@@ -434,17 +553,19 @@
 
             // Disable button during request
             sendBtn.disabled = true;
-            resultBox.innerHTML = '<span class="loading">⏳ Sending query to server...</span>';
+            const dbName = selectedRequestType === 1 ? 'PostgreSQL' : 'VectorDB';
+            resultBox.innerHTML = `<span class="loading">⏳ Querying ${dbName}...</span>`;
 
             try {
                 // Format times for API (ISO 8601: YYYY-MM-DDTHH)
                 const starttimeISO = formatDateTimeISO(starttime);
                 const endtimeISO = formatDateTimeISO(endtime);
                 
-                // Build query URL with new time format
-                const queryUrl = `${SERVER_URL}/query?keyword=${encodeURIComponent(keyword)}&starttime=${encodeURIComponent(starttimeISO)}&endtime=${encodeURIComponent(endtimeISO)}&max=${maxcount}`;
+                // NEW: Build query URL with requesttype parameter
+                const queryUrl = `${SERVER_URL}/query?keyword=${encodeURIComponent(keyword)}&starttime=${encodeURIComponent(starttimeISO)}&endtime=${encodeURIComponent(endtimeISO)}&max=${maxcount}&requesttype=${selectedRequestType}`;
                 
                 console.log('Sending request to:', queryUrl);
+                console.log('Request type:', selectedRequestType, '(', dbName, ')');
                 console.log('Time range:', starttimeISO, 'to', endtimeISO);
 
                 // Send request
@@ -460,30 +581,28 @@
                     throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
                 }
 
-                // FIX: Get response as text first to avoid JSON.parse() stack overflow
+                // Get response as text first
                 const responseText = await response.text();
                 
                 console.log('Response size:', responseText.length, 'bytes');
                 
-                // FIX: Parse JSON in chunks using streaming/manual parsing to avoid stack overflow
+                // Parse JSON
                 let data;
                 try {
-                    // Try standard JSON.parse first
                     data = JSON.parse(responseText);
                 } catch (parseError) {
-                    console.error('JSON.parse failed, attempting manual parse:', parseError);
-                    
-                    // If JSON.parse fails due to stack overflow, try manual parsing
-                    // This extracts key fields without full recursive parsing
-                    try {
-                        data = parseJsonSafely(responseText);
-                    } catch (manualParseError) {
-                        throw new Error(`JSON parsing failed: ${manualParseError.message}\nResponse too large or malformed.`);
-                    }
+                    console.error('JSON.parse failed:', parseError);
+                    throw new Error(`JSON parsing failed: ${parseError.message}`);
                 }
                 
-                // FIX: Format and display result with safe rendering (avoid recursive DOM operations)
-                displayResultsSafely(data, resultBox);
+                // NEW: Display results based on database type
+                if (selectedRequestType === 1) {
+                    // PostgreSQL results
+                    displayPostgreSQLResults(data, resultBox);
+                } else {
+                    // VectorDB results
+                    displayVectorDBResults(data, resultBox);
+                }
                 
                 updateConnectionStatus(true);
 
@@ -501,50 +620,11 @@
             document.getElementById('resultBox').innerHTML = '<span class="loading">Ready to query...</span>';
         }
 
-        // FIX: Safe JSON parser for large responses (avoids stack overflow)
-        function parseJsonSafely(text) {
-            console.log('Using safe JSON parser...');
+        // NEW: Display PostgreSQL results (raw events)
+        function displayPostgreSQLResults(data, resultBox) {
+            console.log('Displaying PostgreSQL results...');
             
-            // Try to parse incrementally by extracting key fields
-            const result = {
-                totalHits: 0,
-                searchTimeMs: 0,
-                results: []
-            };
-            
-            // Extract totalHits
-            const totalHitsMatch = text.match(/"totalHits"\s*:\s*(\d+)/);
-            if (totalHitsMatch) {
-                result.totalHits = parseInt(totalHitsMatch[1]);
-            }
-            
-            // Extract searchTimeMs
-            const searchTimeMatch = text.match(/"searchTimeMs"\s*:\s*(\d+)/);
-            if (searchTimeMatch) {
-                result.searchTimeMs = parseInt(searchTimeMatch[1]);
-            }
-            
-            // Extract results array (simplified - just get count)
-            const resultsMatch = text.match(/"results"\s*:\s*\[([\s\S]*)\]/);
-            if (resultsMatch) {
-                // Count number of eventId occurrences to estimate result count
-                const eventIdMatches = resultsMatch[1].match(/"eventId"/g);
-                result.results = Array(eventIdMatches ? eventIdMatches.length : 0).fill({
-                    eventId: "truncated",
-                    message: "Data too large - only metadata shown"
-                });
-            }
-            
-            console.log('Safe parse result:', result);
-            return result;
-        }
-
-        // FIX: Safe result display function (avoids recursive rendering)
-        function displayResultsSafely(data, resultBox) {
-            console.log('Displaying results safely...');
-            
-            // Build HTML incrementally instead of using formatJson recursively
-            let html = '<span class="success">✅ Query successful!</span>\n\n';
+            let html = '<span class="success">✅ Query successful! (PostgreSQL)</span>\n\n';
             
             // Add summary
             html += '<div style="background:#e8f4f8;padding:10px;border-radius:5px;margin-bottom:15px;">';
@@ -554,14 +634,14 @@
             html += `Results Returned: <span class="json-number">${data.results ? data.results.length : 0}</span>`;
             html += '</div>';
             
-            // If results array is too large, show simplified view
+            // Display results
             if (data.results && data.results.length > 0) {
-                const maxDisplay = 50; // Only display first 50 results in detail
+                const maxDisplay = 50;
                 const displayCount = Math.min(data.results.length, maxDisplay);
                 
                 if (data.results.length > maxDisplay) {
                     html += `<div style="background:#fff3cd;padding:10px;border-radius:5px;margin-bottom:15px;color:#856404;">`;
-                    html += `⚠️ <strong>Note:</strong> Showing first ${maxDisplay} of ${data.results.length} results to prevent browser freeze.`;
+                    html += `⚠️ <strong>Note:</strong> Showing first ${maxDisplay} of ${data.results.length} results.`;
                     html += '</div>';
                 }
                 
@@ -569,15 +649,14 @@
                 
                 for (let i = 0; i < displayCount; i++) {
                     const result = data.results[i];
-                    html += renderResultCard(result, i + 1);
+                    html += renderPostgreSQLResultCard(result, i + 1);
                 }
                 
                 html += '</div>';
                 
                 if (data.results.length > maxDisplay) {
                     html += `<div style="background:#d1ecf1;padding:10px;border-radius:5px;margin-top:15px;color:#0c5460;">`;
-                    html += `ℹ️ ${data.results.length - maxDisplay} more results not shown. `;
-                    html += `Consider refining your search or reducing the max count.`;
+                    html += `ℹ️ ${data.results.length - maxDisplay} more results not shown.`;
                     html += '</div>';
                 }
             } else {
@@ -589,8 +668,40 @@
             resultBox.innerHTML = html;
         }
 
-        // FIX: Render individual result card (non-recursive)
-        function renderResultCard(result, index) {
+        // NEW: Display VectorDB results (session summaries)
+        function displayVectorDBResults(data, resultBox) {
+            console.log('Displaying VectorDB results...');
+            
+            let html = '<span class="success">✅ Query successful! (VectorDB - Session Summaries)</span>\n\n';
+            
+            // Add summary
+            html += '<div style="background:#fff9e6;padding:10px;border-radius:5px;margin-bottom:15px;border-left:4px solid #ffc107;">';
+            html += `<strong>🧠 Semantic Search Summary:</strong><br>`;
+            html += `Total Matches: <span class="json-number">${data.totalHits || 0}</span><br>`;
+            html += `Results Returned: <span class="json-number">${data.results ? data.results.length : 0}</span>`;
+            html += '</div>';
+            
+            // Display results
+            if (data.results && data.results.length > 0) {
+                html += '<div style="max-height:500px;overflow-y:auto;">';
+                
+                for (let i = 0; i < data.results.length; i++) {
+                    const result = data.results[i];
+                    html += renderVectorDBResultCard(result, i + 1);
+                }
+                
+                html += '</div>';
+            } else {
+                html += '<div style="background:#f8d7da;padding:15px;border-radius:5px;color:#721c24;">';
+                html += '❌ No session summaries found matching your query.';
+                html += '</div>';
+            }
+            
+            resultBox.innerHTML = html;
+        }
+
+        // Render PostgreSQL result card
+        function renderPostgreSQLResultCard(result, index) {
             let card = `<div style="background:white;border-left:4px solid #2a5298;padding:15px;margin-bottom:15px;border-radius:5px;box-shadow:0 2px 4px rgba(0,0,0,0.1);">`;
             
             // Header
@@ -604,14 +715,14 @@
             // App Name
             if (result.appName) {
                 card += `<div style="margin-bottom:8px;">`;
-                card += `<strong>App:</strong> <span style="color:#22863a;">${escapeHtml(result.appName)}</span>`;
+                card += `<strong>📱 App:</strong> <span style="color:#22863a;">${escapeHtml(result.appName)}</span>`;
                 card += `</div>`;
             }
             
             // Window Title
             if (result.windowTitle) {
                 card += `<div style="margin-bottom:8px;">`;
-                card += `<strong>Window:</strong> ${escapeHtml(result.windowTitle)}`;
+                card += `<strong>🪟 Window:</strong> ${escapeHtml(result.windowTitle)}`;
                 card += `</div>`;
             }
             
@@ -619,18 +730,18 @@
             if (result.timestamp) {
                 const date = new Date(result.timestamp * 1000);
                 card += `<div style="margin-bottom:8px;">`;
-                card += `<strong>Time:</strong> <span style="color:#005cc5;">${date.toLocaleString()}</span>`;
+                card += `<strong>⏰ Time:</strong> <span style="color:#005cc5;">${date.toLocaleString()}</span>`;
                 card += `</div>`;
             }
             
-            // Screen Content (truncated for display)
+            // Screen Content (truncated)
             if (result.screenContent) {
                 const content = result.screenContent;
                 const maxLength = 200;
                 const truncated = content.length > maxLength ? content.substring(0, maxLength) + '...' : content;
                 
                 card += `<div style="margin-bottom:8px;">`;
-                card += `<strong>Content:</strong><br>`;
+                card += `<strong>📄 Content:</strong><br>`;
                 card += `<div style="background:#f8f9fa;padding:8px;border-radius:4px;font-family:monospace;font-size:0.85em;max-height:100px;overflow-y:auto;">`;
                 card += escapeHtml(truncated);
                 card += `</div>`;
@@ -643,14 +754,70 @@
             // Location
             if (result.location) {
                 card += `<div style="margin-bottom:8px;">`;
-                card += `<strong>Location:</strong> ${result.location.lat}, ${result.location.lon}`;
+                card += `<strong>📍 Location:</strong> ${result.location.lat}, ${result.location.lon}`;
                 card += `</div>`;
             }
             
-            // Mouse Events Count
+            // Mouse Events
             if (result.mouseEvents && result.mouseEvents.length > 0) {
                 card += `<div style="margin-bottom:8px;">`;
-                card += `<strong>Mouse Events:</strong> ${result.mouseEvents.length} recorded`;
+                card += `<strong>🖱️ Mouse Events:</strong> ${result.mouseEvents.length} recorded`;
+                card += `</div>`;
+            }
+            
+            card += `</div>`;
+            return card;
+        }
+
+        // NEW: Render VectorDB result card (session summary)
+        function renderVectorDBResultCard(result, index) {
+            let card = `<div class="vector-result-card" style="padding:15px;margin-bottom:15px;border-radius:5px;box-shadow:0 2px 4px rgba(0,0,0,0.1);">`;
+            
+            // Header with similarity score
+            card += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">`;
+            card += `<div style="color:#1e3c72;font-weight:600;">`;
+            card += `🎯 Session #${index}`;
+            if (result.sessionId) {
+                card += ` <span style="color:#5a7aa8;font-size:0.85em;">(${escapeHtml(result.sessionId.substring(0, 8))}...)</span>`;
+            }
+            card += `</div>`;
+            if (result.score !== undefined) {
+                const scorePercent = (result.score * 100).toFixed(1);
+                card += `<span class="similarity-score">🔍 ${scorePercent}% Match</span>`;
+            }
+            card += `</div>`;
+            
+            // Summary (main content)
+            if (result.summary) {
+                card += `<div style="margin-bottom:12px;">`;
+                card += `<strong>📝 Summary:</strong><br>`;
+                card += `<div style="background:rgba(255,255,255,0.8);padding:12px;border-radius:4px;line-height:1.6;font-size:1em;">`;
+                card += escapeHtml(result.summary);
+                card += `</div>`;
+                card += `</div>`;
+            }
+            
+            // Timestamp
+            if (result.timestamp) {
+                const date = new Date(result.timestamp * 1000);
+                card += `<div style="margin-bottom:8px;">`;
+                card += `<strong>⏰ Time:</strong> <span style="color:#005cc5;">${date.toLocaleString()}</span>`;
+                card += `</div>`;
+            }
+            
+            // Created At
+            if (result.createdAt) {
+                const createdDate = new Date(result.createdAt * 1000);
+                card += `<div style="margin-bottom:8px;">`;
+                card += `<strong>📅 Created:</strong> <span style="color:#6c757d;">${createdDate.toLocaleString()}</span>`;
+                card += `</div>`;
+            }
+            
+            // ID
+            if (result.id) {
+                const idStr = typeof result.id === 'string' ? result.id : result.id.toString();
+                card += `<div style="margin-bottom:8px;font-size:0.85em;color:#6c757d;">`;
+                card += `<strong>🆔 ID:</strong> ${escapeHtml(idStr.substring(0, 30))}${idStr.length > 30 ? '...' : ''}`;
                 card += `</div>`;
             }
             

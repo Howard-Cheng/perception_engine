@@ -565,16 +565,6 @@ pe_base::Json ContextCollector::GetVectorDBData(const std::string& keyword,
                     resultsArray << ",\"sessionId\":\"" << pe_base::Json::escapeJsonString(std::get<std::string>(it->second)) << "\"";
                 }
                 
-                it = payload.find("activity_summary");
-                if (it != payload.end() && std::holds_alternative<std::string>(it->second)) {
-                    resultsArray << ",\"activitySummary\":\"" << pe_base::Json::escapeJsonString(std::get<std::string>(it->second)) << "\"";
-                }
-                
-                it = payload.find("app_name");
-                if (it != payload.end() && std::holds_alternative<std::string>(it->second)) {
-                    resultsArray << ",\"appName\":\"" << pe_base::Json::escapeJsonString(std::get<std::string>(it->second)) << "\"";
-                }
-                
                 it = payload.find("created_at");
                 if (it != payload.end() && std::holds_alternative<int64_t>(it->second)) {
                     resultsArray << ",\"createdAt\":" << std::get<int64_t>(it->second);

@@ -217,7 +217,7 @@ private:
                     PE_ERROR("Context collector not initialized");
                 }
             }
-            // ? NEW: Elasticsearch query endpoint
+            // ? NEW: Elasticsearch/VectorDB query endpoint
             else if (request.path.find("/query") == 0 && request.method == "GET") {
                 if (!contextCollector) {
                     response.SetBody("{\"error\":\"Service not initialized\"}");
@@ -237,6 +237,7 @@ private:
                     std::time_t startTime = 0;
                     std::time_t endTime = std::time(nullptr);  // Default: now
                     int maxResults = 100;
+                    int requestType = 2;  // NEW: Default to VectorDB (type 2)
 
                     // Simple query parameter parsing
                     size_t queryPos = request.path.find('?');
@@ -318,6 +319,18 @@ private:
                             maxResults = std::stoi(maxStr);
                         }
                         
+                        // NEW: Parse requesttype parameter
+                        size_t typePos = queryString.find("requesttype=");
+                        if (typePos != std::string::npos) {
+                            std::string typeStr = queryString.substr(typePos + 12);
+                            size_t typeEnd = typeStr.find('&');
+                            if (typeEnd != std::string::npos) {
+                                typeStr = typeStr.substr(0, typeEnd);
+                            }
+                            requestType = std::stoi(typeStr);
+                            PE_INFO("Request type: " + std::to_string(requestType));
+                        }
+                        
                         // Fallback: Support old 'hours' parameter for backward compatibility
                         if (startTime == 0) {
                             size_t hoursPos = queryString.find("hours=");
@@ -337,14 +350,31 @@ private:
                         }
                     }
 
-                    // Query DB
-                    pe_base::Json results = contextCollector->GetESDBData(keyword, startTime, endTime, maxResults);
+                    // NEW: Query based on requesttype
+                    pe_base::Json results;
+                    if (requestType == 1) {
+                        // Type 1: Query PostgreSQL/Elasticsearch raw events
+                        PE_INFO("Querying PostgreSQL/ES raw events (requesttype=1)");
+                        results = contextCollector->GetESDBData(keyword, startTime, endTime, maxResults);
+                    }
+                    else if (requestType == 2) {
+                        // Type 2: Query VectorDB (Qdrant) session summaries
+                        PE_INFO("Querying VectorDB session summaries (requesttype=2)");
+                        results = contextCollector->GetVectorDBData(keyword, startTime, endTime, maxResults);
+                    }
+                    else {
+                        // Invalid request type
+                        response.SetBody("{\"error\":\"Invalid requesttype. Use 1 for raw events or 2 for session summaries.\"}");
+                        response.status = 400;
+                        PE_ERROR("Invalid requesttype: " + std::to_string(requestType));
+                        return;
+                    }
 
                     response.SetHeader("Content-Type", "application/json");
                     response.SetBody(results.toString());
                     response.status = 200;
 
-                    PE_INFO("Database Query: keyword='" + keyword + "' startTime=" + std::to_string(startTime) + " endTime=" + std::to_string(endTime));
+                    PE_INFO("Database Query: keyword='" + keyword + "' startTime=" + std::to_string(startTime) + " endTime=" + std::to_string(endTime) + " requestType=" + std::to_string(requestType));
 
                 }
                 catch (const std::exception& e) {
@@ -538,6 +568,7 @@ int main(int argc, char* argv[]) {
                             std::time_t startTime = 0;
                             std::time_t endTime = std::time(nullptr);  // Default: now
                             int maxResults = 100;
+                            int requestType = 2;  // NEW: Default to VectorDB (type 2)
 
                             size_t queryPos = request.path.find('?');
                             if (queryPos != std::string::npos) {
@@ -618,6 +649,18 @@ int main(int argc, char* argv[]) {
                                     maxResults = std::stoi(maxStr);
                                 }
                                 
+                                // NEW: Parse requesttype parameter
+                                size_t typePos = queryString.find("requesttype=");
+                                if (typePos != std::string::npos) {
+                                    std::string typeStr = queryString.substr(typePos + 12);
+                                    size_t typeEnd = typeStr.find('&');
+                                    if (typeEnd != std::string::npos) {
+                                        typeStr = typeStr.substr(0, typeEnd);
+                                    }
+                                    requestType = std::stoi(typeStr);
+                                    PE_INFO("Request type: " + std::to_string(requestType));
+                                }
+                                
                                 // Fallback: Support old 'hours' parameter for backward compatibility
                                 if (startTime == 0) {
                                     size_t hoursPos = queryString.find("hours=");
@@ -637,14 +680,31 @@ int main(int argc, char* argv[]) {
                                 }
                             }
 
-                            // Query ES
-                            pe_base::Json results = collector.GetESDBData(keyword, startTime, endTime, maxResults);
+                            // NEW: Query based on requesttype
+                            pe_base::Json results;
+                            if (requestType == 1) {
+                                // Type 1: Query PostgreSQL/Elasticsearch raw events
+                                PE_INFO("Querying PostgreSQL/ES raw events (requesttype=1)");
+                                results = collector.GetESDBData(keyword, startTime, endTime, maxResults);
+                            }
+                            else if (requestType == 2) {
+                                // Type 2: Query VectorDB (Qdrant) session summaries
+                                PE_INFO("Querying VectorDB session summaries (requesttype=2)");
+                                results = collector.GetVectorDBData(keyword, startTime, endTime, maxResults);
+                            }
+                            else {
+                                // Invalid request type
+                                response.SetBody("{\"error\":\"Invalid requesttype. Use 1 for raw events or 2 for session summaries.\"}");
+                                response.status = 400;
+                                PE_ERROR("Invalid requesttype: " + std::to_string(requestType));
+                                return;
+                            }
 
                             response.SetHeader("Content-Type", "application/json");
                             response.SetBody(results.toString());
                             response.status = 200;
 
-                            PE_INFO("Database Query: keyword='" + keyword + "' startTime=" + std::to_string(startTime) + " endTime=" + std::to_string(endTime));
+                            PE_INFO("Database Query: keyword='" + keyword + "' startTime=" + std::to_string(startTime) + " endTime=" + std::to_string(endTime) + " requestType=" + std::to_string(requestType));
 
                         }
                         catch (const std::exception& e) {

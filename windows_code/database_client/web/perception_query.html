@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PerceptionEngine Query Interface</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #1e3c72 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 1200px;
+            width: 100%;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            color: #1e3c72;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            font-weight: 600;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .header p {
+            font-size: 1.1em;
+            color: #5a7aa8;
+        }
+
+        .status-bar {
+            background: linear-gradient(90deg, #1e3c72, #2a5298);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ff4444;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.connected {
+            background: #44ff44;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* NEW: Database Selection Toggle */
+        .db-selector {
+            background: linear-gradient(135deg, #e8f4f8, #d4e9f2);
+            border: 2px solid #2a5298;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        .db-selector-title {
+            color: #1e3c72;
+            font-size: 1.2em;
+            font-weight: 600;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            justify-content: center;
+        }
+
+        .toggle-option {
+            flex: 1;
+            padding: 15px;
+            border-radius: 10px;
+            border: 2px solid #2a5298;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+
+        .toggle-option:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(42, 82, 152, 0.3);
+        }
+
+        .toggle-option.active {
+            background: linear-gradient(135deg, #2a5298, #1e3c72);
+            color: white;
+            border-color: #1e3c72;
+            box-shadow: 0 5px 20px rgba(30, 60, 114, 0.4);
+        }
+
+        .toggle-option-title {
+            font-size: 1.1em;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .toggle-option-desc {
+            font-size: 0.85em;
+            opacity: 0.8;
+        }
+
+        .toggle-option.active .toggle-option-desc {
+            opacity: 0.9;
+        }
+
+        .form-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group label {
+            color: #1e3c72;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 1em;
+        }
+
+        .form-group input {
+            padding: 12px 15px;
+            border: 2px solid #2a5298;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #1e3c72;
+            box-shadow: 0 0 0 3px rgba(30, 60, 114, 0.1);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn-send {
+            background: linear-gradient(135deg, #2a5298, #1e3c72);
+            color: white;
+        }
+
+        .btn-send:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(30, 60, 114, 0.4);
+        }
+
+        .btn-send:active {
+            transform: translateY(0);
+        }
+
+        .btn-clear {
+            background: linear-gradient(135deg, #6c757d, #495057);
+            color: white;
+        }
+
+        .btn-clear:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(108, 117, 125, 0.4);
+        }
+
+        .btn-clear:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .result-section {
+            margin-top: 30px;
+        }
+
+        .result-section h2 {
+            color: #1e3c72;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+
+        .result-box {
+            background: #f8f9fa;
+            border: 2px solid #2a5298;
+            border-radius: 10px;
+            padding: 20px;
+            min-height: 400px;
+            max-height: 600px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.95em;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            color: #2d3748;
+        }
+
+        .result-box::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        .result-box::-webkit-scrollbar-track {
+            background: #e2e8f0;
+            border-radius: 5px;
+        }
+
+        .result-box::-webkit-scrollbar-thumb {
+            background: #2a5298;
+            border-radius: 5px;
+        }
+
+        .result-box::-webkit-scrollbar-thumb:hover {
+            background: #1e3c72;
+        }
+
+        .loading {
+            text-align: center;
+            color: #2a5298;
+            font-style: italic;
+        }
+
+        .error {
+            color: #dc3545;
+            font-weight: 600;
+        }
+
+        .success {
+            color: #28a745;
+            font-weight: 600;
+        }
+
+        .json-key {
+            color: #1e3c72;
+            font-weight: 600;
+        }
+
+        .json-string {
+            color: #22863a;
+        }
+
+        .json-number {
+            color: #005cc5;
+        }
+
+        .json-boolean {
+            color: #d73a49;
+        }
+
+        .json-null {
+            color: #6f42c1;
+        }
+
+        /* NEW: Vector DB specific styles */
+        .vector-result-card {
+            background: linear-gradient(135deg, #fff9e6, #fff3cd);
+            border-left: 4px solid #ffc107;
+        }
+
+        .similarity-score {
+            display: inline-block;
+            padding: 4px 8px;
+            background: #ffc107;
+            color: #000;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+            }
+
+            .header h1 {
+                font-size: 1.8em;
+            }
+
+            .form-section {
+                grid-template-columns: 1fr;
+            }
+
+            .button-group {
+                flex-direction: column;
+            }
+
+            .toggle-container {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 PerceptionEngine Query Interface</h1>
+            <p>Real-time Context Query System</p>
+        </div>
+
+        <div class="status-bar">
+            <div class="status-indicator">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Connecting to server...</span>
+            </div>
+            <div id="serverUrl">http://localhost:8777</div>
+        </div>
+
+        <!-- NEW: Database Selection -->
+        <div class="db-selector">
+            <div class="db-selector-title">
+                🗄️ Select Database Type
+            </div>
+            <div class="toggle-container">
+                <div class="toggle-option" id="option-postgres" onclick="selectDatabase(1)">
+                    <div class="toggle-option-title">🐘 PostgreSQL</div>
+                    <div class="toggle-option-desc">Raw Events - Detailed screen content, mouse events, and interactions</div>
+                </div>
+                <div class="toggle-option active" id="option-vectordb" onclick="selectDatabase(2)">
+                    <div class="toggle-option-title">🧠 VectorDB (Qdrant)</div>
+                    <div class="toggle-option-desc">Session Summaries - AI-generated semantic search results</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <div class="form-group">
+                <label for="keyword">🔎 Keyword (关键词)</label>
+                <input type="text" id="keyword" placeholder="Enter search keyword..." value="">
+            </div>
+            <div class="form-group">
+                <label for="starttime">⏰ Start Time (开始时间)</label>
+                <input type="datetime-local" id="starttime" placeholder="Start time..." value="">
+            </div>
+            <div class="form-group">
+                <label for="endtime">⏰ End Time (结束时间)</label>
+                <input type="datetime-local" id="endtime" placeholder="End time..." value="">
+            </div>
+            <div class="form-group">
+                <label for="maxcount">📊 Max Count (最大数量)</label>
+                <input type="number" id="maxcount" placeholder="Maximum results..." value="100" min="1">
+            </div>
+        </div>
+
+        <div class="button-group">
+            <button class="btn btn-send" id="sendBtn" onclick="sendQuery()">
+                🚀 Send Query
+            </button>
+            <button class="btn btn-clear" onclick="clearResults()">
+                🗑️ Clear Results
+            </button>
+        </div>
+
+        <div class="result-section">
+            <h2>📄 Query Results</h2>
+            <div class="result-box" id="resultBox">
+                <span class="loading">Ready to query...</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const SERVER_URL = 'http://localhost:8777';
+        let isConnected = false;
+        let selectedRequestType = 2; // Default: VectorDB
+
+        // Check server connection on load
+        window.addEventListener('load', function() {
+            checkServerConnection();
+            // Set default time range: last 24 hours
+            setDefaultTimeRange();
+        });
+
+        // NEW: Database selection function
+        function selectDatabase(type) {
+            selectedRequestType = type;
+            
+            // Update UI
+            document.getElementById('option-postgres').classList.remove('active');
+            document.getElementById('option-vectordb').classList.remove('active');
+            
+            if (type === 1) {
+                document.getElementById('option-postgres').classList.add('active');
+            } else {
+                document.getElementById('option-vectordb').classList.add('active');
+            }
+            
+            console.log('Selected database type:', type);
+        }
+
+        // Set default time range (last 24 hours)
+        function setDefaultTimeRange() {
+            const now = new Date();
+            const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+            
+            // Format: YYYY-MM-DDTHH:MM
+            document.getElementById('endtime').value = formatDateTimeLocal(now);
+            document.getElementById('starttime').value = formatDateTimeLocal(yesterday);
+        }
+
+        // Format date for datetime-local input
+        function formatDateTimeLocal(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+
+        // Format date for API (ISO 8601: YYYY-MM-DDTHH)
+        function formatDateTimeISO(dateTimeLocal) {
+            if (!dateTimeLocal) return '';
+            // Extract YYYY-MM-DDTHH from YYYY-MM-DDTHH:MM
+            return dateTimeLocal.substring(0, 13);
+        }
+
+        // Check server connection
+        async function checkServerConnection() {
+            try {
+                // Try to fetch the /context endpoint as health check
+                const response = await fetch(`${SERVER_URL}/context`, { 
+                    method: 'GET',
+                    mode: 'cors'
+                });
+                
+                if (response.ok) {
+                    updateConnectionStatus(true);
+                } else {
+                    updateConnectionStatus(false);
+                }
+            } catch (error) {
+                console.error('Connection check failed:', error);
+                updateConnectionStatus(false);
+            }
+        }
+
+        // Update connection status UI
+        function updateConnectionStatus(connected) {
+            isConnected = connected;
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+            
+            if (connected) {
+                statusDot.classList.add('connected');
+                statusText.textContent = 'Connected to PerceptionEngine';
+            } else {
+                statusDot.classList.remove('connected');
+                statusText.textContent = 'Connection failed - Server may be offline';
+            }
+        }
+
+        // Send query to server
+        async function sendQuery() {
+            const keyword = document.getElementById('keyword').value.trim();
+            const starttime = document.getElementById('starttime').value;
+            const endtime = document.getElementById('endtime').value;
+            const maxcount = document.getElementById('maxcount').value;
+            const resultBox = document.getElementById('resultBox');
+            const sendBtn = document.getElementById('sendBtn');
+
+            // Validation
+            if (!keyword) {
+                resultBox.innerHTML = '<span class="error">❌ Error: Keyword cannot be empty!</span>';
+                return;
+            }
+
+            if (!starttime) {
+                resultBox.innerHTML = '<span class="error">❌ Error: Start time cannot be empty!</span>';
+                return;
+            }
+
+            if (!endtime) {
+                resultBox.innerHTML = '<span class="error">❌ Error: End time cannot be empty!</span>';
+                return;
+            }
+
+            if (!maxcount || maxcount < 1) {
+                resultBox.innerHTML = '<span class="error">❌ Error: Max count must be at least 1!</span>';
+                return;
+            }
+
+            // Validate time range
+            const startDate = new Date(starttime);
+            const endDate = new Date(endtime);
+            if (startDate >= endDate) {
+                resultBox.innerHTML = '<span class="error">❌ Error: Start time must be before end time!</span>';
+                return;
+            }
+
+            // Disable button during request
+            sendBtn.disabled = true;
+            const dbName = selectedRequestType === 1 ? 'PostgreSQL' : 'VectorDB';
+            resultBox.innerHTML = `<span class="loading">⏳ Querying ${dbName}...</span>`;
+
+            try {
+                // Format times for API (ISO 8601: YYYY-MM-DDTHH)
+                const starttimeISO = formatDateTimeISO(starttime);
+                const endtimeISO = formatDateTimeISO(endtime);
+                
+                // NEW: Build query URL with requesttype parameter
+                const queryUrl = `${SERVER_URL}/query?keyword=${encodeURIComponent(keyword)}&starttime=${encodeURIComponent(starttimeISO)}&endtime=${encodeURIComponent(endtimeISO)}&max=${maxcount}&requesttype=${selectedRequestType}`;
+                
+                console.log('Sending request to:', queryUrl);
+                console.log('Request type:', selectedRequestType, '(', dbName, ')');
+                console.log('Time range:', starttimeISO, 'to', endtimeISO);
+
+                // Send request
+                const response = await fetch(queryUrl, {
+                    method: 'GET',
+                    mode: 'cors',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
+                }
+
+                // Get response as text first
+                const responseText = await response.text();
+                
+                console.log('Response size:', responseText.length, 'bytes');
+                
+                // Parse JSON
+                let data;
+                try {
+                    data = JSON.parse(responseText);
+                } catch (parseError) {
+                    console.error('JSON.parse failed:', parseError);
+                    throw new Error(`JSON parsing failed: ${parseError.message}`);
+                }
+                
+                // NEW: Display results based on database type
+                if (selectedRequestType === 1) {
+                    // PostgreSQL results
+                    displayPostgreSQLResults(data, resultBox);
+                } else {
+                    // VectorDB results
+                    displayVectorDBResults(data, resultBox);
+                }
+                
+                updateConnectionStatus(true);
+
+            } catch (error) {
+                console.error('Query failed:', error);
+                resultBox.innerHTML = `<span class="error">❌ Query failed:\n${error.message}\n\nPlease check if the server is running at ${SERVER_URL}</span>`;
+                updateConnectionStatus(false);
+            } finally {
+                sendBtn.disabled = false;
+            }
+        }
+
+        // Clear results
+        function clearResults() {
+            document.getElementById('resultBox').innerHTML = '<span class="loading">Ready to query...</span>';
+        }
+
+        // NEW: Display PostgreSQL results (raw events)
+        function displayPostgreSQLResults(data, resultBox) {
+            console.log('Displaying PostgreSQL results...');
+            
+            let html = '<span class="success">✅ Query successful! (PostgreSQL)</span>\n\n';
+            
+            // Add summary
+            html += '<div style="background:#e8f4f8;padding:10px;border-radius:5px;margin-bottom:15px;">';
+            html += `<strong>📊 Summary:</strong><br>`;
+            html += `Total Hits: <span class="json-number">${data.totalHits || 0}</span><br>`;
+            html += `Search Time: <span class="json-number">${data.searchTimeMs || 0}</span> ms<br>`;
+            html += `Results Returned: <span class="json-number">${data.results ? data.results.length : 0}</span>`;
+            html += '</div>';
+            
+            // Display results
+            if (data.results && data.results.length > 0) {
+                const maxDisplay = 50;
+                const displayCount = Math.min(data.results.length, maxDisplay);
+                
+                if (data.results.length > maxDisplay) {
+                    html += `<div style="background:#fff3cd;padding:10px;border-radius:5px;margin-bottom:15px;color:#856404;">`;
+                    html += `⚠️ <strong>Note:</strong> Showing first ${maxDisplay} of ${data.results.length} results.`;
+                    html += '</div>';
+                }
+                
+                html += '<div style="max-height:500px;overflow-y:auto;">';
+                
+                for (let i = 0; i < displayCount; i++) {
+                    const result = data.results[i];
+                    html += renderPostgreSQLResultCard(result, i + 1);
+                }
+                
+                html += '</div>';
+                
+                if (data.results.length > maxDisplay) {
+                    html += `<div style="background:#d1ecf1;padding:10px;border-radius:5px;margin-top:15px;color:#0c5460;">`;
+                    html += `ℹ️ ${data.results.length - maxDisplay} more results not shown.`;
+                    html += '</div>';
+                }
+            } else {
+                html += '<div style="background:#f8d7da;padding:15px;border-radius:5px;color:#721c24;">';
+                html += '❌ No results found matching your query.';
+                html += '</div>';
+            }
+            
+            resultBox.innerHTML = html;
+        }
+
+        // NEW: Display VectorDB results (session summaries)
+        function displayVectorDBResults(data, resultBox) {
+            console.log('Displaying VectorDB results...');
+            
+            let html = '<span class="success">✅ Query successful! (VectorDB - Session Summaries)</span>\n\n';
+            
+            // Add summary
+            html += '<div style="background:#fff9e6;padding:10px;border-radius:5px;margin-bottom:15px;border-left:4px solid #ffc107;">';
+            html += `<strong>🧠 Semantic Search Summary:</strong><br>`;
+            html += `Total Matches: <span class="json-number">${data.totalHits || 0}</span><br>`;
+            html += `Search Time: <span class="json-number">${data.searchTimeMs || 'N/A'}</span> ms<br>`;
+            html += `Results Returned: <span class="json-number">${data.results ? data.results.length : 0}</span>`;
+            html += '</div>';
+            
+            // Display results
+            if (data.results && data.results.length > 0) {
+                html += '<div style="max-height:500px;overflow-y:auto;">';
+                
+                for (let i = 0; i < data.results.length; i++) {
+                    const result = data.results[i];
+                    html += renderVectorDBResultCard(result, i + 1);
+                }
+                
+                html += '</div>';
+            } else {
+                html += '<div style="background:#f8d7da;padding:15px;border-radius:5px;color:#721c24;">';
+                html += '❌ No session summaries found matching your query.';
+                html += '</div>';
+            }
+            
+            resultBox.innerHTML = html;
+        }
+
+        // Render PostgreSQL result card
+        function renderPostgreSQLResultCard(result, index) {
+            let card = `<div style="background:white;border-left:4px solid #2a5298;padding:15px;margin-bottom:15px;border-radius:5px;box-shadow:0 2px 4px rgba(0,0,0,0.1);">`;
+            
+            // Header
+            card += `<div style="color:#1e3c72;font-weight:600;margin-bottom:10px;">`;
+            card += `📌 Result #${index}`;
+            if (result.eventId) {
+                card += ` <span style="color:#5a7aa8;font-size:0.85em;">(${escapeHtml(result.eventId)})</span>`;
+            }
+            card += `</div>`;
+            
+            // App Name
+            if (result.appName) {
+                card += `<div style="margin-bottom:8px;">`;
+                card += `<strong>📱 App:</strong> <span style="color:#22863a;">${escapeHtml(result.appName)}</span>`;
+                card += `</div>`;
+            }
+            
+            // Window Title
+            if (result.windowTitle) {
+                card += `<div style="margin-bottom:8px;">`;
+                card += `<strong>🪟 Window:</strong> ${escapeHtml(result.windowTitle)}`;
+                card += `</div>`;
+            }
+            
+            // Timestamp
+            if (result.timestamp) {
+                const date = new Date(result.timestamp * 1000);
+                card += `<div style="margin-bottom:8px;">`;
+                card += `<strong>⏰ Time:</strong> <span style="color:#005cc5;">${date.toLocaleString()}</span>`;
+                card += `</div>`;
+            }
+            
+            // Screen Content (truncated)
+            if (result.screenContent) {
+                const content = result.screenContent;
+                const maxLength = 200;
+                const truncated = content.length > maxLength ? content.substring(0, maxLength) + '...' : content;
+                
+                card += `<div style="margin-bottom:8px;">`;
+                card += `<strong>📄 Content:</strong><br>`;
+                card += `<div style="background:#f8f9fa;padding:8px;border-radius:4px;font-family:monospace;font-size:0.85em;max-height:100px;overflow-y:auto;">`;
+                card += escapeHtml(truncated);
+                card += `</div>`;
+                if (content.length > maxLength) {
+                    card += `<small style="color:#6c757d;">... (${content.length - maxLength} more characters)</small>`;
+                }
+                card += `</div>`;
+            }
+            
+            // Location
+            if (result.location) {
+                card += `<div style="margin-bottom:8px;">`;
+                card += `<strong>📍 Location:</strong> ${result.location.lat}, ${result.location.lon}`;
+                card += `</div>`;
+            }
+            
+            // Mouse Events
+            if (result.mouseEvents && result.mouseEvents.length > 0) {
+                card += `<div style="margin-bottom:8px;">`;
+                card += `<strong>🖱️ Mouse Events:</strong> ${result.mouseEvents.length} recorded`;
+                card += `</div>`;
+            }
+            
+            card += `</div>`;
+            return card;
+        }
+
+        // NEW: Render VectorDB result card (session summary)
+        function renderVectorDBResultCard(result, index) {
+            let card = `<div class="vector-result-card" style="padding:15px;margin-bottom:15px;border-radius:5px;box-shadow:0 2px 4px rgba(0,0,0,0.1);">`;
+            
+            // Header with similarity score
+            card += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">`;
+            card += `<div style="color:#1e3c72;font-weight:600;">`;
+            card += `🎯 Session #${index}`;
+            card += `</div>`;
+            if (result.score !== undefined) {
+                const scorePercent = (result.score * 100).toFixed(1);
+                card += `<span class="similarity-score">🔍 ${scorePercent}% Match</span>`;
+            }
+            card += `</div>`;
+            
+            // Summary (main content)
+            if (result.summary) {
+                card += `<div style="margin-bottom:12px;">`;
+                card += `<strong>📝 Summary:</strong><br>`;
+                card += `<div style="background:rgba(255,255,255,0.8);padding:12px;border-radius:4px;line-height:1.6;font-size:1em;">`;
+                card += escapeHtml(result.summary);
+                card += `</div>`;
+                card += `</div>`;
+            }
+            
+            // Session ID (full display, placed after Summary)
+            if (result.sessionId) {
+                card += `<div style="margin-bottom:8px;">`;
+                card += `<strong>🆔 Session ID:</strong> <span style="color:#6c757d;font-size:0.9em;">${escapeHtml(result.sessionId)}</span>`;
+                card += `</div>`;
+            }
+            
+            // Timestamp
+            if (result.timestamp) {
+                const date = new Date(result.timestamp * 1000);
+                card += `<div style="margin-bottom:8px;">`;
+                card += `<strong>⏰ Time:</strong> <span style="color:#005cc5;">${date.toLocaleString()}</span>`;
+                card += `</div>`;
+            }
+            
+            // Created At
+            if (result.createdAt) {
+                const createdDate = new Date(result.createdAt * 1000);
+                card += `<div style="margin-bottom:8px;">`;
+                card += `<strong>📅 Created:</strong> <span style="color:#6c757d;">${createdDate.toLocaleString()}</span>`;
+                card += `</div>`;
+            }
+            
+            // ID (point ID from Qdrant)
+            if (result.id) {
+                const idStr = typeof result.id === 'string' ? result.id : result.id.toString();
+                card += `<div style="margin-bottom:8px;font-size:0.85em;color:#6c757d;">`;
+                card += `<strong>🔑 Point ID:</strong> ${escapeHtml(idStr.substring(0, 30))}${idStr.length > 30 ? '...' : ''}`;
+                card += `</div>`;
+            }
+            
+            card += `</div>`;
+            return card;
+        }
+
+        // Helper: Escape HTML to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

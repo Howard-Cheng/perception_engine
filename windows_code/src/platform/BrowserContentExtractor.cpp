@@ -235,7 +235,6 @@ bool BrowserContentExtractor::GetBrowserContentByHWND(HWND hwnd, BrowserContentI
         TraverseElementTree(pContentElement, outInfo, 0);
     } else {
         PE_WARN("Could not find content area, parsing entire window...");
-        PE_WARN("(This may include toolbar, tabs, and other UI elements)");
         TraverseElementTree(pRootElement, outInfo, 0);
     }
 

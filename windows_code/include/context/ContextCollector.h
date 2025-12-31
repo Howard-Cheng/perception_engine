@@ -6,6 +6,7 @@
 #include "IDatabaseClient.h"
 #include "DatabaseTypes.h"
 #include "sessionmanager/SessionManager.h"  // Add SessionManager
+#include "VectorStore.h"  // Add VectorStore (from vectordb_client)
 #include <chrono>
 #include <mutex>
 #include <string>
@@ -76,21 +77,21 @@ public:
     std::string GenerateFusedContext() const;
     
     // ========================================
-    // Elasticsearch Integration
+    // Database Integration (PostgreSQL)
     // ========================================
     
     /**
-     * @brief Initialize Database client
+     * @brief Initialize Database client (PostgreSQL)
      */
-    bool InitializeDatabase(const std::string& esHost = "http://localhost:9200",
-                                 const std::string& indexName = "perception_context");
+    bool InitializeDatabase(const std::string& connectionString = "host=127.0.0.1 port=5432 dbname=perception_engine user=postgres",
+                                 const std::string& tableName = "perception_context");
     
     /**
-     * @brief Shutdown Elasticsearch client
+     * @brief Shutdown Database client
      */
     void ShutdownDatabase();
     /**
-     * @brief Query Elasticsearch data
+     * @brief Query Database data
      */
     pe_base::Json GetESDBData(const std::string& keyword,
                     std::time_t startTime,
@@ -98,12 +99,28 @@ public:
                     int maxResults = 100);
     
     /**
-     * @brief Check if Elasticsearch is available
+     * @brief Query VectorDB (Qdrant) session summaries data
+     * 
+     * Performs semantic search over session summaries stored in vector database.
+     * 
+     * @param keyword Query text for semantic search (will be embedded)
+     * @param startTime Start time filter (Unix timestamp in seconds)
+     * @param endTime End time filter (Unix timestamp in seconds)
+     * @param maxResults Maximum number of results to return (default: 100)
+     * @return JSON object containing search results with metadata
+     */
+    pe_base::Json GetVectorDBData(const std::string& keyword,
+                    std::time_t startTime,
+                    std::time_t endTime,
+                    int maxResults = 100);
+    
+    /**
+     * @brief Check if Database is available
      */
     bool IsElasticsearchAvailable() const;
     
     /**
-     * @brief Store context to Elasticsearch
+     * @brief Store context to Database
      */
     void StoreContextToES(const pe_base::Json& context);
     
@@ -161,19 +178,25 @@ private:
     std::thread updateThread_;
     
     // ========================================
-    // Elasticsearch Storage
+    // Database Storage (Generic - PostgreSQL/Elasticsearch compatible)
     // ========================================
     
-    std::shared_ptr<database::IDatabaseClient> esClient_;
-    std::string esIndexName_;
-    std::atomic<bool> esStorageRunning_{false};
-    mutable std::mutex esClientMutex_;
+    std::shared_ptr<database::IDatabaseClient> dbClient_;
+    std::string dbCollectionName_;
+    std::atomic<bool> dbStorageRunning_{false};
+    mutable std::mutex dbClientMutex_;
     
     // ========================================
     // Session Management (Replaces old compression code)
     // ========================================
     
     std::unique_ptr<sessionmanager::SessionManager> sessionManager_;
+    
+    // ========================================
+    // Vector Database (Qdrant for session summaries)
+    // ========================================
+    
+    std::unique_ptr<vectordb::VectorStore> vectorStore_;
     
     // ========================================
     // Compression Timer (Windows Threadpool Timer)

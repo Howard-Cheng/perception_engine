@@ -8,6 +8,8 @@
 #include <memory>
 #include <thread>
 #include <atomic>
+#include <sstream>  // NEW: For std::istringstream (ISO time parsing)
+#include <iomanip>  // NEW: For std::get_time (ISO time parsing)
 #include "core/WindowsService.h"
 #include "communication/HttpServer.h"
 #include "context/ContextCollector.h"  // UPDATED: Use context folder
@@ -16,15 +18,47 @@
 
 // #include "CameraVisionEngine.h"  // Removed - using Python client instead
 
+// ========================================
+// NEW: URL Decode Helper Function
+// ========================================
+// Helper: URL decode (convert %XX to actual characters for UTF-8 support)
+std::string urlDecode(const std::string& encoded) {
+    std::string decoded;
+    char ch;
+    size_t i = 0;
+
+    while (i < encoded.length()) {
+        if (encoded[i] == '%' && i + 2 < encoded.length()) {
+            // Convert %XX to character
+            int value;
+            if (sscanf_s(encoded.substr(i + 1, 2).c_str(), "%x", &value) == 1) {
+                ch = static_cast<char>(value);
+                decoded += ch;
+                i += 3;
+            }
+            else {
+                decoded += encoded[i];
+                i++;
+            }
+        }
+        else if (encoded[i] == '+') {
+            decoded += ' ';
+            i++;
+        }
+        else {
+            decoded += encoded[i];
+            i++;
+        }
+    }
+
+    return decoded;
+}
+
 class PerceptionEngineService : public WindowsService {
 private:
     std::unique_ptr<HttpServer> httpServer;
-    std::unique_ptr<ContextCollector> contextCollector;  // UPDATED
-    std::unique_ptr<AudioCaptureEngine> audioEngine;
-    // std::unique_ptr<CameraVisionEngine> cameraEngine;  // Removed - using Python client
+    std::unique_ptr<ContextCollector> contextCollector;
     std::unique_ptr<std::thread> serverThread;
-    std::unique_ptr<std::thread> audioPollingThread;
-    // std::unique_ptr<std::thread> cameraThread;  // Removed - using Python client
     std::atomic<bool> serviceRunning{ false };
     bool screenOnlyMode;
 
@@ -48,60 +82,14 @@ public:
             contextCollector = std::make_unique<ContextCollector>();  // UPDATED
             PE_INFO("Context collector started");
 
-            // NEW: Initialize Elasticsearch (optional feature)
-            // If ES is not available, system continues without it
-            if (contextCollector->InitializeDatabase("http://localhost:9200", "perception_context")) {  // UPDATED: renamed method
-                PE_INFO("? Elasticsearch initialized - auto storage every 5 seconds");
+            // NEW: Initialize PostgreSQL (optional feature)
+            // If PostgreSQL is not available, system continues without it
+            if (contextCollector->InitializeDatabase("host=127.0.0.1 port=5432 dbname=perception_engine user=postgres", "perception_context")) {  // UPDATED: Use PostgreSQL connection string
+                PE_INFO("? PostgreSQL initialized - auto storage every 5 seconds");
             }
             else {
-                PE_WARN("??  Elasticsearch not available - running without ES storage");
-                PE_INFO("   To enable ES: Install and start Elasticsearch on http://localhost:9200");
-            }
-
-            // Initialize audio capture engine (only if NOT in screen-only mode)
-            if (!screenOnlyMode) {
-                audioEngine = std::make_unique<AudioCaptureEngine>();
-                if (!audioEngine->Initialize("models/whisper/ggml-small.bin")) {
-                    PE_WARN("Failed to initialize audio engine");
-                    audioEngine.reset();
-                }
-                else {
-                    PE_INFO("Audio engine initialized");
-
-                    // Set callback to update context when new transcription arrives
-                    audioEngine->SetTranscriptionCallback([this](const std::string& transcription) {
-                        if (contextCollector) {
-                            // Get latency from audio engine metrics
-                            auto metrics = audioEngine->GetMetrics();
-                            contextCollector->UpdateVoiceContext(transcription, metrics.whisperLatencyMs);
-                            PE_INFO_THIS("Voice transcription:" << transcription.c_str())
-                        }
-                        });
-
-                    // Start audio capture
-                    if (audioEngine->Start()) {
-                        PE_INFO("Audio capture started");
-
-                        // Start polling thread to pull transcriptions
-                        audioPollingThread = std::make_unique<std::thread>([this]() {
-                            while (serviceRunning.load() && audioEngine) {
-                                audioEngine->GetLatestUserSpeech(); // Triggers callback if new result
-                                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                            }
-                            });
-                    }
-                    else {
-                        PE_WARN("Failed to start audio capture");
-                    }
-                }
-
-                // Camera engine removed - using Python client (win_camera_fastvlm_pytorch.py) instead
-                // Camera updates come via HTTP POST /update_context from Python client
-                PE_INFO("Camera engine: Using Python client (not C++ engine)");
-            }
-            else {
-                PE_INFO("Audio engine: DISABLED (screen-only mode)");
-                PE_INFO("Camera engine: DISABLED (screen-only mode)");
+                PE_WARN("??  PostgreSQL not available - running without database storage");
+                PE_INFO("   To enable PostgreSQL: Install and start PostgreSQL on 127.0.0.1:5432");
             }
 
             // Initialize HTTP server
@@ -136,30 +124,6 @@ public:
             // Signal service to stop
             serviceRunning = false;
 
-            // Stop audio engine
-            if (audioEngine) {
-                audioEngine->Stop();
-                PE_INFO("Audio engine stopped");
-            }
-
-            // Wait for audio polling thread
-            if (audioPollingThread && audioPollingThread->joinable()) {
-                audioPollingThread->join();
-                PE_INFO("Audio polling thread joined");
-            }
-
-            // Camera thread removed - using Python client instead
-            // if (cameraThread && cameraThread->joinable()) {
-            //     cameraThread->join();
-            //     PE_INFO("Camera thread joined");
-            // }
-
-            // Camera engine removed - using Python client instead
-            // if (cameraEngine) {
-            //     cameraEngine.reset();
-            //     PE_INFO("Camera engine stopped");
-            // }
-
             if (httpServer) {
                 httpServer->Stop();
                 PE_INFO("HTTP server stop signal sent");
@@ -177,8 +141,6 @@ public:
                 PE_INFO("Context collector stopped");
             }
 
-            audioEngine.reset();
-            audioPollingThread.reset();
             httpServer.reset();
             serverThread.reset();
 
@@ -255,7 +217,7 @@ private:
                     PE_ERROR("Context collector not initialized");
                 }
             }
-            // ? NEW: Elasticsearch query endpoint
+            // ? NEW: Elasticsearch/VectorDB query endpoint
             else if (request.path.find("/query") == 0 && request.method == "GET") {
                 if (!contextCollector) {
                     response.SetBody("{\"error\":\"Service not initialized\"}");
@@ -264,46 +226,86 @@ private:
                 }
 
                 if (!contextCollector->IsElasticsearchAvailable()) {
-                    response.SetBody("{\"error\":\"Elasticsearch not available\"}");
+                    response.SetBody("{\"error\":\"Database not available\"}");
                     response.status = 503;
                     return;
                 }
 
                 try {
-                    // Parse query parameters
+                    // Parse query parameters - FIX: Support new time format (starttime/endtime ISO format)
                     std::string keyword;
-                    int hours = 24;  // Default: last 24 hours
+                    std::time_t startTime = 0;
+                    std::time_t endTime = std::time(nullptr);  // Default: now
                     int maxResults = 100;
+                    int requestType = 2;  // NEW: Default to VectorDB (type 2)
 
                     // Simple query parameter parsing
                     size_t queryPos = request.path.find('?');
                     if (queryPos != std::string::npos) {
                         std::string queryString = request.path.substr(queryPos + 1);
 
-                        // Parse keyword
+                        // Parse keyword - Apply URL decoding for Chinese/UTF-8 support
                         size_t keywordPos = queryString.find("keyword=");
                         if (keywordPos != std::string::npos) {
                             size_t keywordEnd = queryString.find('&', keywordPos);
+                            std::string encodedKeyword;
                             if (keywordEnd == std::string::npos) {
-                                keyword = queryString.substr(keywordPos + 8);
+                                encodedKeyword = queryString.substr(keywordPos + 8);
                             }
                             else {
-                                keyword = queryString.substr(keywordPos + 8, keywordEnd - keywordPos - 8);
+                                encodedKeyword = queryString.substr(keywordPos + 8, keywordEnd - keywordPos - 8);
                             }
+                            // URL decode the keyword to support Chinese characters
+                            keyword = urlDecode(encodedKeyword);
+                            PE_INFO("Decoded keyword: '" + keyword + "'");
                         }
 
-                        // Parse hours
-                        size_t hoursPos = queryString.find("hours=");
-                        if (hoursPos != std::string::npos) {
-                            size_t hoursEnd = queryString.find('&', hoursPos);
-                            std::string hoursStr;
-                            if (hoursEnd == std::string::npos) {
-                                hoursStr = queryString.substr(hoursPos + 6);
+                        // Parse starttime (ISO 8601 format: 2025-12-02T15)
+                        size_t startTimePos = queryString.find("starttime=");
+                        if (startTimePos != std::string::npos) {
+                            size_t startTimeEnd = queryString.find('&', startTimePos);
+                            std::string startTimeStr;
+                            if (startTimeEnd == std::string::npos) {
+                                startTimeStr = queryString.substr(startTimePos + 10);
                             }
                             else {
-                                hoursStr = queryString.substr(hoursPos + 6, hoursEnd - hoursPos - 6);
+                                startTimeStr = queryString.substr(startTimePos + 10, startTimeEnd - startTimePos - 10);
                             }
-                            hours = std::stoi(hoursStr);
+                            // URL decode
+                            startTimeStr = urlDecode(startTimeStr);
+                            
+                            // Parse ISO 8601 format
+                            std::tm tm_start = {};
+                            std::istringstream ss_start(startTimeStr);
+                            ss_start >> std::get_time(&tm_start, "%Y-%m-%dT%H");
+                            if (!ss_start.fail()) {
+                                startTime = std::mktime(&tm_start);
+                            }
+                            PE_INFO("Parsed starttime: '" + startTimeStr + "' -> " + std::to_string(startTime));
+                        }
+
+                        // Parse endtime (ISO 8601 format: 2025-12-03T15)
+                        size_t endTimePos = queryString.find("endtime=");
+                        if (endTimePos != std::string::npos) {
+                            size_t endTimeEnd = queryString.find('&', endTimePos);
+                            std::string endTimeStr;
+                            if (endTimeEnd == std::string::npos) {
+                                endTimeStr = queryString.substr(endTimePos + 8);
+                            }
+                            else {
+                                endTimeStr = queryString.substr(endTimePos + 8, endTimeEnd - endTimePos - 8);
+                            }
+                            // URL decode
+                            endTimeStr = urlDecode(endTimeStr);
+                            
+                            // Parse ISO 8601 format
+                            std::tm tm_end = {};
+                            std::istringstream ss_end(endTimeStr);
+                            ss_end >> std::get_time(&tm_end, "%Y-%m-%dT%H");
+                            if (!ss_end.fail()) {
+                                endTime = std::mktime(&tm_end);
+                            }
+                            PE_INFO("Parsed endtime: '" + endTimeStr + "' -> " + std::to_string(endTime));
                         }
 
                         // Parse maxResults
@@ -316,26 +318,69 @@ private:
                             }
                             maxResults = std::stoi(maxStr);
                         }
+                        
+                        // NEW: Parse requesttype parameter
+                        size_t typePos = queryString.find("requesttype=");
+                        if (typePos != std::string::npos) {
+                            std::string typeStr = queryString.substr(typePos + 12);
+                            size_t typeEnd = typeStr.find('&');
+                            if (typeEnd != std::string::npos) {
+                                typeStr = typeStr.substr(0, typeEnd);
+                            }
+                            requestType = std::stoi(typeStr);
+                            PE_INFO("Request type: " + std::to_string(requestType));
+                        }
+                        
+                        // Fallback: Support old 'hours' parameter for backward compatibility
+                        if (startTime == 0) {
+                            size_t hoursPos = queryString.find("hours=");
+                            if (hoursPos != std::string::npos) {
+                                size_t hoursEnd = queryString.find('&', hoursPos);
+                                std::string hoursStr;
+                                if (hoursEnd == std::string::npos) {
+                                    hoursStr = queryString.substr(hoursPos + 6);
+                                }
+                                else {
+                                    hoursStr = queryString.substr(hoursPos + 6, hoursEnd - hoursPos - 6);
+                                }
+                                int hours = std::stoi(hoursStr);
+                                startTime = endTime - (hours * 3600);
+                                PE_INFO("Using legacy 'hours' parameter: " + std::to_string(hours));
+                            }
+                        }
                     }
 
-                    // Calculate time range
-                    std::time_t endTime = std::time(nullptr);
-                    std::time_t startTime = endTime - (hours * 3600);
-
-                    // Query ES
-                    pe_base::Json results = contextCollector->GetESDBData(keyword, startTime, endTime, maxResults);
+                    // NEW: Query based on requesttype
+                    pe_base::Json results;
+                    if (requestType == 1) {
+                        // Type 1: Query PostgreSQL/Elasticsearch raw events
+                        PE_INFO("Querying PostgreSQL/ES raw events (requesttype=1)");
+                        results = contextCollector->GetESDBData(keyword, startTime, endTime, maxResults);
+                    }
+                    else if (requestType == 2) {
+                        // Type 2: Query VectorDB (Qdrant) session summaries
+                        PE_INFO("Querying VectorDB session summaries (requesttype=2)");
+                        results = contextCollector->GetVectorDBData(keyword, startTime, endTime, maxResults);
+                    }
+                    else {
+                        // Invalid request type
+                        response.SetBody("{\"error\":\"Invalid requesttype. Use 1 for raw events or 2 for session summaries.\"}");
+                        response.status = 400;
+                        PE_ERROR("Invalid requesttype: " + std::to_string(requestType));
+                        return;
+                    }
 
                     response.SetHeader("Content-Type", "application/json");
                     response.SetBody(results.toString());
                     response.status = 200;
 
-                    PE_INFO("ES Query: keyword='" + keyword + "' hours=" + std::to_string(hours));
+                    PE_INFO("Database Query: keyword='" + keyword + "' startTime=" + std::to_string(startTime) + " endTime=" + std::to_string(endTime) + " requestType=" + std::to_string(requestType));
 
                 }
                 catch (const std::exception& e) {
                     response.SetBody("{\"error\":\"Query failed: " + std::string(e.what()) + "\"}");
                     response.status = 500;
-                    PE_ERROR("ES query failed: " + std::string(e.what()));
+                    PE_ERROR("Database query failed: " + std::string(e.what()));
                 }
             }
             else if (request.path == "/dashboard" && request.method == "GET") {
@@ -490,55 +535,12 @@ int main(int argc, char* argv[]) {
                 // UPDATED: Use ContextCollector directly
                 ContextCollector collector;
 
-                // NEW: Initialize Elasticsearch (optional feature)
-                if (collector.InitializeDatabase("http://localhost:9200", "perception_context")) {  // UPDATED: renamed method
-                    PE_INFO("? Elasticsearch initialized - auto storage every 5 seconds");
+                // NEW: Initialize PostgreSQL (optional feature)
+                if (collector.InitializeDatabase("host=127.0.0.1 port=5432 dbname=perception_engine user=postgres", "perception_context")) {  // UPDATED: Use PostgreSQL connection string
+                    PE_INFO("? PostgreSQL initialized - auto storage every 5 seconds");
                 }
                 else {
-                    PE_WARN("??  Elasticsearch not available - running without ES storage");
-                }
-
-                // Initialize audio engine (only if NOT in screen-only mode)
-                std::atomic<bool> audioRunning{ false };
-                std::unique_ptr<std::thread> audioPollingThread;
-
-                if (!screenOnlyMode) {
-                    PE_INFO("Initializing audio engine...");
-
-                    if (audioEngine.Initialize("models/whisper/ggml-small.bin")) {
-                        PE_INFO("Audio engine initialized");
-
-                        // Set callback
-                        audioEngine.SetTranscriptionCallback([&collector](const std::string& transcription) {
-                            collector.UpdateVoiceContext(transcription);
-                            PE_INFO("Voice:" << transcription.c_str())
-                            });
-
-                        if (audioEngine.Start()) {
-                            PE_INFO("Audio capture started");
-                            audioRunning = true;
-
-                            // Start polling thread
-                            audioPollingThread = std::make_unique<std::thread>([&audioEngine, &audioRunning]() {
-                                while (audioRunning.load()) {
-                                    audioEngine.GetLatestUserSpeech();
-                                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                                }
-                                });
-                        }
-                        else {
-                            PE_WARN("Failed to start audio capture");
-                        }
-                    }
-                    else {
-                        PE_WARN("Failed to initialize audio engine");
-                    }
-
-                    PE_INFO("Camera vision: Using Python client (C++ ONNX disabled)");
-                }
-                else {
-                    PE_INFO("Audio engine: DISABLED (screen-only mode)");
-                    PE_INFO("Camera vision: DISABLED (screen-only mode)");
+                    PE_WARN("??  PostgreSQL not available - running without database storage");
                 }
 
                 PE_INFO("Setting up request handler...");
@@ -555,45 +557,85 @@ int main(int argc, char* argv[]) {
                     // ? NEW: Elasticsearch query endpoint
                     else if (request.path.find("/query") == 0 && request.method == "GET") {
                         if (!collector.IsElasticsearchAvailable()) {
-                            response.SetBody("{\"error\":\"Elasticsearch not available\"}");
+                            response.SetBody("{\"error\":\"Database not available\"}");
                             response.status = 503;
                             return;
                         }
 
                         try {
-                            // Parse query parameters (same as service mode)
+                            // Parse query parameters - FIX: Support new time format (starttime/endtime ISO format)
                             std::string keyword;
-                            int hours = 0;
+                            std::time_t startTime = 0;
+                            std::time_t endTime = std::time(nullptr);  // Default: now
                             int maxResults = 100;
+                            int requestType = 2;  // NEW: Default to VectorDB (type 2)
 
                             size_t queryPos = request.path.find('?');
                             if (queryPos != std::string::npos) {
                                 std::string queryString = request.path.substr(queryPos + 1);
 
-                                // Parse keyword
+                                // Parse keyword - FIX: Apply URL decoding for Chinese/UTF-8 support
                                 size_t keywordPos = queryString.find("keyword=");
                                 if (keywordPos != std::string::npos) {
                                     size_t keywordEnd = queryString.find('&', keywordPos);
+                                    std::string encodedKeyword;
                                     if (keywordEnd == std::string::npos) {
-                                        keyword = queryString.substr(keywordPos + 8);
+                                        encodedKeyword = queryString.substr(keywordPos + 8);
                                     }
                                     else {
-                                        keyword = queryString.substr(keywordPos + 8, keywordEnd - keywordPos - 8);
+                                        encodedKeyword = queryString.substr(keywordPos + 8, keywordEnd - keywordPos - 8);
                                     }
+                                    // FIX: URL decode the keyword to support Chinese characters
+                                    keyword = urlDecode(encodedKeyword);
+                                    PE_INFO("Decoded keyword: '" + keyword + "'");
                                 }
 
-                                // Parse hours
-                                size_t hoursPos = queryString.find("hours=");
-                                if (hoursPos != std::string::npos) {
-                                    size_t hoursEnd = queryString.find('&', hoursPos);
-                                    std::string hoursStr;
-                                    if (hoursEnd == std::string::npos) {
-                                        hoursStr = queryString.substr(hoursPos + 6);
+                                // Parse starttime (ISO 8601 format: 2025-12-02T15)
+                                size_t startTimePos = queryString.find("starttime=");
+                                if (startTimePos != std::string::npos) {
+                                    size_t startTimeEnd = queryString.find('&', startTimePos);
+                                    std::string startTimeStr;
+                                    if (startTimeEnd == std::string::npos) {
+                                        startTimeStr = queryString.substr(startTimePos + 10);
                                     }
                                     else {
-                                        hoursStr = queryString.substr(hoursPos + 6, hoursEnd - hoursPos - 6);
+                                        startTimeStr = queryString.substr(startTimePos + 10, startTimeEnd - startTimePos - 10);
                                     }
-                                    hours = std::stoi(hoursStr);
+                                    // URL decode
+                                    startTimeStr = urlDecode(startTimeStr);
+                                    
+                                    // Parse ISO 8601 format
+                                    std::tm tm_start = {};
+                                    std::istringstream ss_start(startTimeStr);
+                                    ss_start >> std::get_time(&tm_start, "%Y-%m-%dT%H");
+                                    if (!ss_start.fail()) {
+                                        startTime = std::mktime(&tm_start);
+                                    }
+                                    PE_INFO("Parsed starttime: '" + startTimeStr + "' -> " + std::to_string(startTime));
+                                }
+
+                                // Parse endtime (ISO 8601 format: 2025-12-03T15)
+                                size_t endTimePos = queryString.find("endtime=");
+                                if (endTimePos != std::string::npos) {
+                                    size_t endTimeEnd = queryString.find('&', endTimePos);
+                                    std::string endTimeStr;
+                                    if (endTimeEnd == std::string::npos) {
+                                        endTimeStr = queryString.substr(endTimePos + 8);
+                                    }
+                                    else {
+                                        endTimeStr = queryString.substr(endTimePos + 8, endTimeEnd - endTimePos - 8);
+                                    }
+                                    // URL decode
+                                    endTimeStr = urlDecode(endTimeStr);
+                                    
+                                    // Parse ISO 8601 format
+                                    std::tm tm_end = {};
+                                    std::istringstream ss_end(endTimeStr);
+                                    ss_end >> std::get_time(&tm_end, "%Y-%m-%dT%H");
+                                    if (!ss_end.fail()) {
+                                        endTime = std::mktime(&tm_end);
+                                    }
+                                    PE_INFO("Parsed endtime: '" + endTimeStr + "' -> " + std::to_string(endTime));
                                 }
 
                                 // Parse maxResults
@@ -606,26 +648,69 @@ int main(int argc, char* argv[]) {
                                     }
                                     maxResults = std::stoi(maxStr);
                                 }
+                                
+                                // NEW: Parse requesttype parameter
+                                size_t typePos = queryString.find("requesttype=");
+                                if (typePos != std::string::npos) {
+                                    std::string typeStr = queryString.substr(typePos + 12);
+                                    size_t typeEnd = typeStr.find('&');
+                                    if (typeEnd != std::string::npos) {
+                                        typeStr = typeStr.substr(0, typeEnd);
+                                    }
+                                    requestType = std::stoi(typeStr);
+                                    PE_INFO("Request type: " + std::to_string(requestType));
+                                }
+                                
+                                // Fallback: Support old 'hours' parameter for backward compatibility
+                                if (startTime == 0) {
+                                    size_t hoursPos = queryString.find("hours=");
+                                    if (hoursPos != std::string::npos) {
+                                        size_t hoursEnd = queryString.find('&', hoursPos);
+                                        std::string hoursStr;
+                                        if (hoursEnd == std::string::npos) {
+                                            hoursStr = queryString.substr(hoursPos + 6);
+                                        }
+                                        else {
+                                            hoursStr = queryString.substr(hoursPos + 6, hoursEnd - hoursPos - 6);
+                                        }
+                                        int hours = std::stoi(hoursStr);
+                                        startTime = endTime - (hours * 3600);
+                                        PE_INFO("Using legacy 'hours' parameter: " + std::to_string(hours));
+                                    }
+                                }
                             }
 
-                            // Calculate time range
-                            std::time_t endTime = std::time(nullptr);
-                            std::time_t startTime = endTime - (hours * 3600);
-
-                            // Query ES
-                            pe_base::Json results = collector.GetESDBData(keyword, startTime, endTime, maxResults);
+                            // NEW: Query based on requesttype
+                            pe_base::Json results;
+                            if (requestType == 1) {
+                                // Type 1: Query PostgreSQL/Elasticsearch raw events
+                                PE_INFO("Querying PostgreSQL/ES raw events (requesttype=1)");
+                                results = collector.GetESDBData(keyword, startTime, endTime, maxResults);
+                            }
+                            else if (requestType == 2) {
+                                // Type 2: Query VectorDB (Qdrant) session summaries
+                                PE_INFO("Querying VectorDB session summaries (requesttype=2)");
+                                results = collector.GetVectorDBData(keyword, startTime, endTime, maxResults);
+                            }
+                            else {
+                                // Invalid request type
+                                response.SetBody("{\"error\":\"Invalid requesttype. Use 1 for raw events or 2 for session summaries.\"}");
+                                response.status = 400;
+                                PE_ERROR("Invalid requesttype: " + std::to_string(requestType));
+                                return;
+                            }
 
                             response.SetHeader("Content-Type", "application/json");
                             response.SetBody(results.toString());
                             response.status = 200;
 
-                            PE_INFO("ES Query: keyword='" + keyword + "' hours=" + std::to_string(hours));
+                            PE_INFO("Database Query: keyword='" + keyword + "' startTime=" + std::to_string(startTime) + " endTime=" + std::to_string(endTime) + " requestType=" + std::to_string(requestType));
 
                         }
                         catch (const std::exception& e) {
                             response.SetBody("{\"error\":\"Query failed: " + std::string(e.what()) + "\"}");
                             response.status = 500;
-                            PE_ERROR("ES query failed: " + std::string(e.what()));
+                            PE_ERROR("Database query failed: " + std::string(e.what()));
                         }
                     }
                     else if (request.path == "/dashboard" || request.path == "/" && request.method == "GET") {
@@ -719,16 +804,6 @@ int main(int argc, char* argv[]) {
                 server.Run(); // Blocking call
 
                 PE_INFO("Server loop ended, cleaning up...");
-
-                // Stop audio engine
-                if (audioRunning.load()) {
-                    audioRunning = false;
-                    audioEngine.Stop();
-                    if (audioPollingThread && audioPollingThread->joinable()) {
-                        audioPollingThread->join();
-                    }
-                    PE_INFO("Audio engine stopped");
-                }
 
                 collector.StopPeriodicUpdate();
             }

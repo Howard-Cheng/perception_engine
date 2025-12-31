@@ -1,5 +1,6 @@
 #pragma once
 
+#include "vectordb_export.h"
 #include "QdrantClient.h"
 #include "EmbeddingModel.h"
 #include <memory>
@@ -24,7 +25,7 @@ namespace vectordb {
  *     // Search
  *     auto results = store.search("collection_name", "query text", 10);
  */
-class VectorStore {
+class VECTORDB_API VectorStore {
 public:
     /**
      * Constructor.

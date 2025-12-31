@@ -37,6 +37,7 @@ public:
     std::string GetTokenizerPath() const;
     std::string GetPythonExecutable() const;
     std::string GetChunkDocumentScript() const;
+    std::string GetTokenizeTextScript() const;  // NEW: For single text tokenization
     
     // === Session Manager Configuration ===
     int GetCompressionThreshold() const;
@@ -53,6 +54,29 @@ public:
     // === Model Paths Configuration ===
     std::string GetWhisperModelPath() const;
     std::string GetVADModelPath() const;
+    std::string GetLLMModelPath() const;
+    
+    // === LinguaCore Configuration ===
+    int GetCheckIntervalSeconds() const;
+    int GetLinguaCoreBatchSize() const;
+    bool IsLinguaCoreVerbose() const;
+    
+    // === PostgreSQL Configuration ===
+    std::string GetPostgreSQLHost() const;
+    int GetPostgreSQLPort() const;
+    std::string GetPostgreSQLDatabase() const;
+    std::string GetPostgreSQLUser() const;
+    std::string GetPostgreSQLPassword() const;
+    std::string GetPostgreSQLTable() const;
+    
+    // === LLM Configuration ===
+    int GetLLMMaxTokens() const;
+    float GetLLMTemperature() const;
+    
+    // === Qdrant Configuration ===
+    std::string GetQdrantHost() const;
+    int GetQdrantPort() const;
+    std::string GetQdrantCollection() const;
 
     // === Runtime Paths ===
     std::string GetTempDirectory() const;

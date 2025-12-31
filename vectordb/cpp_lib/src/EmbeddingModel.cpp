@@ -162,10 +162,16 @@ namespace vectordb
                 Ort::Value attentionTensor = Ort::Value::CreateTensor<int64_t>(
                     memoryInfo, attentionMask.data(), attentionMask.size(), inputShape.data(), inputShape.size());
 
+                // Create token_type_ids (all zeros for single sequence)
+                std::vector<int64_t> tokenTypeIds(seqLen, 0);
+                Ort::Value tokenTypeTensor = Ort::Value::CreateTensor<int64_t>(
+                    memoryInfo, tokenTypeIds.data(), tokenTypeIds.size(), inputShape.data(), inputShape.size());
+
                 // Run inference
                 std::vector<Ort::Value> inputs;
                 inputs.push_back(std::move(inputTensor));
                 inputs.push_back(std::move(attentionTensor));
+                inputs.push_back(std::move(tokenTypeTensor));
 
                 auto outputs = session->Run(Ort::RunOptions{nullptr},
                                             inputNames.data(), inputs.data(), inputs.size(),

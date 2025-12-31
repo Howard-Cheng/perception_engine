@@ -1,3 +1,8 @@
+# Force UTF-8 encoding for source files (for Chinese characters)
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
+
 # Database Client Library (for PerceptionEngine)
 
 cmake_minimum_required(VERSION 3.15)
@@ -9,10 +14,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Find dependencies (vcpkg manifest mode)
 find_package(CURL REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(PostgreSQL REQUIRED)
 
 # Library sources
 set(LIB_SOURCES
     src/ElasticsearchClient.cpp
+    src/PostgreSQLClient.cpp
     src/MeiliSearchClient.cpp
     src/DatabaseClientFactory.cpp
     src/ElasticsearchClientAPI.cpp
@@ -22,6 +29,7 @@ set(LIB_HEADERS
     include/DatabaseTypes.h
     include/IDatabaseClient.h
     include/ElasticsearchClient.h
+    include/PostgreSQLClient.h
     include/MeiliSearchClient.h
     include/DatabaseClientFactory.h
     include/ElasticsearchClientAPI.h
@@ -38,6 +46,7 @@ target_include_directories(database_client
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
+        ${PostgreSQL_INCLUDE_DIRS}
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
@@ -47,12 +56,14 @@ target_link_libraries(database_client
     PRIVATE
         CURL::libcurl
         nlohmann_json::nlohmann_json
+        ${PostgreSQL_LIBRARIES}
 )
 
 # Compiler definitions for DLL export
 target_compile_definitions(database_client
     PRIVATE
         DB_CLIENT_EXPORTS
+        ES_CLIENT_EXPORTS
 )
 
 # Windows-specific settings
@@ -121,11 +132,50 @@ if(WIN32)
             COMMENT "Copying libssl-3-x64.dll to output directory"
         )
     endif()
+    
+    # Copy PostgreSQL DLL (libpq.dll)
+    if(EXISTS "${VCPKG_INSTALLED_DIR}/bin/libpq.dll")
+        add_custom_command(TARGET database_client POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VCPKG_INSTALLED_DIR}/bin/libpq.dll"
+                ${CMAKE_BINARY_DIR}/bin/libpq.dll
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VCPKG_INSTALLED_DIR}/bin/libpq.dll"
+                ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/libpq.dll
+            COMMENT "Copying libpq.dll to output directory"
+        )
+    endif()
+    
+    # Copy libiconv (dependency of libpq)
+    if(EXISTS "${VCPKG_INSTALLED_DIR}/bin/libiconv-2.dll")
+        add_custom_command(TARGET database_client POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VCPKG_INSTALLED_DIR}/bin/libiconv-2.dll"
+                ${CMAKE_BINARY_DIR}/bin/libiconv-2.dll
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VCPKG_INSTALLED_DIR}/bin/libiconv-2.dll"
+                ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/libiconv-2.dll
+            COMMENT "Copying libiconv-2.dll to output directory"
+        )
+    endif()
+    
+    # Copy libintl (dependency of libpq)
+    if(EXISTS "${VCPKG_INSTALLED_DIR}/bin/libintl-8.dll")
+        add_custom_command(TARGET database_client POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VCPKG_INSTALLED_DIR}/bin/libintl-8.dll"
+                ${CMAKE_BINARY_DIR}/bin/libintl-8.dll
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VCPKG_INSTALLED_DIR}/bin/libintl-8.dll"
+                ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/libintl-8.dll
+            COMMENT "Copying libintl-8.dll to output directory"
+        )
+    endif()
 endif()
 
 message(STATUS "Database Client DLL configured")
 message(STATUS "  Output: ${CMAKE_BINARY_DIR}/bin/database_client.dll")
-message(STATUS "  Supported databases: Elasticsearch, MeiliSearch (MongoDB, PostgreSQL - planned)")
+message(STATUS "  Supported databases: Elasticsearch, PostgreSQL, MeiliSearch (MongoDB - planned)")
 
 # Optional: Build tests
 option(BUILD_TESTS "Build test programs" ON)
@@ -150,6 +200,44 @@ if(BUILD_TESTS)
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     )
     
+    # PostgreSQL client test
+    add_executable(postgresql_client_test
+        tests/postgresql_client_test.cpp
+    )
+    
+    target_link_libraries(postgresql_client_test
+        PRIVATE
+            database_client
+    )
+    
+    target_include_directories(postgresql_client_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    
+    set_target_properties(postgresql_client_test PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    )
+    
+    # GetESDBData fuzzy matching test (NEW!)
+    add_executable(test_getesdbdata_fuzzy
+        tests/test_getesdbdata_fuzzy.cpp
+    )
+    
+    target_link_libraries(test_getesdbdata_fuzzy
+        PRIVATE
+            database_client
+    )
+    
+    target_include_directories(test_getesdbdata_fuzzy
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    
+    set_target_properties(test_getesdbdata_fuzzy PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    )
+    
     # MeiliSearch client test
     add_executable(meilisearch_client_test
         tests/meilisearch_client_test.cpp
@@ -171,6 +259,8 @@ if(BUILD_TESTS)
     
     message(STATUS "Building database client tests:")
     message(STATUS "  - Elasticsearch client test")
+    message(STATUS "  - PostgreSQL client test")
+    message(STATUS "  - GetESDBData fuzzy matching test (NEW!)")
     message(STATUS "  - MeiliSearch client test")
 endif()
 
@@ -197,6 +287,25 @@ if(BUILD_EXAMPLES)
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     )
     
+    # PostgreSQL example
+    add_executable(postgresql_example
+        examples/postgresql_example.cpp
+    )
+    
+    target_link_libraries(postgresql_example
+        PRIVATE
+            database_client
+    )
+    
+    target_include_directories(postgresql_example
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    
+    set_target_properties(postgresql_example PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    )
+    
     # MeiliSearch example
     add_executable(meilisearch_example
         examples/meilisearch_example.cpp
@@ -218,5 +327,6 @@ if(BUILD_EXAMPLES)
     
     message(STATUS "Building database client examples:")
     message(STATUS "  - Elasticsearch example")
+    message(STATUS "  - PostgreSQL example")
     message(STATUS "  - MeiliSearch example")
 endif()

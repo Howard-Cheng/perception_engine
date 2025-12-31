@@ -95,14 +95,14 @@ static std::string sanitizeUtf8ForJson(const std::string& input) {
 static std::string timestampToISO8601(std::time_t timestamp) {
     std::tm tm_val;
 #ifdef _WIN32
-    localtime_s(&tm_val, &timestamp);  // Ê¹ÓÃ±¾µØÊ±¼ä
+    localtime_s(&tm_val, &timestamp);  // Ê¹ï¿½Ã±ï¿½ï¿½ï¿½Ê±ï¿½ï¿½
 #else
-    localtime_r(&timestamp, &tm_val);  // Ê¹ÓÃ±¾µØÊ±¼ä
+    localtime_r(&timestamp, &tm_val);  // Ê¹ï¿½Ã±ï¿½ï¿½ï¿½Ê±ï¿½ï¿½
 #endif
     
     std::ostringstream oss;
     oss << std::put_time(&tm_val, "%Y-%m-%dT%H:%M:%S");
-    oss << ".000";  // ÒÆ³ý Z ºó×º£¬±íÊ¾±¾µØÊ±¼ä
+    oss << ".000";  // ï¿½Æ³ï¿½ Z ï¿½ï¿½×ºï¿½ï¿½ï¿½ï¿½Ê¾ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½
     return oss.str();
 }
 
@@ -219,7 +219,8 @@ public:
             {"app_name", event.appName},
             {"interaction_count", event.interactionCount},
             {"dwell_time_seconds", event.dwellTimeSeconds},
-            {"compressed", event.compressed}
+            {"compressed", event.compressed},
+            {"summarized", event.summarized}
         };
         
         // Optional fields - sanitize text fields to prevent UTF-8 errors
@@ -289,6 +290,7 @@ public:
             event.interactionCount = j.value("interaction_count", 0);
             event.dwellTimeSeconds = j.value("dwell_time_seconds", 0);
             event.compressed = j.value("compressed", false);
+            event.summarized = j.value("summarized", false);
             
             if (j.contains("created_at") && !j["created_at"].is_null()) {
                 event.createdAt = iso8601ToTimestamp(j["created_at"].get<std::string>());
@@ -463,6 +465,7 @@ bool ElasticsearchClient::initializeCollection(const std::string& collectionName
                 "interaction_count": {"type": "integer"},
                 "dwell_time_seconds": {"type": "integer"},
                 "compressed": {"type": "boolean"},
+                "summarized": {"type": "boolean"},
                 "mouse_events": {
                     "type": "nested",
                     "properties": {

@@ -4,6 +4,9 @@ project(PerceptionEngine VERSION 2.0.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Find vcpkg packages
+find_package(nlohmann_json CONFIG REQUIRED)
+
 # Output directories
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -32,6 +35,30 @@ add_subdirectory(embeddingmodel)
 
 # Add pe_base as a subdirectory
 add_subdirectory(pe_base)
+
+# ============================================================================
+
+# LLM Summary Library (subdirectory)
+# ============================================================================
+
+# Add llm_summary as a subdirectory (copied to windows_code/llm_summary)
+add_subdirectory(llm_summary)
+
+# ============================================================================
+
+# VectorDB Client Library (subdirectory)
+# ============================================================================
+
+# Add vectordb_client as a subdirectory (copied to windows_code/vectordb_client)
+add_subdirectory(vectordb_client)
+
+# ============================================================================
+
+# Tools
+# ============================================================================
+
+# Add revise_database tool
+add_subdirectory(tools/revise_database)
 
 # ============================================================================
 
@@ -152,6 +179,16 @@ set(DATAPROCESS_SERVER_HEADERS
     include/dataprocess/TaskQueue.h
 )
 
+# LinguaCore source files
+set(LINGUACORE_SOURCES
+    src/linguacore/LinguaCoreMain.cpp
+    src/linguacore/LinguaCore.cpp
+)
+
+set(LINGUACORE_HEADERS
+    include/linguacore/LinguaCore.h
+)
+
 # ============================================================================
 
 # Executables
@@ -164,6 +201,9 @@ add_executable(PerceptionEngine ${PERCEPTION_ENGINE_SOURCES} ${PERCEPTION_ENGINE
 
 # DataProcessServer executable
 add_executable(DataProcessServer ${DATAPROCESS_SERVER_SOURCES} ${DATAPROCESS_SERVER_HEADERS})
+
+# LinguaCore executable
+add_executable(LinguaCore ${LINGUACORE_SOURCES} ${LINGUACORE_HEADERS})
 
 # ============================================================================
 # Visual Studio Source Groups (organize files in Solution Explorer)
@@ -289,6 +329,19 @@ source_group("Header Files\\dataprocess" FILES
     include/dataprocess/TaskQueue.h
 )
 
+# ========== LinguaCore Source Groups ==========
+
+# Source files for LinguaCore
+source_group("Source Files\\linguacore" FILES
+    src/linguacore/LinguaCoreMain.cpp
+    src/linguacore/LinguaCore.cpp
+)
+
+# Header files for LinguaCore
+source_group("Header Files\\linguacore" FILES
+    include/linguacore/LinguaCore.h
+)
+
 # ============================================================================
 
 # Include Directories
@@ -299,6 +352,7 @@ target_include_directories(PerceptionEngine PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/embeddingmodel/include
     ${CMAKE_CURRENT_SOURCE_DIR}/pe_base/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/vectordb_client/include
     ${WHISPER_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/ggml/include
     ${JSON_INCLUDE_DIR}
@@ -317,6 +371,16 @@ target_include_directories(DataProcessServer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/pe_base/include
+)
+
+target_include_directories(LinguaCore PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/pe_base/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/database_client/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/llm_summary
+    ${CMAKE_CURRENT_SOURCE_DIR}/vectordb_client/include
+    ${JSON_INCLUDE_DIR}
 )
 
 # Note: test_embedding_comparison include directories are now in embeddingmodel/CMakeLists.txt
@@ -361,6 +425,9 @@ target_link_libraries(PerceptionEngine PRIVATE
 
     # PE Base
     pe_base
+    
+    # Vector DB library (Qdrant)
+    vectordb_client
 )
 
 # Link E5 Embedding library
@@ -376,6 +443,27 @@ endif()
 target_link_libraries(DataProcessServer PRIVATE
     # No external dependencies needed
     pe_base
+)
+
+# LinguaCore links to database_client, llm_summary, and vectordb_client
+target_link_libraries(LinguaCore PRIVATE
+    # PE Base (for logging)
+    pe_base
+    
+    # Database client (PostgreSQL)
+    database_client
+    
+    # LLM Summary library
+    llm_summary_cpp
+    
+    # Vector DB library (Qdrant)
+    vectordb_client
+    
+    # nlohmann_json for JSON handling
+    nlohmann_json::nlohmann_json
+    
+    # Windows APIs
+    ws2_32      # Winsock for networking
 )
 
 # Note: test_embedding_comparison link libraries are now in embeddingmodel/CMakeLists.txt
@@ -421,9 +509,6 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/config.ini
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/config.ini
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/config.json
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/config.json
 
     # Copy models folder from windows_code to bin/
     COMMAND ${CMAKE_COMMAND} -E echo "Copying models folder to output directory..."
@@ -437,29 +522,10 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
         ${CMAKE_CURRENT_SOURCE_DIR}/scripts
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/scripts
 
-    # Copy whisper model to bin/
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/whisper
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/../models/whisper/ggml-small.bin
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/whisper/ggml-small.bin
-
-    # Copy Silero VAD model to bin/
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/vad
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/../models/vad/silero_vad.onnx
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/vad/silero_vad.onnx
-
     # Copy ONNX Runtime DLL to bin/
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/onnxruntime.dll
-
-    # Copy OpenCV DLL to bin/
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${OpenCV_BIN_DIR}/opencv_world4100.dll
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/opencv_world4100.dll
 
     # Copy our E5EmbeddingDLL to bin/
     COMMAND ${CMAKE_COMMAND} -E echo "Copying E5EmbeddingDLL..."
@@ -467,31 +533,11 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
         $<TARGET_FILE:E5EmbeddingDLL>
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/E5EmbeddingDLL.dll
 
-    # Copy whisper.cpp DLLs to bin/ (CUDA build)
+    # Copy vectordb_client DLL to bin/
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying vectordb_client DLL..."
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/whisper.dll
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/whisper.dll
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml.dll
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml.dll
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-base.dll
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml-base.dll
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-cpu.dll
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml-cpu.dll
-    
-    # Copy ggml-cuda.dll if it exists (CUDA support may not be built)
-    COMMAND ${CMAKE_COMMAND} -E echo "Checking for CUDA support..."
-    COMMAND ${CMAKE_COMMAND} -E true
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/bin/Release/ggml-cuda.dll
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ggml-cuda.dll || ${CMAKE_COMMAND} -E echo "Warning: ggml-cuda.dll not found, CUDA acceleration may not be available"
-
-    # Copy dashboard.html to bin/
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/dashboard.html
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/dashboard.html
+        $<TARGET_FILE:vectordb_client>
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/vectordb_client.dll
 
     # Copy DataProcessServer.exe to bin/ (same directory as PerceptionEngine.exe)
     COMMAND ${CMAKE_COMMAND} -E echo "Copying DataProcessServer.exe to output directory..."
@@ -503,9 +549,6 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/config.ini
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/config.ini
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/config.json
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/config.json
     
     # Copy models folder to bin/$<CONFIG>/}
     COMMAND ${CMAKE_COMMAND} -E echo "Copying models folder to $<CONFIG> directory..."
@@ -518,17 +561,6 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/scripts
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/scripts
-    
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/whisper
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/vad
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/../models/whisper/ggml-small.bin
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/whisper/ggml-small.bin
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/../models/vad/silero_vad.onnx
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/vad/silero_vad.onnx
 
     # Copy E5EmbeddingDLL to bin/$<CONFIG>/}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -537,6 +569,11 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/onnxruntime.dll
+    
+    # Copy vectordb_client DLL to bin/$<CONFIG>/}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:vectordb_client>
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/vectordb_client.dll
 
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/models

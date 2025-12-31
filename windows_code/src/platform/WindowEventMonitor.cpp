@@ -340,9 +340,6 @@ bool WindowEventMonitor::ShouldTriggerEvent(HWND hwnd, WindowEventType eventType
     // Check if this event is same as the last one
     if (m_lastEvent.hwnd == hwnd && m_lastEvent.windowTitle == title) {
         // Same window and same title as last event, skip
-        PE_INFO_THIS("[WindowEventMonitor] Skipped duplicate: "
-            << pe_base::WindowsHelper::ConvertToChar(title.c_str()).ToString()
-            << " (same as previous event)")
             return false;
     }
 

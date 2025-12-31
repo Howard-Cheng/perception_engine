@@ -1,10 +1,11 @@
 {
   "name": "perception-engine",
   "version": "2.0.0",
-  "description": "Windows Perception Engine with Elasticsearch Client",
+  "description": "Windows Perception Engine with Elasticsearch and PostgreSQL Clients",
   "dependencies": [
     "curl",
-    "nlohmann-json"
+    "nlohmann-json",
+    "libpq"
   ],
   "builtin-baseline": "b27f6bfad367d64f8f0f3296351c5d246e182bb4"
 }

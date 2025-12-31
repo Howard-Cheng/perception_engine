@@ -7,6 +7,7 @@
 #include <chrono>
 #include <iomanip>
 #include <ctime>
+#include <atomic>
 #include <windows.h>
 
 // Log levels - Using _L suffix to avoid Windows macro conflicts
@@ -36,6 +37,11 @@ public:
     // Format log with printf-style formatting
     template<typename... Args>
     void LogFormat(LogLevel level, const char* file, int line, const char* format, Args... args) {
+        // Early exit if logger is being destroyed
+        if (isDestroying.load(std::memory_order_acquire)) {
+            return;
+        }
+        
         char buffer[4096];
         snprintf(buffer, sizeof(buffer), format, args...);
         Log(level, file, line, std::string(buffer));
@@ -48,7 +54,7 @@ public:
     void Shutdown();
 
     // Check if initialized
-    bool IsInitialized() const { return initialized; }
+    bool IsInitialized() const { return initialized && !isDestroying.load(std::memory_order_acquire); }
 
 private:
     Logger();
@@ -66,6 +72,7 @@ private:
     LogLevel minLogLevel;
     bool initialized;
     bool enableConsole;  // Also output to console
+    std::atomic<bool> isDestroying;  // Flag to prevent use-after-destruction
 };
 
 // Convenience macros for logging with automatic file and line

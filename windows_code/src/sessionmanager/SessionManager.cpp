@@ -3,6 +3,7 @@
 #include "pe_base/logger.h"
 #include "pe_base/config_manager.h"
 #include "ElasticsearchClient.h"
+#include "PostgreSQLClient.h"
 #include <iostream>
 #include <sstream>
 #include <iomanip>
@@ -15,10 +16,10 @@ namespace {
     std::string sanitizeUtf8(const std::string& input) {
         std::string output;
         output.reserve(input.size());
-        
+
         for (size_t i = 0; i < input.size(); ) {
             unsigned char c = static_cast<unsigned char>(input[i]);
-            
+
             // Single-byte character (ASCII: 0x00-0x7F)
             if (c <= 0x7F) {
                 // Filter out control characters except newline, tab, and carriage return
@@ -80,7 +81,7 @@ namespace {
                 i++;
             }
         }
-        
+
         return output;
     }
 }
@@ -110,11 +111,11 @@ namespace sessionmanager {
             PE_INFO("E5 model loaded successfully");
         }
 
-        if(pe_base::ConfigManager::GetInstance().IsLoaded()) {
+        if (pe_base::ConfigManager::GetInstance().IsLoaded()) {
             config_.compressionThreshold = pe_base::ConfigManager::GetInstance().GetCompressionThreshold();
             config_.similarityThreshold = pe_base::ConfigManager::GetInstance().GetSimilarityThreshold();
             config_.batchSize = pe_base::ConfigManager::GetInstance().GetBatchSize();
-            
+
             // Initialize retry configuration with sensible defaults
             config_.maxRetries = 3;
             config_.retryDelayMs = 1000;
@@ -199,26 +200,15 @@ namespace sessionmanager {
         }
 
         try {
-            // Query to count uncompressed records
-            std::string query = R"({
-            "query": {
-                "term": {
-                    "compressed": false
-                }
-            },
-            "size": 0
-        })";
-
-            database::SearchResult result = dbClient_->search(indexName_, query, 0, 0);
-            return result.totalHits;
-
+            // Use database-agnostic method instead of ES-specific query
+            return dbClient_->getUncompressedCount(indexName_);
         }
         catch (const std::exception& e) {
             std::cerr << "[SessionManager] GetUncompressedCount exception: "
                 << e.what() << std::endl;
             return 0;
         }
-    }   
+    }
 
     void SessionManager::PostCompressionTask() {
         std::lock_guard<std::mutex> lock(taskMutex_);
@@ -272,27 +262,21 @@ namespace sessionmanager {
             std::cout << "[SessionManager] Starting batch processing..." << std::endl;
             auto startTime = std::chrono::steady_clock::now();
 
-            // Get uncompressed records sorted by timestamp (oldest first)
-            std::ostringstream queryBuilder;
-            queryBuilder << "{"
-                << "\"query\":{\"term\":{\"compressed\":false}},"
-                << "\"sort\":[{\"timestamp\":{\"order\":\"asc\"}}],"
-                << "\"size\":" << config_.batchSize
-                << "}";
+            // Use getUncompressedEvents() which is database-agnostic
+            // It fetches events sorted by timestamp (oldest first)
+            std::vector<database::RawEvent> result = dbClient_->getUncompressedEvents(indexName_, 24);
 
-            database::SearchResult result = dbClient_->search(
-                indexName_,
-                queryBuilder.str(),
-                0,
-                config_.batchSize
-            );
-
-            if (result.events.empty()) {
+            if (result.empty()) {
                 std::cout << "[SessionManager] No uncompressed records found" << std::endl;
                 return;
             }
 
-            std::cout << "[SessionManager] Found " << result.events.size()
+            // Limit to batch size
+            if (result.size() > static_cast<size_t>(config_.batchSize)) {
+                result.resize(config_.batchSize);
+            }
+
+            std::cout << "[SessionManager] Found " << result.size()
                 << " uncompressed records" << std::endl;
 
             // Process records into sessions
@@ -302,7 +286,7 @@ namespace sessionmanager {
             int sessionsCreated = 0;
             int recordsProcessed = 0;
 
-            for (const auto& event : result.events) {
+            for (const auto& event : result) {
                 pe_base::Json currentRecord = ConvertEventToJson(event);
 
                 if (firstRecord) {
@@ -523,7 +507,7 @@ namespace sessionmanager {
                 // Sanitize UTF-8 for combined summary
                 std::string textA = sanitizeUtf8(std::string(chunks[i].text_A));
                 std::string textB = sanitizeUtf8(std::string(chunks[i].text_B));
-                
+
                 combined << (i + 1) << ". Score: " << chunks[i].similarity_score << "\n";
                 combined << "   Content A: " << textA.substr(0, std::min<size_t>(100, textA.length())) << "...\n";
                 combined << "   Content B: " << textB.substr(0, std::min<size_t>(100, textB.length())) << "...\n\n";
@@ -623,56 +607,87 @@ namespace sessionmanager {
         }
 
         try {
-            auto esClient = std::dynamic_pointer_cast<database::ElasticsearchClient>(dbClient_);
+            // Group events by whether they have similarity content
+            std::vector<SessionContent> eventsWithSimilarity;
+            std::vector<SessionContent> eventsWithoutSimilarity;
 
-            if (esClient) {
-                // Use Elasticsearch client - update each event individually with its own similarity content
-                bool allSuccess = true;
+            for (const auto& content : sessionContents) {
+                if (!content.similarScreenContent.empty()) {
+                    eventsWithSimilarity.push_back(content);
+                } else {
+                    eventsWithoutSimilarity.push_back(content);
+                }
+            }
 
-                for (const auto& content : sessionContents) {
+            bool allSuccess = true;
+
+            // Process events with similarity content (individual updates)
+            for (const auto& content : eventsWithSimilarity) {
+                // Sanitize the similarity content before sending to database
+                std::string sanitizedContent = sanitizeUtf8(content.similarScreenContent);
+
+                // Validate that sanitization produced valid content
+                if (sanitizedContent.empty() && !content.similarScreenContent.empty()) {
+                    PE_WARN("[SessionManager] Similarity content for event " << content.eventId
+                        << " was completely invalid UTF-8, skipping similarity field");
+
+                    // Fall back to update without similarity
+                    std::vector<std::string> singleEventId = { content.eventId };
+                    bool success = dbClient_->markEventsAsCompressed(
+                        indexName_,
+                        singleEventId,
+                        sessionId
+                    );
+
+                    if (!success) {
+                        PE_ERROR("[SessionManager] Failed to mark event " << content.eventId
+                            << " as compressed");
+                        allSuccess = false;
+                    }
+                }
+                else {
+                    // Check if database client supports similarity updates
+                    auto esClient = std::dynamic_pointer_cast<database::ElasticsearchClient>(dbClient_);
+                    auto pgClient = std::dynamic_pointer_cast<database::PostgreSQLClient>(dbClient_);
+
                     std::vector<std::string> singleEventId = { content.eventId };
 
-                    if (!content.similarScreenContent.empty()) {
-                        // Sanitize the similarity content before sending to Elasticsearch
-                        std::string sanitizedContent = sanitizeUtf8(content.similarScreenContent);
-                        
-                        // Validate that sanitization produced valid content
-                        if (sanitizedContent.empty() && !content.similarScreenContent.empty()) {
-                            PE_WARN("[SessionManager] Similarity content for event " << content.eventId 
-                                   << " was completely invalid UTF-8, skipping similarity field");
-                            
-                            // Fall back to update without similarity
-                            bool success = esClient->markEventsAsCompressed(
-                                indexName_,
-                                singleEventId,
-                                sessionId
-                            );
+                    if (esClient) {
+                        // Use Elasticsearch-specific method
+                        bool success = esClient->markEventsAsCompressedWithSimilarity(
+                            indexName_,
+                            singleEventId,
+                            sessionId,
+                            sanitizedContent
+                        );
 
-                            if (!success) {
-                                PE_ERROR("[SessionManager] Failed to mark event " << content.eventId
-                                    << " as compressed");
-                                allSuccess = false;
-                            }
+                        if (!success) {
+                            PE_ERROR("[SessionManager] Failed to mark event " << content.eventId
+                                << " as compressed with similarity (ES)");
+                            allSuccess = false;
                         }
-                        else {
-                            // Update this event with its specific sanitized similarity content
-                            bool success = esClient->markEventsAsCompressedWithSimilarity(
-                                indexName_,
-                                singleEventId,
-                                sessionId,
-                                sanitizedContent
-                            );
+                    }
+                    else if (pgClient) {
+                        // Use PostgreSQL-specific method
+                        bool success = pgClient->markEventsAsCompressedWithSimilarity(
+                            indexName_,
+                            singleEventId,
+                            sessionId,
+                            sanitizedContent
+                        );
 
-                            if (!success) {
-                                PE_ERROR("[SessionManager] Failed to mark event " << content.eventId
-                                    << " as compressed with similarity");
-                                allSuccess = false;
-                            }
+                        if (!success) {
+                            PE_ERROR("[SessionManager] Failed to mark event " << content.eventId
+                                << " as compressed with similarity (PG)");
+                            allSuccess = false;
                         }
                     }
                     else {
-                        // No similarity info for this event, use standard method
-                        bool success = esClient->markEventsAsCompressed(
+                        // Fallback: use standard method without similarity
+                        PE_WARN("[SessionManager] Database client doesn't support similarity updates, "
+                            << "falling back to standard compressed marking");
+
+                        bool success = dbClient_->markEventsAsCompressed(
                             indexName_,
                             singleEventId,
                             sessionId
@@ -680,59 +695,55 @@ namespace sessionmanager {
 
                         if (!success) {
                             PE_ERROR("[SessionManager] Failed to mark event " << content.eventId
-                                << " as compressed");
+                                << " as compressed (fallback)");
                             allSuccess = false;
                         }
                     }
                 }
-
-                if (allSuccess) {
-                    PE_INFO("[SessionManager] Marked " << sessionContents.size()
-                        << " records as compressed with session: " << sessionId
-                        << " (with individual similarity info)");
-                }
-
-                return allSuccess;
             }
-            else {
-                // Fallback for non-Elasticsearch clients - use bulk operation without similarity
-                std::vector<std::string> recordIds;
-                recordIds.reserve(sessionContents.size());
-                for (const auto& content : sessionContents) {
-                    recordIds.push_back(content.eventId);
+
+            // Process events without similarity content (bulk update)
+            if (!eventsWithoutSimilarity.empty()) {
+                std::vector<std::string> eventIds;
+                eventIds.reserve(eventsWithoutSimilarity.size());
+                for (const auto& content : eventsWithoutSimilarity) {
+                    eventIds.push_back(content.eventId);
                 }
 
                 bool success = dbClient_->markEventsAsCompressed(
                     indexName_,
-                    recordIds,
+                    eventIds,
                     sessionId
                 );
 
-                if (success) {
-                    PE_INFO("[SessionManager] Marked " << recordIds.size()
-                        << " records as compressed with session: " << sessionId);
+                if (!success) {
+                    PE_ERROR("[SessionManager] Failed to bulk mark " << eventIds.size()
+                        << " events as compressed");
+                    allSuccess = false;
                 }
-                else {
-                    PE_ERROR("[SessionManager] Failed to mark records as compressed");
-                }
-
-                return success;
             }
+
+            if (allSuccess) {
+                PE_INFO("[SessionManager] Marked " << sessionContents.size()
+                    << " records as compressed with session: " << sessionId);
+            }
+
+            return allSuccess;
 
         }
         catch (const std::exception& e) {
             PE_ERROR("[SessionManager] MarkRecordsCompressed exception: " << e.what());
-            
+
             // Log detailed information about the problematic content
             PE_ERROR("[SessionManager] Session ID: " << sessionId);
             PE_ERROR("[SessionManager] Number of events: " << sessionContents.size());
-            
+
             for (size_t i = 0; i < sessionContents.size(); i++) {
                 const auto& content = sessionContents[i];
-                PE_ERROR("[SessionManager]   Event[" << i << "]: " << content.eventId 
-                        << " (similarity length: " << content.similarScreenContent.length() << ")");
+                PE_ERROR("[SessionManager]   Event[" << i << "]: " << content.eventId
+                    << " (similarity length: " << content.similarScreenContent.length() << ")");
             }
-            
+
             return false;
         }
     }
@@ -754,10 +765,10 @@ namespace sessionmanager {
                 std::lock_guard<std::mutex> lock(statsMutex_);
                 stats_.totalRetryAttempts++;
 
-                PE_INFO("[SessionManager] Retry attempt " << attempt 
-                         << " of " << config_.maxRetries 
-                         << " for session " << sessionId 
-                         << " (delay: " << retryDelay << "ms)");
+                PE_INFO("[SessionManager] Retry attempt " << attempt
+                    << " of " << config_.maxRetries
+                    << " for session " << sessionId
+                    << " (delay: " << retryDelay << "ms)");
 
                 // Wait before retry
                 std::this_thread::sleep_for(std::chrono::milliseconds(retryDelay));
@@ -777,8 +788,8 @@ namespace sessionmanager {
                         // Successful retry
                         std::lock_guard<std::mutex> lock(statsMutex_);
                         stats_.successfulRetries++;
-                        PE_INFO("[SessionManager] Session " << sessionId 
-                                 << " succeeded on retry attempt " << attempt);
+                        PE_INFO("[SessionManager] Session " << sessionId
+                            << " succeeded on retry attempt " << attempt);
                     }
                     finalSuccess = true;
                     break;
@@ -792,21 +803,21 @@ namespace sessionmanager {
                     if (attempt == config_.maxRetries) {
                         // Final attempt failed
                         stats_.failedRetries++;
-                        PE_ERROR("[SessionManager] Session " << sessionId 
-                                 << " failed after " << (attempt + 1) 
-                                 << " attempts");
+                        PE_ERROR("[SessionManager] Session " << sessionId
+                            << " failed after " << (attempt + 1)
+                            << " attempts");
                     }
                     else {
-                        PE_WARN("[SessionManager] Attempt " << (attempt + 1) 
-                                 << " failed for session " << sessionId 
-                                 << ", will retry...");
+                        PE_WARN("[SessionManager] Attempt " << (attempt + 1)
+                            << " failed for session " << sessionId
+                            << ", will retry...");
                     }
                 }
             }
             catch (const std::exception& e) {
-                PE_ERROR("[SessionManager] Exception during attempt " << (attempt + 1) 
-                         << " for session " << sessionId << ": " 
-                         << e.what());
+                PE_ERROR("[SessionManager] Exception during attempt " << (attempt + 1)
+                    << " for session " << sessionId << ": "
+                    << e.what());
 
                 if (attempt == config_.maxRetries) {
                     std::lock_guard<std::mutex> lock(statsMutex_);

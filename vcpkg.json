@@ -5,8 +5,7 @@
   "dependencies": [
     "curl",
     "nlohmann-json",
-    "libpq",
-    "sentencepiece"
+    "libpq"
   ],
   "builtin-baseline": "b27f6bfad367d64f8f0f3296351c5d246e182bb4"
 }

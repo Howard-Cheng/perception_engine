@@ -4,6 +4,10 @@ project(PerceptionEngine VERSION 2.0.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Note: We use the default MSVC runtime library (/MD - Dynamic CRT)
+# This matches vcpkg defaults and most dependencies
+# SentencePiece should be built with /MD to match
+
 # Find vcpkg packages
 find_package(nlohmann_json CONFIG REQUIRED)
 

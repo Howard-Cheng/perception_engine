@@ -1,7 +1,8 @@
 #define E5EMBEDDING_EXPORTS
 #include "E5EmbeddingDLL.h"
+#include "GemmaTokenizer.h"  // ADD: Include C++ tokenizer
 #include "pe_base/config_manager.h"
-#include "pe_base/logger.h"  // NEW: Add Logger
+#include "pe_base/logger.h"
 
 #include <onnxruntime_cxx_api.h>
 #include <string>
@@ -27,6 +28,7 @@
 namespace {
     std::unique_ptr<Ort::Env> g_env;
     std::unique_ptr<Ort::Session> g_session;
+    std::unique_ptr<embedding::GemmaTokenizer> g_tokenizer;  // C++ tokenizer
     std::mutex g_mutex;  // Protects initialization
     bool g_initialized = false;
     std::string g_last_error;
@@ -160,7 +162,6 @@ E5_API int E5_Initialize(const wchar_t* model_path) {
         return 0;
     }
 
-
     // =========================================
     // Load Configuration
     // =========================================
@@ -204,6 +205,26 @@ E5_API int E5_Initialize(const wchar_t* model_path) {
             g_tokenizer_path = model_path_str.substr(0, last_slash + 1) + L"tokenizer";
         } else {
             g_tokenizer_path = L"tokenizer";
+        }
+        
+        // Initialize C++ tokenizer
+        PE_INFO("[E5_Initialize] Initializing C++ tokenizer...");
+        std::string tokenizer_path_utf8 = pe_base::ConfigManager::GetInstance().GetTokenizerPath();
+        
+        try {
+            g_tokenizer = std::make_unique<embedding::GemmaTokenizer>(tokenizer_path_utf8);
+            
+            if (g_tokenizer->isLoaded()) {
+                PE_INFO("[E5_Initialize] ? C++ tokenizer loaded successfully");
+                PE_INFO("[E5_Initialize] Vocabulary size: " + std::to_string(g_tokenizer->vocabSize()));
+            } else {
+                PE_ERROR("[E5_Initialize] Failed to load C++ tokenizer: " + g_tokenizer->getLastError());
+                PE_WARN("[E5_Initialize] Text-based embedding functions will not work");
+                g_tokenizer.reset();  // Release the failed tokenizer
+            }
+        } catch (const std::exception& e) {
+            PE_ERROR("[E5_Initialize] Exception loading tokenizer: " + std::string(e.what()));
+            g_tokenizer.reset();
         }
 
         g_initialized = true;
@@ -534,7 +555,7 @@ E5_API const char* E5_GetLastError() {
 }
 
 // ============================================================================
-// Helper Functions for Text Processing (must be before they are used)
+// Helper Functions for Text Processing
 // ============================================================================
 
 // Helper: Save text to temp file
@@ -548,7 +569,7 @@ bool SaveTextToFile(const std::string& filename, const std::string& text) {
     return true;
 }
 
-// Helper: Read binary chunks file
+// Helper: Read binary chunks file (used by E5_CompareDocuments)
 bool ReadChunksFromFile(const std::string& filename,
                         std::vector<std::vector<int64_t>>& input_ids,
                         std::vector<std::vector<int64_t>>& attention_mask,
@@ -680,150 +701,79 @@ E5_API int E5_ComputeEmbeddingFromText(
         SetError("NULL pointer provided");
         return -1;
     }
+    
+    if (!g_tokenizer || !g_tokenizer->isLoaded()) {
+        SetError("C++ tokenizer not available. Cannot process text.");
+        PE_ERROR("[E5_ComputeEmbeddingFromText] Tokenizer not loaded");
+        return -1;
+    }
 
-    // ? FIX: Clear old error messages before starting
+    // Clear old error messages
     g_last_error.clear();
 
     try {
-        // Get paths from ConfigManager
-        std::string python_executable = pe_base::ConfigManager::GetInstance().GetPythonExecutable();
-        std::string tokenize_script = pe_base::ConfigManager::GetInstance().GetTokenizeTextScript();
-
-        // Normalize paths
-        std::replace(tokenize_script.begin(), tokenize_script.end(), '/', '\\');
-
-        // Get executable directory
-        std::string exe_dir = GetExePath();
-
-        // Create temp files
-        std::string temp_text_file = exe_dir + "\\temp_text.txt";
-        std::string temp_tokens_file = exe_dir + "\\temp_tokens.bin";
-
-        // Save text to temp file
-        if (!SaveTextToFile(temp_text_file, text)) {
-            SetError("Failed to save text to temp file: " + temp_text_file);
-            return -1;
-        }
-
-        // Convert tokenizer path to UTF-8
-        std::wstring tokenizer_path_w = g_tokenizer_path;
-        int size_needed = WideCharToMultiByte(CP_UTF8, 0, tokenizer_path_w.c_str(), 
-                                              (int)tokenizer_path_w.length(), NULL, 0, NULL, NULL);
-        std::string tokenizer_path(size_needed, 0);
-        WideCharToMultiByte(CP_UTF8, 0, tokenizer_path_w.c_str(), 
-                           (int)tokenizer_path_w.length(), &tokenizer_path[0], size_needed, NULL, NULL);
-        std::replace(tokenizer_path.begin(), tokenizer_path.end(), '/', '\\');
-
-        // Build and execute Python command to tokenize
-        char cmd[4096];
-        sprintf_s(cmd, sizeof(cmd),
-            "%s \"%s\" \"%s\" \"%s\" \"%s\"",
-            python_executable.c_str(),
-            tokenize_script.c_str(),
-            temp_text_file.c_str(),
-            temp_tokens_file.c_str(),
-            tokenizer_path.c_str());
-
-        PE_INFO("Tokenizing text: " + std::string(cmd));
-
-        if (system(cmd) != 0) {
-            SetError("Failed to tokenize text (Python error). Command: " + std::string(cmd));
-            DeleteFileA(temp_text_file.c_str());
-            return -1;
-        }
-
-        // Read tokenized data
-        std::ifstream token_file(temp_tokens_file, std::ios::binary);
-        if (!token_file.is_open()) {
-            SetError("Failed to read tokenized data from: " + temp_tokens_file);
-            DeleteFileA(temp_text_file.c_str());
-            DeleteFileA(temp_tokens_file.c_str());
-            return -1;
-        }
-
-        // Read token counts
-        int64_t num_tokens;
-        token_file.read(reinterpret_cast<char*>(&num_tokens), sizeof(int64_t));
-
-        if (num_tokens <= 0 || num_tokens > MAX_SEQ_LENGTH) {
-            SetError("Invalid token count: " + std::to_string(num_tokens));
-            token_file.close();
-            DeleteFileA(temp_text_file.c_str());
-            DeleteFileA(temp_tokens_file.c_str());
-            return -1;
-        }
-
-        // ? FIX: Read the FULL padded arrays (512 elements), not just num_tokens
-        // Python writes: num_tokens (int64), then 512 input_ids, 512 attention_mask, 512 token_type_ids
-        std::vector<int64_t> input_ids(MAX_SEQ_LENGTH);
-        std::vector<int64_t> attention_mask(MAX_SEQ_LENGTH);
-        std::vector<int64_t> token_type_ids(MAX_SEQ_LENGTH);
-
-        token_file.read(reinterpret_cast<char*>(input_ids.data()), MAX_SEQ_LENGTH * sizeof(int64_t));
-        token_file.read(reinterpret_cast<char*>(attention_mask.data()), MAX_SEQ_LENGTH * sizeof(int64_t));
-        token_file.read(reinterpret_cast<char*>(token_type_ids.data()), MAX_SEQ_LENGTH * sizeof(int64_t));
-
-        token_file.close();
+        PE_INFO("[E5_ComputeEmbeddingFromText] Tokenizing text with C++ tokenizer...");
         
-        // ? DEBUG: Verify attention_mask has valid values
+        // Use C++ tokenizer
+        auto encoding = g_tokenizer->encode(
+            text,
+            MAX_SEQ_LENGTH,  // max_length
+            true,            // truncation
+            "max_length"     // padding
+        );
+        
+        if (encoding.input_ids.empty()) {
+            SetError("Tokenization failed - empty result");
+            PE_ERROR("[E5_ComputeEmbeddingFromText] Tokenizer returned empty result");
+            return -1;
+        }
+        
+        // Verify data integrity
         int valid_mask_count = 0;
-        for (int i = 0; i < MAX_SEQ_LENGTH; ++i) {
-            if (attention_mask[i] == 1) {
+        for (size_t i = 0; i < encoding.attention_mask.size(); ++i) {
+            if (encoding.attention_mask[i] == 1) {
                 valid_mask_count++;
             }
         }
-        PE_INFO("[E5_ComputeEmbeddingFromText] Read " + std::to_string(num_tokens) + " tokens, valid attention_mask count: " + std::to_string(valid_mask_count));
         
-        // ? CRITICAL FIX: Verify data integrity
+        PE_INFO("[E5_ComputeEmbeddingFromText] Tokenized: " + std::to_string(encoding.num_tokens) + 
+               " tokens, valid attention_mask count: " + std::to_string(valid_mask_count));
+        
         if (valid_mask_count == 0) {
-            PE_ERROR("[E5_ComputeEmbeddingFromText] FATAL ERROR: attention_mask is all zeros!");
-            PE_ERROR("[E5_ComputeEmbeddingFromText] This indicates tokenization failed or file corruption!");
-            PE_ERROR("[E5_ComputeEmbeddingFromText] Text was: '" + std::string(text).substr(0, 100) + "...'");
-            SetError("Tokenization produced no valid tokens (attention_mask all zeros)");
-            DeleteFileA(temp_text_file.c_str());
-            DeleteFileA(temp_tokens_file.c_str());
+            SetError("Tokenization produced no valid tokens");
+            PE_ERROR("[E5_ComputeEmbeddingFromText] FATAL: attention_mask all zeros");
             return -1;
         }
         
-        if (valid_mask_count != num_tokens) {
-            PE_WARN("[E5_ComputeEmbeddingFromText] WARNING: Mismatch between num_tokens (" + std::to_string(num_tokens) + 
-                   ") and valid_mask_count (" + std::to_string(valid_mask_count) + ")");
-            PE_WARN("[E5_ComputeEmbeddingFromText] Using valid_mask_count as ground truth");
-        }
-        
-        // ? DEBUG: Log first few tokens and masks
+        // Debug: Log first few tokens
         std::ostringstream oss_ids;
         oss_ids << "[E5_ComputeEmbeddingFromText] First 10 input_ids: ";
-        for (int i = 0; i < std::min(10, MAX_SEQ_LENGTH); ++i) {
-            oss_ids << input_ids[i] << " ";
+        for (int i = 0; i < std::min(10, (int)encoding.input_ids.size()); ++i) {
+            oss_ids << encoding.input_ids[i] << " ";
         }
         PE_INFO(oss_ids.str());
         
         std::ostringstream oss_mask;
         oss_mask << "[E5_ComputeEmbeddingFromText] First 10 attention_mask: ";
-        for (int i = 0; i < std::min(10, MAX_SEQ_LENGTH); ++i) {
-            oss_mask << attention_mask[i] << " ";
+        for (int i = 0; i < std::min(10, (int)encoding.attention_mask.size()); ++i) {
+            oss_mask << encoding.attention_mask[i] << " ";
         }
         PE_INFO(oss_mask.str());
 
-        // Compute embedding using existing function
-        // Note: We pass MAX_SEQ_LENGTH, not num_tokens, because we now have padded arrays
+        // Compute embedding using tokenized data
         int result = E5_ComputeEmbedding(
-            input_ids.data(),
-            attention_mask.data(),
-            token_type_ids.data(),
-            MAX_SEQ_LENGTH,  // ¡û Changed from (int)num_tokens to MAX_SEQ_LENGTH
+            encoding.input_ids.data(),
+            encoding.attention_mask.data(),
+            encoding.token_type_ids.data(),
+            MAX_SEQ_LENGTH,
             embedding_out
         );
-
-        // Cleanup temp files
-        DeleteFileA(temp_text_file.c_str());
-        DeleteFileA(temp_tokens_file.c_str());
 
         return result;
 
     } catch (const std::exception& e) {
         SetError(std::string("Text embedding error: ") + e.what());
+        PE_ERROR("[E5_ComputeEmbeddingFromText] Exception: " + std::string(e.what()));
         return -1;
     }
 }
@@ -875,13 +825,10 @@ E5_API void E5_Cleanup() {
 
     g_session.reset();
     g_env.reset();
+    g_tokenizer.reset();  // Clean up C++ tokenizer
     g_initialized = false;
     g_last_error.clear();
 }
-
-// ============================================================================
-// Document Comparison Functions (removed duplicate helper function definitions)
-// ============================================================================
 
 E5_API int E5_CompareDocuments(
     const char* doc_A_text,

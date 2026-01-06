@@ -64,7 +64,7 @@ void AppActivityContextProvider::collectContext(pe_base::Json& context) const {
     context.set("windowTitle", currentWindowTitle_);
     context.set("activeAppContent", currentContent_);
     context.set("duration", dwellTimeSeconds_);
-    context.set("interactionCount", interactionCount_);
+    context.set("interactionCount", static_cast<long long>(interactionCount_));  // Explicit cast to long long
     context.set("startTime", startSwitchTime_);
 }
 
@@ -150,7 +150,7 @@ void AppActivityContextProvider::resetMouseRecords() {
     }
 }
 
-int AppActivityContextProvider::getInteractionCount() const {
+UINT64 AppActivityContextProvider::getInteractionCount() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return interactionCount_;
 }

@@ -799,7 +799,7 @@ namespace WindowsAPIs {
 
                 return loc;
             }
-            catch (winrt::hresult_error const& e) {
+            catch (winrt::hresult_error const&) {
                 // Location request failed, cache invalid result for short time
                 m_cachedLocation = loc;
                 m_lastLocationUpdate = now;

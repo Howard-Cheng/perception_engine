@@ -17,6 +17,13 @@
     #define DB_CLIENT_API
 #endif
 
+// Suppress C4251 warning for STL types in exported classes
+// This is safe for structures with STL members used across DLL boundaries
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4251)
+#endif
+
 namespace database {
 
 // Type aliases
@@ -161,3 +168,7 @@ enum class DatabaseType {
 };
 
 } // namespace database
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif

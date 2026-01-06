@@ -221,7 +221,8 @@ namespace dataprocess {
         DWORD totalWritten = 0;
         while (totalWritten < size) {
             DWORD bytesWritten = 0;
-            if (!WriteFile(hChildStdinWrite_, buffer + totalWritten, size - totalWritten, &bytesWritten, nullptr)) {
+            DWORD sizeToWrite = static_cast<DWORD>(size - totalWritten);
+            if (!WriteFile(hChildStdinWrite_, buffer + totalWritten, sizeToWrite, &bytesWritten, nullptr)) {
                 PE_ERROR_THIS("WriteFile failed: " << GetLastError())
                     return false;
             }
@@ -234,7 +235,8 @@ namespace dataprocess {
         DWORD totalRead = 0;
         while (totalRead < size) {
             DWORD bytesRead = 0;
-            if (!ReadFile(hChildStdoutRead_, buffer + totalRead, size - totalRead, &bytesRead, nullptr)) {
+            DWORD sizeToRead = static_cast<DWORD>(size - totalRead);
+            if (!ReadFile(hChildStdoutRead_, buffer + totalRead, sizeToRead, &bytesRead, nullptr)) {
                 DWORD error = GetLastError();
                 if (error == ERROR_BROKEN_PIPE) {
                     PE_INFO("Server closed pipe");

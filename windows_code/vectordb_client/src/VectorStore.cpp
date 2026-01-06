@@ -447,18 +447,18 @@ namespace vectordb
             // Build filter for time range
             std::vector<FilterCondition> conditions;
 
-            // Convert time_t to int64_t (Unix timestamps)
-            int64_t startTimeInt = static_cast<int64_t>(startTime);
-            int64_t endTimeInt = static_cast<int64_t>(endTime);
+            // Convert time_t to double (timestamps as floating-point for range queries)
+            double startTimeDouble = static_cast<double>(startTime);
+            double endTimeDouble = static_cast<double>(endTime);
 
             // Add timestamp range filter
             conditions.push_back(
                 FilterCondition::createRange(
                     "created_at",
                     std::nullopt,         // gt (greater than)
-                    startTimeInt,         // gte (greater than or equal)
+                    startTimeDouble,      // gte (greater than or equal)
                     std::nullopt,         // lt (less than)
-                    endTimeInt            // lte (less than or equal)
+                    endTimeDouble         // lte (less than or equal)
                 )
             );
 

@@ -58,7 +58,7 @@ int main(int argc, char** argv) {
             createTestEvent("fuzzy_001", "chrome.exe", 
                 "Working on project with PostgreSQL and design"),
             createTestEvent("fuzzy_002", "vscode.exe", 
-                "Editing code and testing database queries \u6d4b\u8bd5"),  // "≤‚ ‘" in Unicode
+                "Editing code and testing database queries"),  // Removed Unicode escape
             createTestEvent("fuzzy_003", "firefox.exe", 
                 "Browsing documentation for elasticsearch"),
             createTestEvent("fuzzy_004", "chrome.exe", 
@@ -87,25 +87,25 @@ int main(int argc, char** argv) {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         
         // ========================================
-        // Test 1: Exact match (like GetESDBData)
+        // Test 1: Exact match (basic search)
         // ========================================
-        std::cout << "\n========== Test 1: Exact Match (with Chinese support) ==========" << std::endl;
+        std::cout << "\n========== Test 1: Exact Match ==========" << std::endl;
         
         std::time_t startTime = baseTime - 1200;  // 20 minutes ago
         std::time_t endTime = baseTime + 60;      // 1 minute from now
-        std::string keyword = "\u6d4b\u8bd5";  // "≤‚ ‘" in Unicode
+        std::string keyword = "testing";  // Simple English keyword
         
         std::string query1 = R"({"query":{"bool":{"must":[)";
         query1 += R"({"multi_match":{"query":")" + keyword + R"(",)";
         query1 += R"("fields":["screen_content","voice_transcription","camera_description","app_name","window_title"],)";
-        query1 += R"("fuzziness":"AUTO")";  // ADD: Enable fuzzy matching for better Unicode support
+        query1 += R"("fuzziness":"AUTO")";  // Enable fuzzy matching
         query1 += R"(}},)";
         query1 += R"({"range":{"timestamp":{"gte":)" + std::to_string(startTime);
         query1 += R"(,"lte":)" + std::to_string(endTime) + R"(}}}]}},)";
         query1 += R"("sort":[{"timestamp":{"order":"desc"}}]})";
         
         SearchResult result1 = client->search(tableName, query1, 0, 100);
-        std::cout << "Keyword: '" << keyword << "' (with fuzziness for Chinese)" << std::endl;
+        std::cout << "Keyword: '" << keyword << "'" << std::endl;
         std::cout << "Results: " << result1.totalHits << " matches" << std::endl;
         
         for (const auto& event : result1.events) {

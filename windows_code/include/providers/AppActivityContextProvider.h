@@ -42,7 +42,7 @@ public:
     void onWindowSwitch(const WindowsAPIs::ActiveAppRecord& record);
     std::vector<database::MouseEvent> getMouseEvents() const;
     void resetMouseRecords();
-    int getInteractionCount() const;
+    UINT64 getInteractionCount() const;  // Changed from int to UINT64
     std::string getCurrentApp() const;
     std::string getCurrentContent() const;
     
@@ -55,7 +55,7 @@ private:
     std::string currentWindowTitle_;
     std::string currentContent_;
     int dwellTimeSeconds_ = 0;
-    int interactionCount_ = 0;
+    UINT64 interactionCount_ = 0;  // Changed from int to UINT64
     long long startSwitchTime_ = 0;
     
     WindowSwitchCallback upperCallback_;

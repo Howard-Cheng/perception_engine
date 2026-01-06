@@ -324,7 +324,9 @@ database::RawEvent ContextCollector::jsonContextToRawEvent(const pe_base::Json& 
     // Mouse events
     if (auto appProvider = contextManager_.getAppActivityProvider()) {
         event.mouseEvents = appProvider->getMouseEvents();
-        event.interactionCount = appProvider->getInteractionCount();
+        // Explicit cast from UINT64 to int with range check
+        UINT64 count = appProvider->getInteractionCount();
+        event.interactionCount = (count > INT_MAX) ? INT_MAX : static_cast<int>(count);
     }
 
     event.dwellTimeSeconds = context.getInt("duration", 0);
@@ -397,7 +399,7 @@ pe_base::Json ContextCollector::GetESDBData(const std::string& keyword,
             << "\"startTime\":" << startTimeMs << ","
             << "\"endTime\":" << endTimeMs << ","
             << "\"size\":" << maxResults << ","
-            << "\"includeCompressed\":true"  // ← FIX: 包含已压缩的数据
+            << "\"includeCompressed\":true"
             << "}";
 
         std::string query = queryBuilder.str();

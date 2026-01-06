@@ -816,7 +816,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         else {
-            PE_ERROR("Unknown argument: %s", primaryCommand.c_str());
+            PE_ERROR("Unknown argument: %s" << primaryCommand.c_str());
             PE_INFO("Usage: PerceptionEngine.exe [--install|--uninstall|--start|--stop|--console] [--screen-only]");
             PE_INFO("  --console              Run as console application");
             PE_INFO("  --screen-only          Enable screen-only mode (disable audio/camera)");

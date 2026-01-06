@@ -5,6 +5,13 @@
 #include "IDatabaseClient.h"
 #include <memory>
 
+// Suppress C4251 warning for STL types in exported classes
+// This is safe for Pimpl pattern where the implementation is private
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4251)
+#endif
+
 namespace database {
 
 /**
@@ -140,3 +147,7 @@ private:
 };
 
 } // namespace database
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif

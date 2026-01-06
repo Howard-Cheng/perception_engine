@@ -113,7 +113,7 @@ namespace sessionmanager {
 
         if (pe_base::ConfigManager::GetInstance().IsLoaded()) {
             config_.compressionThreshold = pe_base::ConfigManager::GetInstance().GetCompressionThreshold();
-            config_.similarityThreshold = pe_base::ConfigManager::GetInstance().GetSimilarityThreshold();
+            config_.similarityThreshold = static_cast<int>(pe_base::ConfigManager::GetInstance().GetSimilarityThreshold());
             config_.batchSize = pe_base::ConfigManager::GetInstance().GetBatchSize();
 
             // Initialize retry configuration with sensible defaults
@@ -337,7 +337,7 @@ namespace sessionmanager {
                                 std::string sessionId = GenerateSessionId();
                                 if (MarkRecordsCompressedWithRetry(currentSession, sessionId)) {
                                     sessionsCreated++;
-                                    recordsProcessed += currentSession.size();
+                                    recordsProcessed += static_cast<int>(currentSession.size());
                                     PE_INFO("[SessionManager] Session " << sessionId
                                         << " completed (" << currentSession.size()
                                         << " records)");
@@ -366,7 +366,7 @@ namespace sessionmanager {
                 std::string sessionId = GenerateSessionId();
                 if (MarkRecordsCompressedWithRetry(currentSession, sessionId)) {
                     sessionsCreated++;
-                    recordsProcessed += currentSession.size();
+                    recordsProcessed += static_cast<int>(currentSession.size());
                     PE_INFO("[SessionManager] Final session " << sessionId
                         << " completed (" << currentSession.size()
                         << " records)");
@@ -798,7 +798,7 @@ namespace sessionmanager {
                     // Operation failed
                     std::lock_guard<std::mutex> lock(statsMutex_);
                     stats_.partialFailures++;
-                    stats_.totalFailedOperations += sessionContents.size();
+                    stats_.totalFailedOperations += static_cast<int>(sessionContents.size());
 
                     if (attempt == config_.maxRetries) {
                         // Final attempt failed
@@ -822,7 +822,7 @@ namespace sessionmanager {
                 if (attempt == config_.maxRetries) {
                     std::lock_guard<std::mutex> lock(statsMutex_);
                     stats_.failedRetries++;
-                    stats_.totalFailedOperations += sessionContents.size();
+                    stats_.totalFailedOperations += static_cast<int>(sessionContents.size());
                 }
             }
         }

@@ -783,7 +783,6 @@ std::wstring MouseTracker::TryGetElementContent(IUIAutomationElement* element, C
     if (!element) return L"";
 
     std::wstring result;
-    HRESULT hr;
 
     // 1. First try to get Name property
     BSTR name = nullptr;

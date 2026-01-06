@@ -2,7 +2,7 @@
 #include <stdexcept>
 #include <filesystem>
 #include <functional>
-#include <iostream>
+#include "pe_base/logger.h"
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
@@ -148,9 +148,9 @@ namespace vectordb
             if (!std::filesystem::exists(modelPath))
             {
                 // Log the paths we tried for debugging
-                std::cerr << "Embedding model not found at: " << modelPath.string() << std::endl;
-                std::cerr << "Current working directory: " << std::filesystem::current_path().string() << std::endl;
-                std::cerr << "Original path provided: " << embeddingModelPath_ << std::endl;
+                PE_WARN("Embedding model not found at: " << modelPath.string());
+                PE_WARN("Current working directory: " << std::filesystem::current_path().string());
+                PE_WARN("Original path provided: " << embeddingModelPath_);
                 return false;
             }
 
@@ -165,7 +165,7 @@ namespace vectordb
             }
             catch (const std::exception &e)
             {
-                std::cerr << "Failed to load embedding model: " << e.what() << std::endl;
+                PE_ERROR("Failed to load embedding model: " << e.what());
                 return false;
             }
 
@@ -181,26 +181,26 @@ namespace vectordb
 
                     if (existingVectorSize != vectorSize)
                     {
-                        std::cerr << "WARNING: Collection '" << collectionName_
-                                  << "' has incorrect vector size!" << std::endl;
-                        std::cerr << "  Expected: " << vectorSize << std::endl;
-                        std::cerr << "  Found: " << existingVectorSize << std::endl;
-                        std::cerr << "  Recreating collection..." << std::endl;
+                        PE_WARN("WARNING: Collection '" << collectionName_
+                                  << "' has incorrect vector size!");
+                        PE_WARN("  Expected: " << vectorSize);
+                        PE_WARN("  Found: " << existingVectorSize);
+                        PE_WARN("  Recreating collection...");
 
                         // Delete and recreate collection
                         if (!client_->deleteCollection(collectionName_))
                         {
-                            std::cerr << "Failed to delete collection with wrong dimensions" << std::endl;
+                            PE_ERROR("Failed to delete collection with wrong dimensions");
                             return false;
                         }
 
                         if (!client_->createCollection(collectionName_, vectorSize, DistanceMetric::COSINE))
                         {
-                            std::cerr << "Failed to recreate collection" << std::endl;
+                            PE_ERROR("Failed to recreate collection");
                             return false;
                         }
 
-                        std::cerr << "Collection recreated successfully with correct dimensions" << std::endl;
+                        PE_INFO("Collection recreated successfully with correct dimensions");
                     }
                 }
             }
@@ -217,7 +217,7 @@ namespace vectordb
         }
         catch (const std::exception &e)
         {
-            std::cerr << "Exception in VectorStore::initialize(): " << e.what() << std::endl;
+            PE_ERROR("Exception in VectorStore::initialize(): " << e.what());
             return false;
         }
     }
@@ -262,7 +262,7 @@ namespace vectordb
         }
         catch (const std::exception &e)
         {
-            std::cerr << "Exception in VectorStore::storeText: " << e.what() << std::endl;
+            PE_ERROR("Exception in VectorStore::storeText: " << e.what());
             return false;
         }
     }
@@ -326,7 +326,7 @@ namespace vectordb
         }
         catch (const std::exception &e)
         {
-            std::cerr << "Exception in VectorStore::storeTexts: " << e.what() << std::endl;
+            PE_ERROR("Exception in VectorStore::storeTexts: " << e.what());
             return false;
         }
     }
@@ -342,42 +342,67 @@ namespace vectordb
         {
             if (!embeddingModel_ || !embeddingModel_->isLoaded())
             {
-                std::cerr << "[VectorStore::search] Embedding model not loaded" << std::endl;
+                PE_ERROR("[VectorStore::search] Embedding model not loaded");
                 return {};
             }
 
             // ? DEBUG: Log query info
-            std::cout << "[VectorStore::search] Query text: '" << queryText << "'" << std::endl;
-            std::cout << "[VectorStore::search] Collection: " << collectionName_ << std::endl;
-            std::cout << "[VectorStore::search] Limit: " << limit << std::endl;
+            PE_INFO("[VectorStore::search] Query text: '" << queryText << "'");
+            PE_INFO("[VectorStore::search] Collection: " << collectionName_);
+            PE_INFO("[VectorStore::search] Limit: " << limit);
+            
+            // Measure embedding generation time
+            auto embeddingStartTime = std::chrono::steady_clock::now();
             
             // Generate query embedding
             std::vector<float> queryVector = embeddingModel_->encode(queryText);
             
+            auto embeddingEndTime = std::chrono::steady_clock::now();
+            auto embeddingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(embeddingEndTime - embeddingStartTime);
+            PE_INFO("[VectorStore::search] Embedding generation time: " << embeddingDuration.count() << " ms");
+            
             // ? DEBUG: Check query vector
-            std::cout << "[VectorStore::search] Query vector dimension: " << queryVector.size() << std::endl;
+            PE_INFO("[VectorStore::search] Query vector dimension: " << queryVector.size());
             
             // Check if vector is all zeros
             bool allZero = std::all_of(queryVector.begin(), queryVector.end(), 
                                        [](float v) { return v == 0.0f; });
             if (allZero) {
-                std::cerr << "[VectorStore::search] ERROR: Query vector is all zeros!" << std::endl;
-                std::cerr << "[VectorStore::search] This means embedding model failed to encode the text" << std::endl;
+                PE_ERROR("[VectorStore::search] ERROR: Query vector is all zeros!");
+                PE_ERROR("[VectorStore::search] This means embedding model failed to encode the text");
             }
             
             // Print first few values
-            std::cout << "[VectorStore::search] First 5 vector values: ";
+            std::ostringstream oss;
+            oss << "[VectorStore::search] First 5 vector values: ";
             for (size_t i = 0; i < std::min(size_t(5), queryVector.size()); ++i) {
-                std::cout << queryVector[i] << " ";
+                oss << queryVector[i] << " ";
             }
-            std::cout << std::endl;
+            PE_INFO(oss.str());
 
+            // Measure Qdrant search time
+            auto qdrantStartTime = std::chrono::steady_clock::now();
+            
             // Search in Qdrant
-            return client_->search(collectionName_, queryVector, limit, scoreThreshold, filter);
+            auto results = client_->search(collectionName_, queryVector, limit, scoreThreshold, filter);
+            
+            auto qdrantEndTime = std::chrono::steady_clock::now();
+            auto qdrantDuration = std::chrono::duration_cast<std::chrono::milliseconds>(qdrantEndTime - qdrantStartTime);
+            PE_INFO("[VectorStore::search] Qdrant search time: " << qdrantDuration.count() << " ms");
+            
+            // Total time
+            auto totalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(qdrantEndTime - embeddingStartTime);
+            PE_INFO("[VectorStore::search] Total search time: " << totalDuration.count() << " ms");
+            PE_INFO("[VectorStore::search]   - Embedding: " << embeddingDuration.count() << " ms (" 
+                      << (100 * embeddingDuration.count() / totalDuration.count()) << "%)");
+            PE_INFO("[VectorStore::search]   - Qdrant: " << qdrantDuration.count() << " ms (" 
+                      << (100 * qdrantDuration.count() / totalDuration.count()) << "%)");
+            
+            return results;
         }
         catch (const std::exception &e)
         {
-            std::cerr << "[VectorStore::search] Exception: " << e.what() << std::endl;
+            PE_ERROR("[VectorStore::search] Exception: " << e.what());
             return {};
         }
     }
@@ -415,7 +440,7 @@ namespace vectordb
     {
         try {
             if (!embeddingModel_ || !embeddingModel_->isLoaded()) {
-                std::cerr << "Embedding model not loaded" << std::endl;
+                PE_ERROR("Embedding model not loaded");
                 return {};
             }
 
@@ -447,15 +472,14 @@ namespace vectordb
                 filter
             );
 
-            std::cout << "[QuerySessionSummaries] Found " << results.size()
+            PE_INFO("[QuerySessionSummaries] Found " << results.size()
                 << " sessions matching query '" << keyword << "' "
-                << "in time range [" << startTime << ", " << endTime << "]"
-                << std::endl;
+                << "in time range [" << startTime << ", " << endTime << "]");
 
             return results;
         }
         catch (const std::exception& e) {
-            std::cerr << "Exception in querySessionSummaries: " << e.what() << std::endl;
+            PE_ERROR("Exception in querySessionSummaries: " << e.what());
             return {};
         }
     }

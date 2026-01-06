@@ -2,7 +2,8 @@
 #include "E5EmbeddingDLL.h"  // Use E5EmbeddingDLL for embedding operations
 #include <stdexcept>
 #include <filesystem>
-#include <iostream>
+#include "pe_base/logger.h"
+#include <sstream>
 
 namespace vectordb
 {
@@ -39,9 +40,9 @@ namespace vectordb
                     loaded = true;
                     lastError.clear();
                     
-                    std::cout << "EmbeddingModel: Successfully initialized using E5EmbeddingDLL" << std::endl;
-                    std::cout << "  Model path: " << path << std::endl;
-                    std::cout << "  Dimension: " << dimension << std::endl;
+                    PE_INFO("EmbeddingModel: Successfully initialized using E5EmbeddingDLL");
+                    PE_INFO("  Model path: " << path);
+                    PE_INFO("  Dimension: " << dimension);
                 } else {
                     lastError = "Failed to initialize E5 model: " + std::string(E5_GetLastError());
                     loaded = false;
@@ -70,9 +71,9 @@ namespace vectordb
             try
             {
                 // ? DEBUG: Log encoding attempt
-                std::cout << "[EmbeddingModel::encode] Encoding text: '" << text.substr(0, std::min(size_t(50), text.length())) << "...'" << std::endl;
-                std::cout << "[EmbeddingModel::encode] Text length: " << text.length() << " chars" << std::endl;
-                std::cout << "[EmbeddingModel::encode] Expected dimension: " << dimension << std::endl;
+                PE_INFO("[EmbeddingModel::encode] Encoding text: '" << text.substr(0, std::min(size_t(50), text.length())) << "...'");
+                PE_INFO("[EmbeddingModel::encode] Text length: " << text.length() << " chars");
+                PE_INFO("[EmbeddingModel::encode] Expected dimension: " << dimension);
                 
                 std::vector<float> embedding(dimension);
                 
@@ -84,7 +85,7 @@ namespace vectordb
 
                 if (result != 0) {
                     lastError = "Encoding failed: " + std::string(E5_GetLastError());
-                    std::cerr << "[EmbeddingModel::encode] ERROR: " << lastError << std::endl;
+                    PE_ERROR("[EmbeddingModel::encode] ERROR: " << lastError);
                     throw std::runtime_error(lastError);
                 }
                 
@@ -92,15 +93,16 @@ namespace vectordb
                 bool allZero = std::all_of(embedding.begin(), embedding.end(), 
                                            [](float v) { return v == 0.0f; });
                 if (allZero) {
-                    std::cerr << "[EmbeddingModel::encode] WARNING: Embedding is all zeros!" << std::endl;
-                    std::cerr << "[EmbeddingModel::encode] This usually means E5_ComputeEmbeddingFromText failed silently" << std::endl;
-                    std::cerr << "[EmbeddingModel::encode] E5 last error: " << E5_GetLastError() << std::endl;
+                    PE_WARN("[EmbeddingModel::encode] WARNING: Embedding is all zeros!");
+                    PE_WARN("[EmbeddingModel::encode] This usually means E5_ComputeEmbeddingFromText failed silently");
+                    PE_WARN("[EmbeddingModel::encode] E5 last error: " << E5_GetLastError());
                 } else {
-                    std::cout << "[EmbeddingModel::encode] First 5 values: ";
+                    std::ostringstream oss;
+                    oss << "[EmbeddingModel::encode] First 5 values: ";
                     for (size_t i = 0; i < std::min(size_t(5), embedding.size()); ++i) {
-                        std::cout << embedding[i] << " ";
+                        oss << embedding[i] << " ";
                     }
-                    std::cout << std::endl;
+                    PE_INFO(oss.str());
                 }
 
                 return embedding;
@@ -108,7 +110,7 @@ namespace vectordb
             catch (const std::exception &e)
             {
                 lastError = "Encoding failed: " + std::string(e.what());
-                std::cerr << "[EmbeddingModel::encode] Exception: " << lastError << std::endl;
+                PE_ERROR("[EmbeddingModel::encode] Exception: " << lastError);
                 throw std::runtime_error(lastError);
             }
         }

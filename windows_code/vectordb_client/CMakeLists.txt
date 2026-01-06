@@ -153,6 +153,15 @@ else()
     message(WARNING "E5EmbeddingDLL target not found. EmbeddingModel may not work correctly.")
 endif()
 
+# Link pe_base (required for logger)
+if(TARGET pe_base)
+    target_link_libraries(vectordb_client PRIVATE pe_base)
+    target_include_directories(vectordb_client PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../pe_base/include)
+    message(STATUS "pe_base: Found and linked")
+else()
+    message(WARNING "pe_base target not found. Logging may not work correctly.")
+endif()
+
 # Compiler flags
 if(MSVC)
     target_compile_options(vectordb_client PRIVATE

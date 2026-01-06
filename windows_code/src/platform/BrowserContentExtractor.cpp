@@ -492,7 +492,7 @@ void BrowserContentExtractor::PrintBrowserContent(const BrowserContentInfo& info
     PE_INFO("========== Browser Content Info ==========");
     PE_INFO_THIS("Title:" << WStringToString(info.title).c_str())
     PE_INFO_THIS("URL:" << (info.url.empty() ? "(not found)" : WStringToString(info.url).c_str()))
-    PE_INFO_THIS("Element count: %d", info.elementCount);
+    PE_INFO_THIS("Element count: %d" << info.elementCount);
     
     PE_INFO_THIS("Links found:" << info.links.size())
     if (!info.links.empty()) {

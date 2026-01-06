@@ -1,4 +1,3 @@
-#define E5EMBEDDING_EXPORTS
 #include "E5EmbeddingDLL.h"
 #include "GemmaTokenizer.h"  // ADD: Include C++ tokenizer
 #include "pe_base/config_manager.h"

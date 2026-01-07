@@ -66,7 +66,7 @@ public:
                        int from = 0,
                        int size = 100) override;
     std::vector<RawEvent> getUncompressedEvents(const std::string& collectionName, 
-                                               int hours = 24) override;
+                                               int max_count = 100) override;
     bool updateDocument(const std::string& collectionName,
                        const std::string& docId,
                        const std::string& updateData) override;

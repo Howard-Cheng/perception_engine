@@ -68,14 +68,14 @@ public:
                                int size = 100) = 0;
     
     /**
-     * @brief Get uncompressed events within time range
+     * @brief Get uncompressed events (limited by count)
      * 
      * @param collectionName Collection/Index name
-     * @param hours Number of hours to look back
-     * @return Vector of uncompressed events
+     * @param max_count Maximum number of events to return (default: 100)
+     * @return Vector of uncompressed events (oldest first)
      */
     virtual std::vector<RawEvent> getUncompressedEvents(const std::string& collectionName, 
-                                                       int hours = 24) = 0;
+                                                       int max_count = 100) = 0;
     
     /**
      * @brief Update a document

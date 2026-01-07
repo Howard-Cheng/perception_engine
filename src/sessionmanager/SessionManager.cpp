@@ -264,7 +264,7 @@ namespace sessionmanager {
 
             // Use getUncompressedEvents() which is database-agnostic
             // It fetches events sorted by timestamp (oldest first)
-            std::vector<database::RawEvent> result = dbClient_->getUncompressedEvents(indexName_, 24);
+            std::vector<database::RawEvent> result = dbClient_->getUncompressedEvents(indexName_);
 
             if (result.empty()) {
                 std::cout << "[SessionManager] No uncompressed records found" << std::endl;

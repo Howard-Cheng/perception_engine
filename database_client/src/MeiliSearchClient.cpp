@@ -346,16 +346,15 @@ SearchResult MeiliSearchClient::search(const std::string& collectionName, const 
     return result;
 }
 
-std::vector<RawEvent> MeiliSearchClient::getUncompressedEvents(const std::string& collectionName, int hours) {
+std::vector<RawEvent> MeiliSearchClient::getUncompressedEvents(const std::string& collectionName, int max_count) {
     std::vector<RawEvent> events;
     std::string response;
     
-    std::time_t cutoff = std::time(nullptr) - hours * 3600;
-    
     json searchBody = {
         {"q", ""},
-        {"filter", "compressed = false AND timestamp >= " + std::to_string(cutoff)},
-        {"limit", 10000}
+        {"filter", "compressed = false"},
+        {"limit", max_count},
+        {"sort", {"timestamp:asc"}}
     };
     
     std::string endpoint = "/indexes/" + collectionName + "/search";

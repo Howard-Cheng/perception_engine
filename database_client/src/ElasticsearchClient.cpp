@@ -562,22 +562,17 @@ SearchResult ElasticsearchClient::search(const std::string& indexName,
 
 std::vector<RawEvent> ElasticsearchClient::getUncompressedEvents(
     const std::string& indexName, 
-    int hours) {
+    int max_count) {
     
-    json query = json::parse(R"({
-        "query": {
-            "bool": {
-                "must": [
-                    {"term": {"compressed": false}},
-                    {"range": {"timestamp": {"gte": "now-)" + std::to_string(hours) + R"(h"}}}
-                ]
-            }
-        },
-        "sort": [{"timestamp": "asc"}],
-        "size": 10000
-    })");
+    json query = {
+        {"query", {
+            {"term", {{"compressed", false}}}
+        }},
+        {"sort", {{"timestamp", "asc"}}},
+        {"size", max_count}
+    };
     
-    SearchResult result = search(indexName, query.dump(), 0, 10000);
+    SearchResult result = search(indexName, query.dump(), 0, max_count);
     return result.events;
 }
 

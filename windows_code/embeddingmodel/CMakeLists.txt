@@ -14,11 +14,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(E5_EMBEDDING_SOURCES
     src/E5EmbeddingDLL.cpp
     src/GemmaTokenizer.cpp
+    src/DocumentChunker.cpp
 )
 
 set(E5_EMBEDDING_HEADERS
     include/E5EmbeddingDLL.h
     include/GemmaTokenizer.h
+    include/DocumentChunker.h
 )
 
 # Create shared library
@@ -79,10 +81,14 @@ target_include_directories(E5EmbeddingDLL PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/onnxruntime/include
 )
 
+# Find nlohmann_json package
+find_package(nlohmann_json CONFIG REQUIRED)
+
 # Link libraries
 target_link_libraries(E5EmbeddingDLL PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/onnxruntime/lib/onnxruntime.lib
     pe_base
+    nlohmann_json::nlohmann_json
 )
 
 # Link SentencePiece static library if available

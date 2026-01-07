@@ -109,7 +109,7 @@ void AsyncWhisperQueue::WorkerThread() {
         std::string transcription = TranscribeAudio(audioToProcess);
         auto endTime = pe_base::TimeUtil::TimestampMs();
 
-        float latencyMs = endTime - startTime;
+        float latencyMs = static_cast<float>(endTime - startTime);
         lastLatencyMs.store(latencyMs);
 
         processing.store(false);

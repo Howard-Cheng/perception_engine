@@ -70,7 +70,7 @@ public:
         m_clickedCount = 0;
         m_mouseEvents.clear();
     }
-    inline int GetClickedCount() const {
+    inline UINT64 GetClickedCount() const {
         return m_clickedCount;
     }
 

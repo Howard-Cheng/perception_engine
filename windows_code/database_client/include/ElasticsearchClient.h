@@ -5,6 +5,13 @@
 #include "IDatabaseClient.h"
 #include <memory>
 
+// Suppress C4251 warning for STL types in exported classes
+// This is safe for Pimpl pattern where the implementation is private
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4251)
+#endif
+
 namespace database {
 
 /**
@@ -41,7 +48,7 @@ public:
                        int from = 0,
                        int size = 100) override;
     std::vector<RawEvent> getUncompressedEvents(const std::string& collectionName, 
-                                               int hours = 24) override;
+                                               int max_count = 100) override;
     bool updateDocument(const std::string& collectionName,
                        const std::string& docId,
                        const std::string& updateData) override;
@@ -91,3 +98,7 @@ private:
 };
 
 } // namespace database
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif

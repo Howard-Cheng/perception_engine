@@ -57,7 +57,7 @@ public:
     std::string indexDocument(const std::string& collectionName, const RawEvent& event) override;
     bool bulkIndexDocuments(const std::string& collectionName, const std::vector<RawEvent>& events) override;
     SearchResult search(const std::string& collectionName, const std::string& query, int from = 0, int size = 100) override;
-    std::vector<RawEvent> getUncompressedEvents(const std::string& collectionName, int hours = 24) override;
+    std::vector<RawEvent> getUncompressedEvents(const std::string& collectionName, int max_count = 100) override;
     bool updateDocument(const std::string& collectionName, const std::string& docId, const std::string& updateData) override;
     bool markEventsAsCompressed(const std::string& collectionName, const std::vector<std::string>& eventIds, const std::string& sessionId) override;
     int deleteOlderThan(const std::string& collectionName, std::time_t cutoffTime) override;

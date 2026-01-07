@@ -4,6 +4,10 @@ project(PerceptionEngine VERSION 2.0.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Note: We use the default MSVC runtime library (/MD - Dynamic CRT)
+# This matches vcpkg defaults and most dependencies
+# SentencePiece should be built with /MD to match
+
 # Find vcpkg packages
 find_package(nlohmann_json CONFIG REQUIRED)
 
@@ -522,6 +526,15 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
         ${CMAKE_CURRENT_SOURCE_DIR}/scripts
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/scripts
 
+    # Copy tokenizer.model if it exists (for C++ tokenizer)
+    COMMAND ${CMAKE_COMMAND} -E echo "Checking for tokenizer.model..."
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/embedding/tokenizer
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/models/embedding/tokenizer/tokenizer.model
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/embedding/tokenizer/tokenizer.model
+        || ${CMAKE_COMMAND} -E echo "tokenizer.model not found (Python fallback will be used)"
+
     # Copy ONNX Runtime DLL to bin/
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll
@@ -562,6 +575,15 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
         ${CMAKE_CURRENT_SOURCE_DIR}/scripts
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/scripts
 
+    # Copy tokenizer.model to bin/$<CONFIG>/ if it exists
+    COMMAND ${CMAKE_COMMAND} -E echo "Checking for tokenizer.model in $<CONFIG>..."
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/embedding/tokenizer
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/models/embedding/tokenizer/tokenizer.model
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models/embedding/tokenizer/tokenizer.model
+        || ${CMAKE_COMMAND} -E echo "tokenizer.model not found (Python fallback will be used)"
+
     # Copy E5EmbeddingDLL to bin/$<CONFIG>/}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:E5EmbeddingDLL>
@@ -583,7 +605,7 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
         ${CMAKE_CURRENT_SOURCE_DIR}/scripts
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/scripts
 
-    COMMENT "Copying models, scripts, and DLLs for PerceptionEngine"
+    COMMENT "Copying models, scripts, tokenizer.model, and DLLs for PerceptionEngine"
 )
 
 # Note: test_embedding_comparison post-build commands are now in embeddingmodel/CMakeLists.txt

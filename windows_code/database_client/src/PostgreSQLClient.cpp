@@ -889,13 +889,13 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
 
 std::vector<RawEvent> PostgreSQLClient::getUncompressedEvents(
     const std::string& tableName, 
-    int hours) {
+    int max_count) {
     
     std::ostringstream query;
     query << "SELECT * FROM " << tableName 
           << " WHERE compressed = FALSE "
-          << "AND timestamp >= NOW() - INTERVAL '" << hours << " hours' "
-          << "ORDER BY timestamp ASC;";
+          << "ORDER BY timestamp ASC "
+          << "LIMIT " << max_count << ";";
     
     PGresult* res = nullptr;
     if (!pImpl_->executeQuery(query.str(), &res)) {

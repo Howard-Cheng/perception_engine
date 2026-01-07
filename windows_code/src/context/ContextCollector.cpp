@@ -2,6 +2,7 @@
 #include "DatabaseClientFactory.h"
 #include "VectorStore.h"
 #include "pe_base/config_manager.h"
+#include "pe_base/logger.h"
 #include <random>
 #include <iostream>
 #include <sstream>
@@ -14,66 +15,67 @@ ContextCollector::ContextCollector() {
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> dis(100000, 999999);
     deviceId_ = "device_" + std::to_string(dis(gen));
-    
+
     // Initialize context manager (all providers)
     if (!contextManager_.initialize()) {
-        std::cerr << "[ContextCollector] Warning: Some context providers failed to initialize" << std::endl;
+        PE_WARN("[ContextCollector] Warning: Some context providers failed to initialize");
     }
-    
+
     // Register window switch callback
     if (auto appProvider = contextManager_.getAppActivityProvider()) {
-        std::cout << "[ContextCollector] Registering OnUserSwitchWindow callback..." << std::endl;
+        PE_INFO("[ContextCollector] Registering OnUserSwitchWindow callback...");
         appProvider->registerWindowSwitchCallback(
             [this](const WindowsAPIs::ActiveAppRecord& record) {
                 this->OnUserSwitchWindow(record);
             }
         );
-        std::cout << "[ContextCollector] OnUserSwitchWindow callback registered!" << std::endl;
-    } else {
-        std::cerr << "[ContextCollector] Warning: AppActivityProvider not available!" << std::endl;
+        PE_INFO("[ContextCollector] OnUserSwitchWindow callback registered!");
+    }
+    else {
+        PE_WARN("[ContextCollector] Warning: AppActivityProvider not available!");
     }
 }
 
 ContextCollector::~ContextCollector() {
     StopPeriodicUpdate();
-    
+
     // Stop compression timer
     StopCompressionTimer();
-    
+
     // Stop session manager
     if (sessionManager_) {
         sessionManager_->Stop();
         sessionManager_.reset();
-        std::cout << "[ContextCollector] Session manager stopped" << std::endl;
+        PE_INFO("[ContextCollector] Session manager stopped");
     }
-    
+
     ShutdownDatabase();
-    
+
     // Cleanup VectorStore
     if (vectorStore_) {
         vectorStore_.reset();
-        std::cout << "[ContextCollector] VectorStore cleaned up" << std::endl;
+        PE_INFO("[ContextCollector] VectorStore cleaned up");
     }
-    
+
     // FIX: Clear window switch callback before shutdown
     if (auto appProvider = contextManager_.getAppActivityProvider()) {
         appProvider->clearWindowSwitchCallback();
-        std::cout << "[ContextCollector] Window switch callback cleared" << std::endl;
+        PE_INFO("[ContextCollector] Window switch callback cleared");
     }
-    
+
     contextManager_.shutdown();
 }
 
 pe_base::Json ContextCollector::CollectCurrentContext() {
     // Trigger all providers to update
     contextManager_.updateAll();
-    
+
     // Collect all context data
     pe_base::Json context = contextManager_.collectAllContext();
-    
+
     // Add fused context summary
     context.set("fusedContext", GenerateFusedContext());
-    
+
     return context;
 }
 
@@ -81,11 +83,11 @@ void ContextCollector::StartPeriodicUpdate() {
     if (updateThreadRunning_.load()) {
         return; // Already running
     }
-    
+
     updateThreadRunning_.store(true);
     updateThread_ = std::thread([this]() {
         updateCacheThread();
-    });
+        });
 }
 
 void ContextCollector::StopPeriodicUpdate() {
@@ -106,7 +108,7 @@ void ContextCollector::updateCacheThread() {
 
 std::string ContextCollector::GenerateFusedContext() const {
     std::ostringstream fused;
-    
+
     // Get app activity
     if (auto appProvider = contextManager_.getAppActivityProvider()) {
         std::string activeApp = appProvider->getCurrentApp();
@@ -114,7 +116,7 @@ std::string ContextCollector::GenerateFusedContext() const {
             fused << "Active: " << activeApp;
         }
     }
-    
+
     // Get voice transcription
     if (auto voiceProvider = contextManager_.getVoiceProvider()) {
         std::string voiceText = voiceProvider->getTranscription();
@@ -123,10 +125,10 @@ std::string ContextCollector::GenerateFusedContext() const {
             fused << "Said: \"" << voiceText << "\"";
         }
     }
-    
+
     // System context is handled by SystemContextProvider
     // Add critical system status if needed
-    
+
     std::string result = fused.str();
     return result.empty() ? "System running normally" : result;
 }
@@ -136,104 +138,107 @@ std::string ContextCollector::GenerateFusedContext() const {
 // ========================================
 
 bool ContextCollector::InitializeDatabase(const std::string& connectionString,
-                                          const std::string& tableName) {
+    const std::string& tableName) {
     try {
         std::lock_guard<std::mutex> lock(dbClientMutex_);
-        
-        std::cout << "[InitializeDatabase] Creating PostgreSQL client for: " << connectionString << std::endl;
-        
+
+        PE_INFO("[InitializeDatabase] Creating PostgreSQL client for: " << connectionString);
+
         // Create PostgreSQL client (with automatic database creation if needed)
         dbClient_ = database::DatabaseClientFactory::createPostgreSQL(connectionString);
         dbCollectionName_ = tableName;
-        
+
         if (!dbClient_) {
-            std::cerr << "[InitializeDatabase] CRITICAL: Factory returned nullptr!" << std::endl;
+            PE_ERROR("[InitializeDatabase] CRITICAL: Factory returned nullptr!");
             return false;
         }
-        
-        std::cout << "[InitializeDatabase] Testing connection..." << std::endl;
+
+        PE_INFO("[InitializeDatabase] Testing connection...");
         if (!dbClient_->testConnection()) {
-            std::cerr << "[InitializeDatabase] Failed to connect to database" << std::endl;
+            PE_ERROR("[InitializeDatabase] Failed to connect to database");
             dbClient_.reset();
             return false;
         }
-        
-        std::cout << "[ContextCollector] Connected to PostgreSQL database successfully" << std::endl;
-        
-        std::cout << "[InitializeDatabase] Initializing table: " << tableName << std::endl;
+
+        PE_INFO("[ContextCollector] Connected to PostgreSQL database successfully");
+
+        PE_INFO("[InitializeDatabase] Initializing table: " << tableName);
         if (!dbClient_->initializeCollection(tableName)) {
-            std::cerr << "[ContextCollector] Failed to initialize table: " << tableName << std::endl;
+            PE_ERROR("[ContextCollector] Failed to initialize table: " << tableName);
             dbClient_.reset();
             return false;
         }
-        
-        std::cout << "[ContextCollector] PostgreSQL table initialized: " << tableName << std::endl;
+
+        PE_INFO("[ContextCollector] PostgreSQL table initialized: " << tableName);
         dbStorageRunning_.store(true);
-        std::cout << "[InitializeDatabase] Database storage flag set to true" << std::endl;
-        
+        PE_INFO("[InitializeDatabase] Database storage flag set to true");
+
         sessionManager_ = std::make_unique<sessionmanager::SessionManager>(
             dbClient_,
             tableName
         );
         sessionManager_->Start();
-        std::cout << "[ContextCollector] Session manager initialized and started" << std::endl;
-        
+        PE_INFO("[ContextCollector] Session manager initialized and started");
+
         // Start compression timer (runs every 1 minute)
         StartCompressionTimer();
-        
+
         // Initialize VectorStore for session summaries (Qdrant)
         try {
             // Get configuration from ConfigManager
             auto& configMgr = pe_base::ConfigManager::GetInstance();
-            
+
             // Get Qdrant configuration
             std::string qdrantHost = configMgr.GetQdrantHost();
             int qdrantPort = configMgr.GetQdrantPort();
             std::string qdrantCollection = configMgr.GetQdrantCollection();
-            
+
             // Get embedding model path
             std::string embeddingModelPath = configMgr.GetEmbeddingModelPathUtf8();
-            
+
             // Build Qdrant URL
             std::string qdrantUrl = "http://" + qdrantHost + ":" + std::to_string(qdrantPort);
-            
-            std::cout << "[ContextCollector] Initializing VectorStore..." << std::endl;
-            std::cout << "[ContextCollector]   Qdrant URL: " << qdrantUrl << std::endl;
-            std::cout << "[ContextCollector]   Collection: " << qdrantCollection << std::endl;
-            std::cout << "[ContextCollector]   Model path: " << embeddingModelPath << std::endl;
-            
+
+            PE_INFO("[ContextCollector] Initializing VectorStore...");
+            PE_INFO("[ContextCollector]   Qdrant URL: " << qdrantUrl);
+            PE_INFO("[ContextCollector]   Collection: " << qdrantCollection);
+            PE_INFO("[ContextCollector]   Model path: " << embeddingModelPath);
+
             // Create Qdrant config
             auto qdrantConfig = vectordb::QdrantClient::Config::remote(qdrantUrl);
-            
+
             // Create VectorStore
             vectorStore_ = std::make_unique<vectordb::VectorStore>(
                 qdrantCollection,
                 embeddingModelPath,
                 qdrantConfig
             );
-            
+
             // Initialize VectorStore
             if (!vectorStore_->initialize()) {
-                std::cerr << "[ContextCollector] Failed to initialize VectorStore" << std::endl;
+                PE_ERROR("[ContextCollector] Failed to initialize VectorStore");
                 vectorStore_.reset();
                 // Don't fail the whole initialization, just log warning
-                std::cerr << "[ContextCollector] Warning: Vector DB unavailable, GetVectorDBData will not work" << std::endl;
-            } else {
-                std::cout << "[ContextCollector] VectorStore initialized successfully" << std::endl;
-                std::cout << "[ContextCollector]   Embedding dimension: " << vectorStore_->getEmbeddingDimension() << std::endl;
+                PE_WARN("[ContextCollector] Warning: Vector DB unavailable, GetVectorDBData will not work");
             }
-            
-        } catch (const std::exception& e) {
-            std::cerr << "[ContextCollector] Exception initializing VectorStore: " << e.what() << std::endl;
+            else {
+                PE_INFO("[ContextCollector] VectorStore initialized successfully");
+                PE_INFO("[ContextCollector]   Embedding dimension: " << vectorStore_->getEmbeddingDimension());
+            }
+
+        }
+        catch (const std::exception& e) {
+            PE_ERROR("[ContextCollector] Exception initializing VectorStore: " << e.what());
             vectorStore_.reset();
             // Don't fail the whole initialization
-            std::cerr << "[ContextCollector] Warning: Vector DB initialization failed, GetVectorDBData will not work" << std::endl;
+            PE_WARN("[ContextCollector] Warning: Vector DB initialization failed, GetVectorDBData will not work");
         }
-        
+
         return true;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[ContextCollector] Exception initializing PostgreSQL: " << e.what() << std::endl;
+
+    }
+    catch (const std::exception& e) {
+        PE_ERROR("[ContextCollector] Exception initializing PostgreSQL: " << e.what());
         {
             std::lock_guard<std::mutex> lock(dbClientMutex_);
             dbClient_.reset();
@@ -244,57 +249,59 @@ bool ContextCollector::InitializeDatabase(const std::string& connectionString,
 
 void ContextCollector::ShutdownDatabase() {
     dbStorageRunning_.store(false);
-    
+
     std::lock_guard<std::mutex> lock(dbClientMutex_);
     dbClient_.reset();
 }
 
 void ContextCollector::StoreContextToES(const pe_base::Json& context) {
     std::lock_guard<std::mutex> lock(dbClientMutex_);
-    
+
     if (!dbClient_) {
         // Add detailed logging for debugging
-        std::cerr << "[StoreContextToES] Warning: dbClient_ is nullptr, cannot store to database" << std::endl;
-        std::cerr << "[StoreContextToES] Database storage running flag: " << dbStorageRunning_.load() << std::endl;
+        PE_WARN("[StoreContextToES] Warning: dbClient_ is nullptr, cannot store to database");
+        PE_WARN("[StoreContextToES] Database storage running flag: " << dbStorageRunning_.load());
         return;
     }
-    
+
     try {
         database::RawEvent event = jsonContextToRawEvent(context);
-        
+
         std::string eventId = dbClient_->indexDocument(dbCollectionName_, event);
-        
+
         if (!eventId.empty()) {
-            std::cout << "[DBStorage] Stored event: " << event.eventId
-                      << " | App: " << event.appName << std::endl;
-        } else {
-            std::cerr << "[DBStorage] Failed to store event" << std::endl;
+            PE_INFO("[DBStorage] Stored event: " << event.eventId
+                << " | App: " << event.appName);
         }
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[DBStorage] Exception: " << e.what() << std::endl;
+        else {
+            PE_ERROR("[DBStorage] Failed to store event");
+        }
+
+    }
+    catch (const std::exception& e) {
+        PE_ERROR("[DBStorage] Exception: " << e.what());
     }
 }
 
 database::RawEvent ContextCollector::jsonContextToRawEvent(const pe_base::Json& context) {
     database::RawEvent event;
-    
+
     // Generate unique event ID
     auto nowTime = std::chrono::system_clock::now();
     auto timestamp = std::chrono::system_clock::to_time_t(nowTime);
     auto timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
         nowTime.time_since_epoch()).count();
-    
+
     event.eventId = deviceId_ + "_" + std::to_string(timestamp) + "_" +
-                    std::to_string(timestampMs % 1000);
+        std::to_string(timestampMs % 1000);
     event.timestamp = timestampMs / 1000;
     event.createdAt = timestampMs / 1000;
     event.deviceId = deviceId_;
-    
+
     // Extract app context
     event.appName = context.getString("activeApp", "Unknown");
     event.windowTitle = context.getString("windowTitle", "");
-    
+
     // Extract content
     std::string screenContent = context.getString("activeAppContent", "");
     if (!screenContent.empty() && screenContent != "null") {
@@ -302,45 +309,47 @@ database::RawEvent ContextCollector::jsonContextToRawEvent(const pe_base::Json& 
         std::hash<std::string> hasher;
         event.screenContentHash = std::to_string(hasher(screenContent));
     }
-    
+
     // Multimodal data
     std::string voiceText = context.getString("voiceTranscription", "");
     if (!voiceText.empty() && voiceText != "null") {
         event.voiceTranscription = voiceText;
     }
-    
+
     std::string cameraDesc = context.getString("cameraDescription", "");
     if (!cameraDesc.empty() && cameraDesc != "null") {
         event.cameraDescription = cameraDesc;
     }
-    
+
     // Mouse events
     if (auto appProvider = contextManager_.getAppActivityProvider()) {
         event.mouseEvents = appProvider->getMouseEvents();
-        event.interactionCount = appProvider->getInteractionCount();
+        // Explicit cast from UINT64 to int with range check
+        UINT64 count = appProvider->getInteractionCount();
+        event.interactionCount = (count > INT_MAX) ? INT_MAX : static_cast<int>(count);
     }
-    
+
     event.dwellTimeSeconds = context.getInt("duration", 0);
-    
+
     // System info
     int battery = context.getInt("battery", 0);
     if (battery >= 0 && battery <= 100) {
         event.systemInfo.batteryPercent = battery;
     }
-    
+
     event.systemInfo.isCharging = context.getBool("isCharging", false);
     event.systemInfo.networkType = context.getString("networkType", "Unknown");
-    
+
     double cpuUsage = context.getDouble("cpuUsage", -1.0);
     if (cpuUsage >= 0.0) {
         event.systemInfo.cpuUsage = cpuUsage;
     }
-    
+
     double memoryUsage = context.getDouble("memoryUsage", -1.0);
     if (memoryUsage >= 0.0) {
         event.systemInfo.memoryUsage = memoryUsage;
     }
-    
+
     bool locationValid = context.getBool("locationValid", false);
     if (locationValid) {
         double lat = context.getDouble("locationLat", 0.0);
@@ -350,71 +359,71 @@ database::RawEvent ContextCollector::jsonContextToRawEvent(const pe_base::Json& 
             event.systemInfo.locationLon = lon;
         }
     }
-    
+
     event.compressed = false;
-    
+
     return event;
 }
 
 pe_base::Json ContextCollector::GetESDBData(const std::string& keyword,
-                                    std::time_t startTime,
-                                    std::time_t endTime,
-                                    int maxResults) {
+    std::time_t startTime,
+    std::time_t endTime,
+    int maxResults) {
     pe_base::Json result;
-    
+
     std::lock_guard<std::mutex> lock(dbClientMutex_);
-    
+
     if (!dbClient_) {
-        std::cerr << "[GetESDBData] Database client not initialized" << std::endl;
+        PE_ERROR("[GetESDBData] Database client not initialized");
         result.setRaw("error", "\"Database not initialized\"");
         result.setRaw("results", "[]");
         return result;
     }
-    
+
     try {
         long long startTimeMs = static_cast<long long>(startTime) * 1000;
         long long endTimeMs = static_cast<long long>(endTime) * 1000;
-        
+
         // DEBUG: Log query parameters
-        std::cout << "[GetESDBData] Query parameters:" << std::endl;
-        std::cout << "  keyword: " << keyword << std::endl;
-        std::cout << "  startTime: " << startTime << " (" << startTimeMs << " ms)" << std::endl;
-        std::cout << "  endTime: " << endTime << " (" << endTimeMs << " ms)" << std::endl;
-        std::cout << "  maxResults: " << maxResults << std::endl;
-        
+        PE_INFO("[GetESDBData] Query parameters:");
+        PE_INFO("  keyword: " << keyword);
+        PE_INFO("  startTime: " << startTime << " (" << startTimeMs << " ms)");
+        PE_INFO("  endTime: " << endTime << " (" << endTimeMs << " ms)");
+        PE_INFO("  maxResults: " << maxResults);
+
         // FIX: Include compressed events by default (set includeCompressed: true)
         // This ensures we return all matching events, not just uncompressed ones
         std::ostringstream queryBuilder;
         queryBuilder << "{"
-                     << "\"keyword\":\"" << pe_base::Json::escapeJsonString(keyword) << "\","
-                     << "\"startTime\":" << startTimeMs << ","
-                     << "\"endTime\":" << endTimeMs << ","
-                     << "\"size\":" << maxResults << ","
-                     << "\"includeCompressed\":true"  // ← FIX: 包含已压缩的数据
-                     << "}";
-        
+            << "\"keyword\":\"" << pe_base::Json::escapeJsonString(keyword) << "\","
+            << "\"startTime\":" << startTimeMs << ","
+            << "\"endTime\":" << endTimeMs << ","
+            << "\"size\":" << maxResults << ","
+            << "\"includeCompressed\":true"
+            << "}";
+
         std::string query = queryBuilder.str();
-        std::cout << "[GetESDBData] Generated JSON query: " << query << std::endl;
-        
+        PE_INFO("[GetESDBData] Generated JSON query: " << query);
+
         database::SearchResult searchResult = dbClient_->search(dbCollectionName_, query, 0, maxResults);
-        
-        std::cout << "[GetESDBData] Search returned: " << searchResult.events.size() 
-                  << " events (totalHits: " << searchResult.totalHits << ")" << std::endl;
-        
+
+        PE_INFO("[GetESDBData] Search returned: " << searchResult.events.size()
+            << " events (totalHits: " << searchResult.totalHits << ")");
+
         // Convert to pe_base::Json
         std::ostringstream resultsArray;
         resultsArray << "[";
-        
+
         bool first = true;
         for (const auto& event : searchResult.events) {
             if (!first) resultsArray << ",";
             first = false;
 
             resultsArray << "{"
-                         << "\"eventId\":\"" << pe_base::Json::escapeJsonString(event.eventId) << "\","
-                         << "\"timestamp\":" << event.timestamp << ","
-                         << "\"deviceId\":\"" << pe_base::Json::escapeJsonString(event.deviceId) << "\","
-                         << "\"appName\":\"" << pe_base::Json::escapeJsonString(event.appName) << "\"";
+                << "\"eventId\":\"" << pe_base::Json::escapeJsonString(event.eventId) << "\","
+                << "\"timestamp\":" << event.timestamp << ","
+                << "\"deviceId\":\"" << pe_base::Json::escapeJsonString(event.deviceId) << "\","
+                << "\"appName\":\"" << pe_base::Json::escapeJsonString(event.appName) << "\"";
 
             if (event.windowTitle.has_value()) {
                 resultsArray << ",\"windowTitle\":\"" << pe_base::Json::escapeJsonString(event.windowTitle.value()) << "\"";
@@ -427,9 +436,9 @@ pe_base::Json ContextCollector::GetESDBData(const std::string& keyword,
             // Add location information
             if (event.systemInfo.locationLat.has_value() && event.systemInfo.locationLon.has_value()) {
                 resultsArray << ",\"location\":{"
-                             << "\"lat\":" << event.systemInfo.locationLat.value() << ","
-                             << "\"lon\":" << event.systemInfo.locationLon.value()
-                             << "}";
+                    << "\"lat\":" << event.systemInfo.locationLat.value() << ","
+                    << "\"lon\":" << event.systemInfo.locationLon.value()
+                    << "}";
             }
 
             // Add mouse events
@@ -471,15 +480,16 @@ pe_base::Json ContextCollector::GetESDBData(const std::string& keyword,
         }
 
         resultsArray << "]";
-        
+
         result.set("totalHits", searchResult.totalHits);
         result.set("searchTimeMs", static_cast<int>(searchResult.searchTimeMs));
         result.setRaw("results", resultsArray.str());
-        
+
         return result;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[GetESDBData] Exception: " << e.what() << std::endl;
+
+    }
+    catch (const std::exception& e) {
+        PE_ERROR("[GetESDBData] Exception: " << e.what());
         result.setRaw("error", "\"" + pe_base::Json::escapeJsonString(e.what()) + "\"");
         result.setRaw("results", "[]");
         return result;
@@ -492,30 +502,29 @@ bool ContextCollector::IsElasticsearchAvailable() const {
 }
 
 pe_base::Json ContextCollector::GetVectorDBData(const std::string& keyword,
-                                    std::time_t startTime,
-                                    std::time_t endTime,
-                                    int maxResults) {
+    std::time_t startTime,
+    std::time_t endTime,
+    int maxResults) {
     pe_base::Json result;
-    
+
     try {
         // Check if VectorStore is initialized
         if (!vectorStore_) {
-            std::cerr << "[GetVectorDBData] VectorStore not initialized" << std::endl;
+            PE_ERROR("[GetVectorDBData] VectorStore not initialized");
             result.setRaw("error", "\"VectorStore not initialized\"");
             result.setRaw("results", "[]");
             return result;
         }
-        
+
         // DEBUG: Log query parameters
-        std::cout << "[GetVectorDBData] Query parameters:" << std::endl;
-        std::cout << "  keyword: " << keyword << std::endl;
-        std::cout << "  startTime: " << startTime << std::endl;
-        std::cout << "  endTime: " << endTime << std::endl;
-        std::cout << "  maxResults: " << maxResults << std::endl;
+        PE_INFO("[GetVectorDBData] Query parameters:");
+        PE_INFO("  keyword: " << keyword);
+        PE_INFO("  startTime: " << startTime);
+        PE_INFO("  endTime: " << endTime);
+        PE_INFO("  maxResults: " << maxResults);
+
         auto searchStartTime = std::chrono::steady_clock::now();
 
-
-        
         // Call VectorStore's querySessionSummaries method
         std::vector<vectordb::SearchResult> searchResults = vectorStore_->querySessionSummaries(
             keyword,
@@ -524,102 +533,104 @@ pe_base::Json ContextCollector::GetVectorDBData(const std::string& keyword,
             maxResults,
             std::nullopt  // No score threshold by default
         );
-        
-        std::cout << "[GetVectorDBData] Search returned: " << searchResults.size() << " results" << std::endl;
 
         auto searchEndTime = std::chrono::steady_clock::now();
         auto searchDuration = std::chrono::duration_cast<std::chrono::milliseconds>(searchEndTime - searchStartTime);
-        int searchTimeMs = static_cast<int>(searchDuration.count());
-        std::cout << "[GetVectorDBData] Search completed in " << searchTimeMs << " ms" << std::endl;
-        
+        int vectorSearchTimeMs = static_cast<int>(searchDuration.count());
+
+        PE_INFO("[GetVectorDBData] Vector search completed in " << vectorSearchTimeMs << " ms");
+        PE_INFO("[GetVectorDBData] Search returned: " << searchResults.size() << " results");
         // Convert to pe_base::Json
         std::ostringstream resultsArray;
         resultsArray << "[";
-        
+
         bool first = true;
         for (const auto& searchResult : searchResults) {
             if (!first) resultsArray << ",";
             first = false;
-            
+
             resultsArray << "{";
-            
+
             // Add point ID
             if (std::holds_alternative<std::string>(searchResult.id)) {
                 resultsArray << "\"id\":\"" << pe_base::Json::escapeJsonString(std::get<std::string>(searchResult.id)) << "\"";
-            } else {
+            }
+            else {
                 resultsArray << "\"id\":" << std::get<uint64_t>(searchResult.id);
             }
-            
+
             // Add similarity score
             resultsArray << ",\"score\":" << searchResult.score;
-            
+
             // Add payload (metadata) if present
             if (searchResult.payload.has_value()) {
                 const auto& payload = searchResult.payload.value();
-                
+
                 // Extract common fields from payload
                 auto it = payload.find("summary");
                 if (it != payload.end() && std::holds_alternative<std::string>(it->second)) {
                     resultsArray << ",\"summary\":\"" << pe_base::Json::escapeJsonString(std::get<std::string>(it->second)) << "\"";
                 }
-                
+
                 it = payload.find("timestamp");
                 if (it != payload.end() && std::holds_alternative<int64_t>(it->second)) {
                     resultsArray << ",\"timestamp\":" << std::get<int64_t>(it->second);
                 }
-                
+
                 it = payload.find("session_id");
                 if (it != payload.end() && std::holds_alternative<std::string>(it->second)) {
                     resultsArray << ",\"sessionId\":\"" << pe_base::Json::escapeJsonString(std::get<std::string>(it->second)) << "\"";
                 }
-                
+
                 it = payload.find("created_at");
                 if (it != payload.end() && std::holds_alternative<int64_t>(it->second)) {
                     resultsArray << ",\"createdAt\":" << std::get<int64_t>(it->second);
                 }
             }
-            
+
             resultsArray << "}";
         }
-        
+
         resultsArray << "]";
-        
+
         result.set("totalHits", static_cast<int>(searchResults.size()));
-        result.set("searchTimeMs", searchTimeMs);
+        result.set("searchTimeMs", vectorSearchTimeMs);
         result.setRaw("results", resultsArray.str());
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[GetVectorDBData] Exception: " << e.what() << std::endl;
+
+    }
+    catch (const std::exception& e) {
+        PE_ERROR("[GetVectorDBData] Exception: " << e.what());
         result.setRaw("error", "\"" + pe_base::Json::escapeJsonString(e.what()) + "\"");
         result.setRaw("results", "[]");
     }
-    
+
     return result;
 }
 
 void ContextCollector::OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& record) {
-    std::cout << "[ContextCollector] User switched window: " << record.appName << std::endl;
-    std::cout << "[OnUserSwitchWindow] Database storage running: " << dbStorageRunning_.load() << std::endl;
-    std::cout << "[OnUserSwitchWindow] Database client valid: " << (dbClient_ ? "YES" : "NO") << std::endl;
-    
+    PE_INFO("[ContextCollector] User switched window: " << record.appName);
+    PE_INFO("[OnUserSwitchWindow] Database storage running: " << dbStorageRunning_.load());
+    PE_INFO("[OnUserSwitchWindow] Database client valid: " << (dbClient_ ? "YES" : "NO"));
+
     try {
         // Collect current context
         pe_base::Json context = CollectCurrentContext();
-        
+
         // Store to PostgreSQL
         StoreContextToES(context);
-        
+
         // NOTE: Compression is now handled by timer (CompressionTimerCallback)
         // No longer calling sessionManager_->CheckAndTriggerCompression() here
         // to prevent blocking due to expensive CompareContent operations
-        
+
         // Reset mouse records
         if (auto appProvider = contextManager_.getAppActivityProvider()) {
             appProvider->resetMouseRecords();
         }
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[OnUserSwitchWindow] Exception: " << e.what() << std::endl;
+
+    }
+    catch (const std::exception& e) {
+        PE_ERROR("[OnUserSwitchWindow] Exception: " << e.what());
     }
 }
 
@@ -629,27 +640,27 @@ void ContextCollector::OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& re
 
 void ContextCollector::StartCompressionTimer() {
     if (compressionTimerRunning_.load()) {
-        std::cout << "[ContextCollector] Compression timer already running" << std::endl;
+        PE_INFO("[ContextCollector] Compression timer already running");
         return;
     }
-    
+
     if (!sessionManager_) {
-        std::cerr << "[ContextCollector] Cannot start compression timer: SessionManager not initialized" << std::endl;
+        PE_ERROR("[ContextCollector] Cannot start compression timer: SessionManager not initialized");
         return;
     }
-    
+
     // Create threadpool timer
     compressionTimer_ = CreateThreadpoolTimer(
         CompressionTimerCallback,
         this,  // Pass 'this' as context
         nullptr  // Use default threadpool environment
     );
-    
+
     if (!compressionTimer_) {
-        std::cerr << "[ContextCollector] Failed to create compression timer" << std::endl;
+        PE_ERROR("[ContextCollector] Failed to create compression timer");
         return;
     }
-    
+
     // Set timer to fire every 1 minute
     // First parameter: relative time (negative value = relative time)
     // 1 minute = 60,000 ms = 60,000,000 microseconds = 600,000,000 100-nanosecond intervals
@@ -658,33 +669,33 @@ void ContextCollector::StartCompressionTimer() {
     ulDueTime.QuadPart = static_cast<ULONGLONG>(-(60LL * 10000000LL)); // 1 minute in 100-nanosecond intervals (negative = relative)
     dueTime.dwHighDateTime = ulDueTime.HighPart;
     dueTime.dwLowDateTime = ulDueTime.LowPart;
-    
+
     // Period in milliseconds (1 minute = 60,000 ms)
     DWORD period = 60000;
-    
+
     // Window length (0 = no window)
     DWORD windowLength = 0;
-    
+
     SetThreadpoolTimer(compressionTimer_, &dueTime, period, windowLength);
-    
+
     compressionTimerRunning_.store(true);
-    std::cout << "[ContextCollector] Compression timer started (runs every 1 minute)" << std::endl;
+    PE_INFO("[ContextCollector] Compression timer started (runs every 1 minute)");
 }
 
 void ContextCollector::StopCompressionTimer() {
     if (!compressionTimerRunning_.load()) {
         return;
     }
-    
+
     compressionTimerRunning_.store(false);
-    
+
     if (compressionTimer_) {
         // Cancel timer and wait for callbacks to complete
         SetThreadpoolTimer(compressionTimer_, nullptr, 0, 0);
         WaitForThreadpoolTimerCallbacks(compressionTimer_, TRUE);
         CloseThreadpoolTimer(compressionTimer_);
         compressionTimer_ = nullptr;
-        std::cout << "[ContextCollector] Compression timer stopped" << std::endl;
+        PE_INFO("[ContextCollector] Compression timer stopped");
     }
 }
 
@@ -695,22 +706,22 @@ VOID CALLBACK ContextCollector::CompressionTimerCallback(
 {
     // Context is the 'this' pointer
     ContextCollector* collector = static_cast<ContextCollector*>(Context);
-    
+
     if (!collector || !collector->compressionTimerRunning_.load()) {
         return;
     }
-    
+
     // Check if a compression task is already running
     bool expected = false;
     if (!collector->compressionTaskRunning_.compare_exchange_strong(expected, true)) {
         // Another compression task is still running, skip this tick
-        std::cout << "[CompressionTimer] Previous compression task still running, skipping this tick" << std::endl;
+        PE_INFO("[CompressionTimer] Previous compression task still running, skipping this tick");
         return;
     }
-    
+
     // Execute the compression check
     collector->OnCompressionTimerTick();
-    
+
     // Mark task as completed
     collector->compressionTaskRunning_.store(false);
 }
@@ -719,20 +730,21 @@ void ContextCollector::OnCompressionTimerTick() {
     if (!sessionManager_ || !sessionManager_->IsRunning()) {
         return;
     }
-    
+
     try {
         auto startTime = std::chrono::steady_clock::now();
-        std::cout << "[CompressionTimer] Checking compression status..." << std::endl;
-        
+        PE_INFO("[CompressionTimer] Checking compression status...");
+
         // This call is now executed asynchronously by the timer
         // It won't block OnUserSwitchWindow anymore
         sessionManager_->CheckAndTriggerCompression();
-        
+
         auto endTime = std::chrono::steady_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-        std::cout << "[CompressionTimer] Compression check completed in " << duration.count() << " ms" << std::endl;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[CompressionTimer] Exception: " << e.what() << std::endl;
+        PE_INFO("[CompressionTimer] Compression check completed in " << duration.count() << " ms");
+
+    }
+    catch (const std::exception& e) {
+        PE_ERROR("[CompressionTimer] Exception: " << e.what());
     }
 }

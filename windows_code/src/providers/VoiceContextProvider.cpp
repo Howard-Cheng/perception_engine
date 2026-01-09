@@ -11,18 +11,16 @@ void VoiceContextProvider::update() {
     // Voice context is updated via updateTranscription(), not via polling
 }
 
-void VoiceContextProvider::collectContext(pe_base::Json& context) const {
+void VoiceContextProvider::collectContext(nlohmann::json& context) const {
     std::lock_guard<std::mutex> lock(mutex_);
     
     if (!transcription_.empty()) {
-        context.set("voiceTranscription", transcription_);
+        context["voiceTranscription"] = transcription_;
     } else {
-        context.setRaw("voiceTranscription", "null");
+        context["voiceTranscription"] = nullptr;
     }
     
-    std::ostringstream latencyStream;
-    latencyStream << std::fixed << std::setprecision(2) << latencyMs_;
-    context.setRaw("voiceLatency", latencyStream.str());
+    context["voiceLatency"] = latencyMs_;
 }
 
 std::string VoiceContextProvider::getName() const {

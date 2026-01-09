@@ -1,6 +1,6 @@
 #pragma once
 
-#include "pe_base/json.hpp"
+#include <nlohmann/json.hpp>
 #include "DatabaseTypes.h"
 #include "IDatabaseClient.h"
 #include <memory>
@@ -177,27 +177,27 @@ private:
      * @brief Compare content similarity between two records
      * @return Similarity score (0-100)
      */
-    int CompareContent(const pe_base::Json& record1, const pe_base::Json& record2);
+    int CompareContent(const nlohmann::json& record1, const nlohmann::json& record2);
     
     /**
      * @brief Simple similarity (app + window)
      */
-    int CompareContentSimple(const pe_base::Json& record1, const pe_base::Json& record2);
+    int CompareContentSimple(const nlohmann::json& record1, const nlohmann::json& record2);
 
     /**
      * @brief Content-based similarity (screen content)
      */
-    int CompareContentMLBased(const pe_base::Json& record1, const pe_base::Json& record2);
+    int CompareContentMLBased(const nlohmann::json& record1, const nlohmann::json& record2);
     
     /**
      * @brief Content-based similarity (includes screen content)
      */
-    int CompareContentWithText(const pe_base::Json& record1, const pe_base::Json& record2);
+    int CompareContentWithText(const nlohmann::json& record1, const nlohmann::json& record2);
     
     /**
      * @brief Time-aware similarity (considers time intervals)
      */
-    int CompareContentWithTime(const pe_base::Json& record1, const pe_base::Json& record2);
+    int CompareContentWithTime(const nlohmann::json& record1, const nlohmann::json& record2);
     
     /**
      * @brief Generate unique session ID
@@ -224,9 +224,9 @@ private:
     );
     
     /**
-     * @brief Convert RawEvent to pe_base::Json for comparison
+     * @brief Convert RawEvent to nlohmann::json for comparison
      */
-    pe_base::Json ConvertEventToJson(const database::RawEvent& event);
+    nlohmann::json ConvertEventToJson(const database::RawEvent& event);
     
     // Configuration
     Config config_;

@@ -9,6 +9,29 @@
 #include <iomanip>
 #include <condition_variable>
 
+// Helper function to escape JSON strings (replaces pe_base::Json::escapeJsonString)
+static std::string escapeJsonString(const std::string& input) {
+    std::ostringstream oss;
+    for (char c : input) {
+        switch (c) {
+            case '\"': oss << "\\\""; break;
+            case '\\': oss << "\\\\"; break;
+            case '\b': oss << "\\b"; break;
+            case '\f': oss << "\\f"; break;
+            case '\n': oss << "\\n"; break;
+            case '\r': oss << "\\r"; break;
+            case '\t': oss << "\\t"; break;
+            default:
+                if ('\x00' <= c && c <= '\x1f') {
+                    oss << "\\u" << std::hex << std::setw(4) << std::setfill('0') << static_cast<int>(c);
+                } else {
+                    oss << c;
+                }
+        }
+    }
+    return oss.str();
+}
+
 ContextCollector::ContextCollector() {
     // Generate unique device ID
     std::random_device rd;
@@ -66,15 +89,15 @@ ContextCollector::~ContextCollector() {
     contextManager_.shutdown();
 }
 
-pe_base::Json ContextCollector::CollectCurrentContext() {
+nlohmann::json ContextCollector::CollectCurrentContext() {
     // Trigger all providers to update
     contextManager_.updateAll();
 
     // Collect all context data
-    pe_base::Json context = contextManager_.collectAllContext();
+    nlohmann::json context = contextManager_.collectAllContext();
 
     // Add fused context summary
-    context.set("fusedContext", GenerateFusedContext());
+    context["fusedContext"] = GenerateFusedContext();
 
     return context;
 }
@@ -254,7 +277,7 @@ void ContextCollector::ShutdownDatabase() {
     dbClient_.reset();
 }
 
-void ContextCollector::StoreContextToES(const pe_base::Json& context) {
+void ContextCollector::StoreContextToES(const nlohmann::json& context) {
     std::lock_guard<std::mutex> lock(dbClientMutex_);
 
     if (!dbClient_) {
@@ -283,7 +306,7 @@ void ContextCollector::StoreContextToES(const pe_base::Json& context) {
     }
 }
 
-database::RawEvent ContextCollector::jsonContextToRawEvent(const pe_base::Json& context) {
+database::RawEvent ContextCollector::jsonContextToRawEvent(const nlohmann::json& context) {
     database::RawEvent event;
 
     // Generate unique event ID
@@ -298,12 +321,12 @@ database::RawEvent ContextCollector::jsonContextToRawEvent(const pe_base::Json& 
     event.createdAt = timestampMs / 1000;
     event.deviceId = deviceId_;
 
-    // Extract app context
-    event.appName = context.getString("activeApp", "Unknown");
-    event.windowTitle = context.getString("windowTitle", "");
+    // Extract app context using nlohmann::json
+    event.appName = context.value("activeApp", "Unknown");
+    event.windowTitle = context.value("windowTitle", "");
 
     // Extract content
-    std::string screenContent = context.getString("activeAppContent", "");
+    std::string screenContent = context.value("activeAppContent", "");
     if (!screenContent.empty() && screenContent != "null") {
         event.screenContent = screenContent;
         std::hash<std::string> hasher;
@@ -311,12 +334,12 @@ database::RawEvent ContextCollector::jsonContextToRawEvent(const pe_base::Json& 
     }
 
     // Multimodal data
-    std::string voiceText = context.getString("voiceTranscription", "");
+    std::string voiceText = context.value("voiceTranscription", "");
     if (!voiceText.empty() && voiceText != "null") {
         event.voiceTranscription = voiceText;
     }
 
-    std::string cameraDesc = context.getString("cameraDescription", "");
+    std::string cameraDesc = context.value("cameraDescription", "");
     if (!cameraDesc.empty() && cameraDesc != "null") {
         event.cameraDescription = cameraDesc;
     }
@@ -329,34 +352,41 @@ database::RawEvent ContextCollector::jsonContextToRawEvent(const pe_base::Json& 
         event.interactionCount = (count > INT_MAX) ? INT_MAX : static_cast<int>(count);
     }
 
-    event.dwellTimeSeconds = context.getInt("duration", 0);
+    event.dwellTimeSeconds = context.value("duration", 0);
 
     // System info
-    int battery = context.getInt("battery", 0);
+    int battery = context.value("battery", 0);
     if (battery >= 0 && battery <= 100) {
         event.systemInfo.batteryPercent = battery;
     }
 
-    event.systemInfo.isCharging = context.getBool("isCharging", false);
-    event.systemInfo.networkType = context.getString("networkType", "Unknown");
+    event.systemInfo.isCharging = context.value("isCharging", false);
+    event.systemInfo.networkType = context.value("networkType", "Unknown");
 
-    double cpuUsage = context.getDouble("cpuUsage", -1.0);
-    if (cpuUsage >= 0.0) {
-        event.systemInfo.cpuUsage = cpuUsage;
+    if (context.contains("cpuUsage") && !context["cpuUsage"].is_null()) {
+        double cpuUsage = context["cpuUsage"].get<double>();
+        if (cpuUsage >= 0.0) {
+            event.systemInfo.cpuUsage = cpuUsage;
+        }
     }
 
-    double memoryUsage = context.getDouble("memoryUsage", -1.0);
-    if (memoryUsage >= 0.0) {
-        event.systemInfo.memoryUsage = memoryUsage;
+    if (context.contains("memoryUsage") && !context["memoryUsage"].is_null()) {
+        double memoryUsage = context["memoryUsage"].get<double>();
+        if (memoryUsage >= 0.0) {
+            event.systemInfo.memoryUsage = memoryUsage;
+        }
     }
 
-    bool locationValid = context.getBool("locationValid", false);
+    bool locationValid = context.value("locationValid", false);
     if (locationValid) {
-        double lat = context.getDouble("locationLat", 0.0);
-        double lon = context.getDouble("locationLon", 0.0);
-        if (lat != 0.0 || lon != 0.0) {
-            event.systemInfo.locationLat = lat;
-            event.systemInfo.locationLon = lon;
+        if (context.contains("locationLat") && !context["locationLat"].is_null() &&
+            context.contains("locationLon") && !context["locationLon"].is_null()) {
+            double lat = context["locationLat"].get<double>();
+            double lon = context["locationLon"].get<double>();
+            if (lat != 0.0 || lon != 0.0) {
+                event.systemInfo.locationLat = lat;
+                event.systemInfo.locationLon = lon;
+            }
         }
     }
 
@@ -365,18 +395,18 @@ database::RawEvent ContextCollector::jsonContextToRawEvent(const pe_base::Json& 
     return event;
 }
 
-pe_base::Json ContextCollector::GetESDBData(const std::string& keyword,
+nlohmann::json ContextCollector::GetESDBData(const std::string& keyword,
     std::time_t startTime,
     std::time_t endTime,
     int maxResults) {
-    pe_base::Json result;
+    nlohmann::json result;
 
     std::lock_guard<std::mutex> lock(dbClientMutex_);
 
     if (!dbClient_) {
         PE_ERROR("[GetESDBData] Database client not initialized");
-        result.setRaw("error", "\"Database not initialized\"");
-        result.setRaw("results", "[]");
+        result["error"] = "Database not initialized";
+        result["results"] = nlohmann::json::array();
         return result;
     }
 
@@ -395,7 +425,7 @@ pe_base::Json ContextCollector::GetESDBData(const std::string& keyword,
         // This ensures we return all matching events, not just uncompressed ones
         std::ostringstream queryBuilder;
         queryBuilder << "{"
-            << "\"keyword\":\"" << pe_base::Json::escapeJsonString(keyword) << "\","
+            << "\"keyword\":\"" << escapeJsonString(keyword) << "\","
             << "\"startTime\":" << startTimeMs << ","
             << "\"endTime\":" << endTimeMs << ","
             << "\"size\":" << maxResults << ","
@@ -410,88 +440,68 @@ pe_base::Json ContextCollector::GetESDBData(const std::string& keyword,
         PE_INFO("[GetESDBData] Search returned: " << searchResult.events.size()
             << " events (totalHits: " << searchResult.totalHits << ")");
 
-        // Convert to pe_base::Json
-        std::ostringstream resultsArray;
-        resultsArray << "[";
+        // Convert to nlohmann::json
+        nlohmann::json resultsArray = nlohmann::json::array();
 
-        bool first = true;
         for (const auto& event : searchResult.events) {
-            if (!first) resultsArray << ",";
-            first = false;
-
-            resultsArray << "{"
-                << "\"eventId\":\"" << pe_base::Json::escapeJsonString(event.eventId) << "\","
-                << "\"timestamp\":" << event.timestamp << ","
-                << "\"deviceId\":\"" << pe_base::Json::escapeJsonString(event.deviceId) << "\","
-                << "\"appName\":\"" << pe_base::Json::escapeJsonString(event.appName) << "\"";
+            nlohmann::json eventJson;
+            eventJson["eventId"] = event.eventId;
+            eventJson["timestamp"] = event.timestamp;
+            eventJson["deviceId"] = event.deviceId;
+            eventJson["appName"] = event.appName;
 
             if (event.windowTitle.has_value()) {
-                resultsArray << ",\"windowTitle\":\"" << pe_base::Json::escapeJsonString(event.windowTitle.value()) << "\"";
+                eventJson["windowTitle"] = event.windowTitle.value();
             }
 
             if (event.screenContent.has_value()) {
-                resultsArray << ",\"screenContent\":\"" << pe_base::Json::escapeJsonString(event.screenContent.value()) << "\"";
+                eventJson["screenContent"] = event.screenContent.value();
             }
 
             // Add location information
             if (event.systemInfo.locationLat.has_value() && event.systemInfo.locationLon.has_value()) {
-                resultsArray << ",\"location\":{"
-                    << "\"lat\":" << event.systemInfo.locationLat.value() << ","
-                    << "\"lon\":" << event.systemInfo.locationLon.value()
-                    << "}";
+                eventJson["location"] = {
+                    {"lat", event.systemInfo.locationLat.value()},
+                    {"lon", event.systemInfo.locationLon.value()}
+                };
             }
 
             // Add mouse events
             if (!event.mouseEvents.empty()) {
-                resultsArray << ",\"mouseEvents\":[";
-                bool firstMe = true;
+                nlohmann::json mouseEventsArray = nlohmann::json::array();
                 for (const auto& me : event.mouseEvents) {
-                    if (!firstMe) resultsArray << ",";
-                    firstMe = false;
-
-                    resultsArray << "{";
-                    // timestamp (seconds)
-                    resultsArray << "\"timestamp\":" << me.timestamp;
-
-                    // eventType
+                    nlohmann::json meJson;
+                    meJson["timestamp"] = me.timestamp;
                     if (!me.eventType.empty()) {
-                        resultsArray << ",\"eventType\":\"" << pe_base::Json::escapeJsonString(me.eventType) << "\"";
+                        meJson["eventType"] = me.eventType;
                     }
-
-                    // content
                     if (!me.content.empty()) {
-                        resultsArray << ",\"content\":\"" << pe_base::Json::escapeJsonString(me.content) << "\"";
+                        meJson["content"] = me.content;
                     }
-
-                    // positions
-                    resultsArray << ",\"posX\":" << me.posX << ",\"posY\":" << me.posY;
-
-                    // elementType
+                    meJson["posX"] = me.posX;
+                    meJson["posY"] = me.posY;
                     if (!me.elementType.empty()) {
-                        resultsArray << ",\"elementType\":\"" << pe_base::Json::escapeJsonString(me.elementType) << "\"";
+                        meJson["elementType"] = me.elementType;
                     }
-
-                    resultsArray << "}";
+                    mouseEventsArray.push_back(meJson);
                 }
-                resultsArray << "]";
+                eventJson["mouseEvents"] = mouseEventsArray;
             }
 
-            resultsArray << "}";
+            resultsArray.push_back(eventJson);
         }
 
-        resultsArray << "]";
-
-        result.set("totalHits", searchResult.totalHits);
-        result.set("searchTimeMs", static_cast<int>(searchResult.searchTimeMs));
-        result.setRaw("results", resultsArray.str());
+        result["totalHits"] = searchResult.totalHits;
+        result["searchTimeMs"] = static_cast<int>(searchResult.searchTimeMs);
+        result["results"] = resultsArray;
 
         return result;
 
     }
     catch (const std::exception& e) {
         PE_ERROR("[GetESDBData] Exception: " << e.what());
-        result.setRaw("error", "\"" + pe_base::Json::escapeJsonString(e.what()) + "\"");
-        result.setRaw("results", "[]");
+        result["error"] = e.what();
+        result["results"] = nlohmann::json::array();
         return result;
     }
 }
@@ -501,18 +511,18 @@ bool ContextCollector::IsElasticsearchAvailable() const {
     return dbClient_ != nullptr && dbClient_->testConnection();
 }
 
-pe_base::Json ContextCollector::GetVectorDBData(const std::string& keyword,
+nlohmann::json ContextCollector::GetVectorDBData(const std::string& keyword,
     std::time_t startTime,
     std::time_t endTime,
     int maxResults) {
-    pe_base::Json result;
+    nlohmann::json result;
 
     try {
         // Check if VectorStore is initialized
         if (!vectorStore_) {
             PE_ERROR("[GetVectorDBData] VectorStore not initialized");
-            result.setRaw("error", "\"VectorStore not initialized\"");
-            result.setRaw("results", "[]");
+            result["error"] = "VectorStore not initialized";
+            result["results"] = nlohmann::json::array();
             return result;
         }
 
@@ -540,27 +550,23 @@ pe_base::Json ContextCollector::GetVectorDBData(const std::string& keyword,
 
         PE_INFO("[GetVectorDBData] Vector search completed in " << vectorSearchTimeMs << " ms");
         PE_INFO("[GetVectorDBData] Search returned: " << searchResults.size() << " results");
-        // Convert to pe_base::Json
-        std::ostringstream resultsArray;
-        resultsArray << "[";
+        
+        // Convert to nlohmann::json
+        nlohmann::json resultsArray = nlohmann::json::array();
 
-        bool first = true;
         for (const auto& searchResult : searchResults) {
-            if (!first) resultsArray << ",";
-            first = false;
-
-            resultsArray << "{";
+            nlohmann::json resultJson;
 
             // Add point ID
             if (std::holds_alternative<std::string>(searchResult.id)) {
-                resultsArray << "\"id\":\"" << pe_base::Json::escapeJsonString(std::get<std::string>(searchResult.id)) << "\"";
+                resultJson["id"] = std::get<std::string>(searchResult.id);
             }
             else {
-                resultsArray << "\"id\":" << std::get<uint64_t>(searchResult.id);
+                resultJson["id"] = std::get<uint64_t>(searchResult.id);
             }
 
             // Add similarity score
-            resultsArray << ",\"score\":" << searchResult.score;
+            resultJson["score"] = searchResult.score;
 
             // Add payload (metadata) if present
             if (searchResult.payload.has_value()) {
@@ -569,39 +575,37 @@ pe_base::Json ContextCollector::GetVectorDBData(const std::string& keyword,
                 // Extract common fields from payload
                 auto it = payload.find("summary");
                 if (it != payload.end() && std::holds_alternative<std::string>(it->second)) {
-                    resultsArray << ",\"summary\":\"" << pe_base::Json::escapeJsonString(std::get<std::string>(it->second)) << "\"";
+                    resultJson["summary"] = std::get<std::string>(it->second);
                 }
 
                 it = payload.find("timestamp");
                 if (it != payload.end() && std::holds_alternative<int64_t>(it->second)) {
-                    resultsArray << ",\"timestamp\":" << std::get<int64_t>(it->second);
+                    resultJson["timestamp"] = std::get<int64_t>(it->second);
                 }
 
                 it = payload.find("session_id");
                 if (it != payload.end() && std::holds_alternative<std::string>(it->second)) {
-                    resultsArray << ",\"sessionId\":\"" << pe_base::Json::escapeJsonString(std::get<std::string>(it->second)) << "\"";
+                    resultJson["sessionId"] = std::get<std::string>(it->second);
                 }
 
                 it = payload.find("created_at");
                 if (it != payload.end() && std::holds_alternative<int64_t>(it->second)) {
-                    resultsArray << ",\"createdAt\":" << std::get<int64_t>(it->second);
+                    resultJson["createdAt"] = std::get<int64_t>(it->second);
                 }
             }
 
-            resultsArray << "}";
+            resultsArray.push_back(resultJson);
         }
 
-        resultsArray << "]";
-
-        result.set("totalHits", static_cast<int>(searchResults.size()));
-        result.set("searchTimeMs", vectorSearchTimeMs);
-        result.setRaw("results", resultsArray.str());
+        result["totalHits"] = static_cast<int>(searchResults.size());
+        result["searchTimeMs"] = vectorSearchTimeMs;
+        result["results"] = resultsArray;
 
     }
     catch (const std::exception& e) {
         PE_ERROR("[GetVectorDBData] Exception: " << e.what());
-        result.setRaw("error", "\"" + pe_base::Json::escapeJsonString(e.what()) + "\"");
-        result.setRaw("results", "[]");
+        result["error"] = e.what();
+        result["results"] = nlohmann::json::array();
     }
 
     return result;
@@ -614,7 +618,7 @@ void ContextCollector::OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& re
 
     try {
         // Collect current context
-        pe_base::Json context = CollectCurrentContext();
+        nlohmann::json context = CollectCurrentContext();
 
         // Store to PostgreSQL
         StoreContextToES(context);

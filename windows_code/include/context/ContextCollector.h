@@ -1,6 +1,6 @@
 #pragma once
 
-#include "pe_base/json.hpp"
+#include <nlohmann/json.hpp>
 #include "platform/WindowsAPIs.h"
 #include "providers/CompositeContextManager.h"
 #include "IDatabaseClient.h"
@@ -37,7 +37,7 @@ public:
     /**
      * @brief Collect current context from all providers
      */
-    pe_base::Json CollectCurrentContext();
+    nlohmann::json CollectCurrentContext();
     
     /**
      * @brief Start periodic update thread
@@ -93,7 +93,7 @@ public:
     /**
      * @brief Query Database data
      */
-    pe_base::Json GetESDBData(const std::string& keyword,
+    nlohmann::json GetESDBData(const std::string& keyword,
                     std::time_t startTime,
                     std::time_t endTime,
                     int maxResults = 100);
@@ -109,7 +109,7 @@ public:
      * @param maxResults Maximum number of results to return (default: 100)
      * @return JSON object containing search results with metadata
      */
-    pe_base::Json GetVectorDBData(const std::string& keyword,
+    nlohmann::json GetVectorDBData(const std::string& keyword,
                     std::time_t startTime,
                     std::time_t endTime,
                     int maxResults = 100);
@@ -122,7 +122,7 @@ public:
     /**
      * @brief Store context to Database
      */
-    void StoreContextToES(const pe_base::Json& context);
+    void StoreContextToES(const nlohmann::json& context);
     
     /**
      * @brief Window switch event callback
@@ -136,9 +136,9 @@ private:
     void updateCacheThread();
     
     /**
-     * @brief Convert pe_base::Json context to RawEvent for Elasticsearch
+     * @brief Convert nlohmann::json context to RawEvent for Elasticsearch
      */
-    database::RawEvent jsonContextToRawEvent(const pe_base::Json& context);
+    database::RawEvent jsonContextToRawEvent(const nlohmann::json& context);
     
     /**
      * @brief Start compression timer (runs every 1 minute)

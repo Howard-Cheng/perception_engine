@@ -1,6 +1,6 @@
 #pragma once
 
-#include "pe_base/json.hpp"
+#include <nlohmann/json.hpp>
 #include <string>
 #include <memory>
 
@@ -26,9 +26,9 @@ public:
     
     /**
      * @brief Collect current context data
-     * @param context pe_base::Json object to populate with context data
+     * @param context nlohmann::json object to populate with context data
      */
-    virtual void collectContext(pe_base::Json& context) const = 0;
+    virtual void collectContext(nlohmann::json& context) const = 0;
     
     /**
      * @brief Get provider name (for logging and debugging)

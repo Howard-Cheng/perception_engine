@@ -58,14 +58,14 @@ void AppActivityContextProvider::update() {
     // App activity is event-driven, not polled
 }
 
-void AppActivityContextProvider::collectContext(pe_base::Json& context) const {
+void AppActivityContextProvider::collectContext(nlohmann::json& context) const {
     std::lock_guard<std::mutex> lock(mutex_);
-    context.set("activeApp", currentApp_);
-    context.set("windowTitle", currentWindowTitle_);
-    context.set("activeAppContent", currentContent_);
-    context.set("duration", dwellTimeSeconds_);
-    context.set("interactionCount", static_cast<long long>(interactionCount_));  // Explicit cast to long long
-    context.set("startTime", startSwitchTime_);
+    context["activeApp"] = currentApp_;
+    context["windowTitle"] = currentWindowTitle_;
+    context["activeAppContent"] = currentContent_;
+    context["duration"] = dwellTimeSeconds_;
+    context["interactionCount"] = static_cast<int64_t>(interactionCount_);
+    context["startTime"] = startSwitchTime_;
 }
 
 std::string AppActivityContextProvider::getName() const {

@@ -41,6 +41,9 @@ if(NOT spdlog_repo_POPULATED)
     )
 endif()
 
+# Find nlohmann_json (from vcpkg)
+find_package(nlohmann_json CONFIG REQUIRED)
+
 # Source files
 set(PE_BASE_SOURCES
     src/logger.cpp
@@ -81,6 +84,7 @@ target_link_libraries(pe_base
     PRIVATE
         Boost::asio
         spdlog
+        nlohmann_json::nlohmann_json
 )
 
 if(WIN32)

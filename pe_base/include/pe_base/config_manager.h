@@ -5,7 +5,7 @@
 #include <set>
 #include <mutex>
 #include <memory>
-#include "pe_base/json.hpp"
+#include <nlohmann/json.hpp>
 #include "pe_base/pe_exports.h"
 
 namespace pe_base {
@@ -82,7 +82,7 @@ public:
     std::string GetTempDirectory() const;
     std::string GetLogDirectory() const;
 
-    // === ?? Blacklist Configuration ===
+    // === Blacklist Configuration ===
     /**
      * Get application blacklist
      * @return Set of blacklisted application names (lowercase)
@@ -141,7 +141,7 @@ private:
     std::string ResolvePath(const std::string& path) const;
     std::wstring ConvertToWideString(const std::string& str) const;
     std::string ConvertToUtf8(const std::wstring& wstr) const;
-    std::string ToLowerCase(const std::string& str) const;  // ?? Helper for case-insensitive comparison
+    std::string ToLowerCase(const std::string& str) const;
     
     // Internal helper methods (without locking) for use within locked sections
     std::string GetEmbeddingModelPathUtf8_Unlocked() const;
@@ -149,15 +149,15 @@ private:
     int GetCompressionThreshold_Unlocked() const;
     float GetSimilarityThreshold_Unlocked() const;
     
-    // ?? Blacklist helper (without locking)
+    // Blacklist helper (without locking)
     void LoadBlacklist_Unlocked();
 
     mutable std::mutex mutex_;
-    Json config_;
+    nlohmann::json config_;  // Changed from custom Json to nlohmann::json
     bool loaded_;
     mutable std::string lastError_;
     
-    // ?? Blacklist storage (lowercase for case-insensitive comparison)
+    // Blacklist storage (lowercase for case-insensitive comparison)
     std::set<std::string> blacklist_;
 };
 

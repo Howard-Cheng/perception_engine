@@ -10,6 +10,7 @@
 #include <atomic>
 #include <sstream>  // NEW: For std::istringstream (ISO time parsing)
 #include <iomanip>  // NEW: For std::get_time (ISO time parsing)
+#include <nlohmann/json.hpp>  // NEW: Add nlohmann::json
 #include "core/WindowsService.h"
 #include "communication/HttpServer.h"
 #include "context/ContextCollector.h"  // UPDATED: Use context folder
@@ -205,9 +206,9 @@ private:
 
             if (request.path == "/context" && request.method == "GET") {
                 if (contextCollector) {
-                    pe_base::Json context = contextCollector->CollectCurrentContext();
+                    nlohmann::json context = contextCollector->CollectCurrentContext();
                     response.SetHeader("Content-Type", "application/json");
-                    response.SetBody(context.toString());
+                    response.SetBody(context.dump());  // Changed from .toString() to .dump()
                     response.status = 200;
                     PE_DEBUG("Returned context data successfully");
                 }
@@ -351,7 +352,7 @@ private:
                     }
 
                     // NEW: Query based on requesttype
-                    pe_base::Json results;
+                    nlohmann::json results;  // Changed from pe_base::Json
                     if (requestType == 1) {
                         // Type 1: Query PostgreSQL/Elasticsearch raw events
                         PE_INFO("Querying PostgreSQL/ES raw events (requesttype=1)");
@@ -371,7 +372,7 @@ private:
                     }
 
                     response.SetHeader("Content-Type", "application/json");
-                    response.SetBody(results.toString());
+                    response.SetBody(results.dump());  // Changed from .toString() to .dump()
                     response.status = 200;
 
                     PE_INFO("Database Query: keyword='" + keyword + "' startTime=" + std::to_string(startTime) + " endTime=" + std::to_string(endTime) + " requestType=" + std::to_string(requestType));
@@ -548,9 +549,9 @@ int main(int argc, char* argv[]) {
                     PE_DEBUG("Received request:" << request.method.c_str() << request.path.c_str())
 
                     if (request.path == "/context" && request.method == "GET") {
-                        pe_base::Json context = collector.CollectCurrentContext();
+                        nlohmann::json context = collector.CollectCurrentContext();  // Changed from pe_base::Json
                         response.SetHeader("Content-Type", "application/json");
-                        response.SetBody(context.toString());
+                        response.SetBody(context.dump());  // Changed from .toString() to .dump()
                         response.status = 200;
                         PE_DEBUG("Sent context response");
                     }
@@ -681,7 +682,7 @@ int main(int argc, char* argv[]) {
                             }
 
                             // NEW: Query based on requesttype
-                            pe_base::Json results;
+                            nlohmann::json results;  // Changed from pe_base::Json
                             if (requestType == 1) {
                                 // Type 1: Query PostgreSQL/Elasticsearch raw events
                                 PE_INFO("Querying PostgreSQL/ES raw events (requesttype=1)");
@@ -701,7 +702,7 @@ int main(int argc, char* argv[]) {
                             }
 
                             response.SetHeader("Content-Type", "application/json");
-                            response.SetBody(results.toString());
+                            response.SetBody(results.dump());  // Changed from .toString() to .dump()
                             response.status = 200;
 
                             PE_INFO("Database Query: keyword='" + keyword + "' startTime=" + std::to_string(startTime) + " endTime=" + std::to_string(endTime) + " requestType=" + std::to_string(requestType));

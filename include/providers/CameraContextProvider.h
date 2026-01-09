@@ -2,6 +2,7 @@
 
 #include "providers/IContextProvider.h"
 #include <mutex>
+#include <nlohmann/json.hpp>
 
 /**
  * @brief Camera Vision Context Provider
@@ -17,7 +18,7 @@ public:
     
     bool initialize() override;
     void update() override;
-    void collectContext(pe_base::Json& context) const override;
+    void collectContext(nlohmann::json& context) const override;
     std::string getName() const override;
     bool isAvailable() const override;
     void shutdown() override;

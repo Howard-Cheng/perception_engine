@@ -16,57 +16,58 @@ ConfigManager& ConfigManager::GetInstance() {
 }
 
 ConfigManager::ConfigManager() : loaded_(false) {
-    // Set default values with section prefix to match LoadConfig behavior
+    // Set default values as JSON object
+    config_ = nlohmann::json::object();
     
     // Embedding settings
-    config_.set("embedding.model_path", "models/embedding/model_q4.onnx");  
-    config_.set("embedding.tokenizer_path", "models/embedding/tokenizer");
-    config_.set("embedding.python_executable", "python");
-    config_.set("embedding.chunk_document_script", "scripts/chunk_document.py");
-    config_.set("embedding.tokenize_text_script", "scripts/tokenize_text.py");
+    config_["embedding"]["model_path"] = "models/embedding/model_q4.onnx";
+    config_["embedding"]["tokenizer_path"] = "models/embedding/tokenizer";
+    config_["embedding"]["python_executable"] = "python";
+    config_["embedding"]["chunk_document_script"] = "scripts/chunk_document.py";
+    config_["embedding"]["tokenize_text_script"] = "scripts/tokenize_text.py";
 
     // Session manager settings
-    config_.set("session_manager.compression_threshold", 100);
-    config_.set("session_manager.similarity_threshold", 70.0f);
-    config_.set("session_manager.batch_size", 100);
-    config_.set("session_manager.enabled", true);
+    config_["session_manager"]["compression_threshold"] = 100;
+    config_["session_manager"]["similarity_threshold"] = 70.0f;
+    config_["session_manager"]["batch_size"] = 100;
+    config_["session_manager"]["enabled"] = true;
 
     // Database settings (Elasticsearch - legacy)
-    config_.set("database.type", "elasticsearch");
-    config_.set("database.host", "localhost");
-    config_.set("database.port", 9200);
-    config_.set("database.index", "perception_events");
+    config_["database"]["type"] = "elasticsearch";
+    config_["database"]["host"] = "localhost";
+    config_["database"]["port"] = 9200;
+    config_["database"]["index"] = "perception_events";
 
     // Model paths
-    config_.set("models.whisper_path", "models/whisper/ggml-small.bin");  
-    config_.set("models.vad_path", "models/vad/silero_vad.onnx"); 
-    config_.set("models.llm_model_path", "models/phi4-aitc/Phi4_FP16-3.8B-Q41-g32d-1027-v1.3.1.gguf");
+    config_["models"]["whisper_path"] = "models/whisper/ggml-small.bin";
+    config_["models"]["vad_path"] = "models/vad/silero_vad.onnx";
+    config_["models"]["llm_model_path"] = "models/phi4-aitc/Phi4_FP16-3.8B-Q41-g32d-1027-v1.3.1.gguf";
     
     // LinguaCore settings
-    config_.set("linguacore.check_interval_seconds", 60);
-    config_.set("linguacore.batch_size", 10);
-    config_.set("linguacore.verbose", true);
+    config_["linguacore"]["check_interval_seconds"] = 60;
+    config_["linguacore"]["batch_size"] = 10;
+    config_["linguacore"]["verbose"] = true;
     
     // PostgreSQL settings
-    config_.set("postgresql.host", "localhost");
-    config_.set("postgresql.port", 5432);
-    config_.set("postgresql.dbname", "perception_engine");
-    config_.set("postgresql.user", "postgres");
-    config_.set("postgresql.password", "");
-    config_.set("postgresql.table", "perception_context");
+    config_["postgresql"]["host"] = "localhost";
+    config_["postgresql"]["port"] = 5432;
+    config_["postgresql"]["dbname"] = "perception_engine";
+    config_["postgresql"]["user"] = "postgres";
+    config_["postgresql"]["password"] = "";
+    config_["postgresql"]["table"] = "perception_context";
     
     // LLM settings
-    config_.set("llm.max_tokens", 200);
-    config_.set("llm.temperature", 0.7f);
+    config_["llm"]["max_tokens"] = 200;
+    config_["llm"]["temperature"] = 0.7f;
     
     // Qdrant settings
-    config_.set("qdrant.host", "localhost");
-    config_.set("qdrant.port", 6333);
-    config_.set("qdrant.collection", "perception_summaries");
+    config_["qdrant"]["host"] = "localhost";
+    config_["qdrant"]["port"] = 6333;
+    config_["qdrant"]["collection"] = "perception_summaries";
 
     // Paths
-    config_.set("paths.temp_directory", "temp");
-    config_.set("paths.log_directory", "logs");
+    config_["paths"]["temp_directory"] = "temp";
+    config_["paths"]["log_directory"] = "logs";
     
     // Initialize default blacklist (common system apps)
     blacklist_.insert("weixin");
@@ -123,36 +124,46 @@ bool ConfigManager::LoadConfig(const std::string& configPath) {
                 
                 // Handle blacklist section specially
                 if (currentSection == "blacklist") {
-                    // Store blacklist entries with "blacklist_" prefix for later retrieval
-                    config_.set("blacklist_" + key, value);
+                    // Store blacklist entries in a separate array
+                    if (!config_.contains("blacklist")) {
+                        config_["blacklist"] = nlohmann::json::array();
+                    }
+                    config_["blacklist"].push_back(value);
                     continue;
                 }
                 
-                // Construct full key with section prefix to avoid conflicts
-                // Format: section.key (e.g., "postgresql.host", "qdrant.host")
-                std::string fullKey;
+                // Ensure section exists
                 if (!currentSection.empty()) {
-                    fullKey = currentSection + "." + key;
-                } else {
-                    fullKey = key;
-                }
-                
-                // Set value based on type
-                if (value == "true" || value == "TRUE") {
-                    config_.set(fullKey, true);
-                } else if (value == "false" || value == "FALSE") {
-                    config_.set(fullKey, false);
-                } else if (value.find('.') != std::string::npos) {
-                    try {
-                        config_.set(fullKey, std::stof(value));
-                    } catch (...) {
-                        config_.set(fullKey, value);
+                    if (!config_.contains(currentSection)) {
+                        config_[currentSection] = nlohmann::json::object();
+                    }
+                    
+                    // Set value based on type
+                    if (value == "true" || value == "TRUE") {
+                        config_[currentSection][key] = true;
+                    } else if (value == "false" || value == "FALSE") {
+                        config_[currentSection][key] = false;
+                    } else if (value.find('.') != std::string::npos) {
+                        try {
+                            config_[currentSection][key] = std::stof(value);
+                        } catch (...) {
+                            config_[currentSection][key] = value;
+                        }
+                    } else {
+                        try {
+                            config_[currentSection][key] = std::stoi(value);
+                        } catch (...) {
+                            config_[currentSection][key] = value;
+                        }
                     }
                 } else {
-                    try {
-                        config_.set(fullKey, std::stoi(value));
-                    } catch (...) {
-                        config_.set(fullKey, value);
+                    // Top-level key without section
+                    if (value == "true" || value == "TRUE") {
+                        config_[key] = true;
+                    } else if (value == "false" || value == "FALSE") {
+                        config_[key] = false;
+                    } else {
+                        config_[key] = value;
                     }
                 }
             }
@@ -179,12 +190,11 @@ void ConfigManager::LoadBlacklist_Unlocked() {
     blacklist_ = defaults;
     
     // Load blacklist entries from config
-    // Keys are stored as "blacklist_app_1", "blacklist_app_2", etc.
-    for (int i = 1; i <= 100; ++i) {  // Check up to 100 entries
-        std::string key = "blacklist_app_" + std::to_string(i);
-        std::string appName = config_.getString(key, "");
-        if (!appName.empty()) {
-            blacklist_.insert(ToLowerCase(appName));
+    if (config_.contains("blacklist") && config_["blacklist"].is_array()) {
+        for (const auto& appName : config_["blacklist"]) {
+            if (appName.is_string()) {
+                blacklist_.insert(ToLowerCase(appName.get<std::string>()));
+            }
         }
     }
     
@@ -203,55 +213,85 @@ bool ConfigManager::SaveConfig(const std::string& configPath) {
         }
         
         file << "# Perception Engine Configuration\n";
+        
+        // Helper lambda to get value with fallback
+        auto getString = [this](const std::string& section, const std::string& key, const std::string& defaultVal) -> std::string {
+            if (config_.contains(section) && config_[section].contains(key)) {
+                return config_[section][key].get<std::string>();
+            }
+            return defaultVal;
+        };
+        
+        auto getInt = [this](const std::string& section, const std::string& key, int defaultVal) -> int {
+            if (config_.contains(section) && config_[section].contains(key)) {
+                return config_[section][key].get<int>();
+            }
+            return defaultVal;
+        };
+        
+        auto getDouble = [this](const std::string& section, const std::string& key, double defaultVal) -> double {
+            if (config_.contains(section) && config_[section].contains(key)) {
+                return config_[section][key].get<double>();
+            }
+            return defaultVal;
+        };
+        
+        auto getBool = [this](const std::string& section, const std::string& key, bool defaultVal) -> bool {
+            if (config_.contains(section) && config_[section].contains(key)) {
+                return config_[section][key].get<bool>();
+            }
+            return defaultVal;
+        };
+        
         file << "\n[embedding]\n";
-        file << "model_path=" << config_.getString("embedding.model_path", "") << "\n";
-        file << "tokenizer_path=" << config_.getString("embedding.tokenizer_path", "") << "\n";
-        file << "python_executable=" << config_.getString("embedding.python_executable", "") << "\n";
-        file << "chunk_document_script=" << config_.getString("embedding.chunk_document_script", "") << "\n";
-        file << "tokenize_text_script=" << config_.getString("embedding.tokenize_text_script", "") << "\n";
+        file << "model_path=" << getString("embedding", "model_path", "") << "\n";
+        file << "tokenizer_path=" << getString("embedding", "tokenizer_path", "") << "\n";
+        file << "python_executable=" << getString("embedding", "python_executable", "") << "\n";
+        file << "chunk_document_script=" << getString("embedding", "chunk_document_script", "") << "\n";
+        file << "tokenize_text_script=" << getString("embedding", "tokenize_text_script", "") << "\n";
         
         file << "\n[session_manager]\n";
-        file << "enabled=" << (config_.getBool("session_manager.enabled", true) ? "true" : "false") << "\n";
-        file << "compression_threshold=" << config_.getInt("session_manager.compression_threshold", 100) << "\n";
-        file << "similarity_threshold=" << config_.getDouble("session_manager.similarity_threshold", 70.0) << "\n";
-        file << "batch_size=" << config_.getInt("session_manager.batch_size", 50) << "\n";
+        file << "enabled=" << (getBool("session_manager", "enabled", true) ? "true" : "false") << "\n";
+        file << "compression_threshold=" << getInt("session_manager", "compression_threshold", 100) << "\n";
+        file << "similarity_threshold=" << getDouble("session_manager", "similarity_threshold", 70.0) << "\n";
+        file << "batch_size=" << getInt("session_manager", "batch_size", 50) << "\n";
         
         file << "\n[database]\n";
-        file << "type=" << config_.getString("database.type", "") << "\n";
-        file << "host=" << config_.getString("database.host", "") << "\n";
-        file << "port=" << config_.getInt("database.port", 9200) << "\n";
-        file << "index=" << config_.getString("database.index", "") << "\n";
+        file << "type=" << getString("database", "type", "") << "\n";
+        file << "host=" << getString("database", "host", "") << "\n";
+        file << "port=" << getInt("database", "port", 9200) << "\n";
+        file << "index=" << getString("database", "index", "") << "\n";
         
         file << "\n[models]\n";
-        file << "whisper_path=" << config_.getString("models.whisper_path", "") << "\n";
-        file << "vad_path=" << config_.getString("models.vad_path", "") << "\n";
-        file << "llm_model_path=" << config_.getString("models.llm_model_path", "") << "\n";
+        file << "whisper_path=" << getString("models", "whisper_path", "") << "\n";
+        file << "vad_path=" << getString("models", "vad_path", "") << "\n";
+        file << "llm_model_path=" << getString("models", "llm_model_path", "") << "\n";
         
         file << "\n[linguacore]\n";
-        file << "check_interval_seconds=" << config_.getInt("linguacore.check_interval_seconds", 60) << "\n";
-        file << "batch_size=" << config_.getInt("linguacore.batch_size", 10) << "\n";
-        file << "verbose=" << (config_.getBool("linguacore.verbose", true) ? "true" : "false") << "\n";
+        file << "check_interval_seconds=" << getInt("linguacore", "check_interval_seconds", 60) << "\n";
+        file << "batch_size=" << getInt("linguacore", "batch_size", 10) << "\n";
+        file << "verbose=" << (getBool("linguacore", "verbose", true) ? "true" : "false") << "\n";
         
         file << "\n[postgresql]\n";
-        file << "host=" << config_.getString("postgresql.host", "") << "\n";
-        file << "port=" << config_.getInt("postgresql.port", 5432) << "\n";
-        file << "dbname=" << config_.getString("postgresql.dbname", "") << "\n";
-        file << "user=" << config_.getString("postgresql.user", "") << "\n";
-        file << "password=" << config_.getString("postgresql.password", "") << "\n";
-        file << "table=" << config_.getString("postgresql.table", "") << "\n";
+        file << "host=" << getString("postgresql", "host", "") << "\n";
+        file << "port=" << getInt("postgresql", "port", 5432) << "\n";
+        file << "dbname=" << getString("postgresql", "dbname", "") << "\n";
+        file << "user=" << getString("postgresql", "user", "") << "\n";
+        file << "password=" << getString("postgresql", "password", "") << "\n";
+        file << "table=" << getString("postgresql", "table", "") << "\n";
         
         file << "\n[llm]\n";
-        file << "max_tokens=" << config_.getInt("llm.max_tokens", 200) << "\n";
-        file << "temperature=" << config_.getDouble("llm.temperature", 0.7) << "\n";
+        file << "max_tokens=" << getInt("llm", "max_tokens", 200) << "\n";
+        file << "temperature=" << getDouble("llm", "temperature", 0.7) << "\n";
         
         file << "\n[qdrant]\n";
-        file << "host=" << config_.getString("qdrant.host", "") << "\n";
-        file << "port=" << config_.getInt("qdrant.port", 6333) << "\n";
-        file << "collection=" << config_.getString("qdrant.collection", "") << "\n";
+        file << "host=" << getString("qdrant", "host", "") << "\n";
+        file << "port=" << getInt("qdrant", "port", 6333) << "\n";
+        file << "collection=" << getString("qdrant", "collection", "") << "\n";
         
         file << "\n[paths]\n";
-        file << "temp_directory=" << config_.getString("paths.temp_directory", "") << "\n";
-        file << "log_directory=" << config_.getString("paths.log_directory", "") << "\n";
+        file << "temp_directory=" << getString("paths", "temp_directory", "") << "\n";
+        file << "log_directory=" << getString("paths", "log_directory", "") << "\n";
         
         // Save blacklist
         file << "\n[blacklist]\n";
@@ -275,7 +315,7 @@ bool ConfigManager::SaveConfig(const std::string& configPath) {
 
 std::wstring ConfigManager::GetEmbeddingModelPath() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string path = config_.getString("embedding.model_path", "models/embedding/model_q4.onnx");
+    std::string path = config_.value("embedding", nlohmann::json::object()).value("model_path", "models/embedding/model_q4.onnx");
     std::string resolved = ResolvePath(path);
     return ConvertToWideString(resolved);
 }
@@ -287,11 +327,7 @@ std::string ConfigManager::GetEmbeddingModelPathUtf8() const {
 
 std::string ConfigManager::GetEmbeddingModelPathUtf8_Unlocked() const {
     // Internal helper - assumes mutex is already locked
-    // Try with section prefix first, fall back to without prefix for backward compatibility
-    std::string path = config_.getString("embedding.model_path", "");
-    if (path.empty()) {
-        path = config_.getString("model_path", "models/embedding/model_q4.onnx");
-    }
+    std::string path = config_.value("embedding", nlohmann::json::object()).value("model_path", "models/embedding/model_q4.onnx");
     return ResolvePath(path);
 }
 
@@ -302,37 +338,24 @@ std::string ConfigManager::GetTokenizerPath() const {
 
 std::string ConfigManager::GetTokenizerPath_Unlocked() const {
     // Internal helper - assumes mutex is already locked
-    std::string path = config_.getString("embedding.tokenizer_path", "");
-    if (path.empty()) {
-        path = config_.getString("tokenizer_path", "models/embedding/tokenizer");
-    }
+    std::string path = config_.value("embedding", nlohmann::json::object()).value("tokenizer_path", "models/embedding/tokenizer");
     return ResolvePath(path);
 }
 
 std::string ConfigManager::GetPythonExecutable() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string exe = config_.getString("embedding.python_executable", "");
-    if (exe.empty()) {
-        exe = config_.getString("python_executable", "python");
-    }
-    return exe;
+    return config_.value("embedding", nlohmann::json::object()).value("python_executable", "python");
 }
 
 std::string ConfigManager::GetChunkDocumentScript() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string path = config_.getString("embedding.chunk_document_script", "");
-    if (path.empty()) {
-        path = config_.getString("chunk_document_script", "scripts/chunk_document.py");
-    }
+    std::string path = config_.value("embedding", nlohmann::json::object()).value("chunk_document_script", "scripts/chunk_document.py");
     return ResolvePath(path);
 }
 
 std::string ConfigManager::GetTokenizeTextScript() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string path = config_.getString("embedding.tokenize_text_script", "");
-    if (path.empty()) {
-        path = config_.getString("tokenize_text_script", "scripts/tokenize_text.py");
-    }
+    std::string path = config_.value("embedding", nlohmann::json::object()).value("tokenize_text_script", "scripts/tokenize_text.py");
     return ResolvePath(path);
 }
 
@@ -343,7 +366,7 @@ int ConfigManager::GetCompressionThreshold() const {
 
 int ConfigManager::GetCompressionThreshold_Unlocked() const {
     // Internal helper - assumes mutex is already locked
-    return config_.getInt("session_manager.compression_threshold", 100);
+    return config_.value("session_manager", nlohmann::json::object()).value("compression_threshold", 100);
 }
 
 float ConfigManager::GetSimilarityThreshold() const {
@@ -353,233 +376,182 @@ float ConfigManager::GetSimilarityThreshold() const {
 
 float ConfigManager::GetSimilarityThreshold_Unlocked() const {
     // Internal helper - assumes mutex is already locked
-    return static_cast<float>(config_.getDouble("session_manager.similarity_threshold", 70.0));
+    return config_.value("session_manager", nlohmann::json::object()).value("similarity_threshold", 70.0f);
 }
 
 int ConfigManager::GetBatchSize() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return config_.getInt("session_manager.batch_size", 50);
+    return config_.value("session_manager", nlohmann::json::object()).value("batch_size", 50);
 }
 
 bool ConfigManager::IsSessionManagerEnabled() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return config_.getBool("session_manager.enabled", true);
+    return config_.value("session_manager", nlohmann::json::object()).value("enabled", true);
 }
 
 std::string ConfigManager::GetDatabaseType() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return config_.getString("database.type", "elasticsearch");
+    return config_.value("database", nlohmann::json::object()).value("type", "elasticsearch");
 }
 
 std::string ConfigManager::GetDatabaseHost() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return config_.getString("database.host", "localhost");
+    return config_.value("database", nlohmann::json::object()).value("host", "localhost");
 }
 
 int ConfigManager::GetDatabasePort() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return config_.getInt("database.port", 9200);
+    return config_.value("database", nlohmann::json::object()).value("port", 9200);
 }
 
 std::string ConfigManager::GetDatabaseIndexName() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return config_.getString("database.index", "perception_events");
+    return config_.value("database", nlohmann::json::object()).value("index", "perception_events");
 }
 
 std::string ConfigManager::GetWhisperModelPath() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string path = config_.getString("models.whisper_path", "");
-    if (path.empty()) {
-        path = config_.getString("whisper_path", "models/whisper/ggml-small.bin");
-    }
+    std::string path = config_.value("models", nlohmann::json::object()).value("whisper_path", "models/whisper/ggml-small.bin");
     return ResolvePath(path);
 }
 
 std::string ConfigManager::GetVADModelPath() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string path = config_.getString("models.vad_path", "");
-    if (path.empty()) {
-        path = config_.getString("vad_path", "models/vad/silero_vad.onnx");
-    }
+    std::string path = config_.value("models", nlohmann::json::object()).value("vad_path", "models/vad/silero_vad.onnx");
     return ResolvePath(path);
 }
 
 std::string ConfigManager::GetLLMModelPath() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string path = config_.getString("models.llm_model_path", "");
-    if (path.empty()) {
-        path = config_.getString("llm_model_path", "models/phi4-aitc/phi-3-mini-4k-instruct-q4.gguf");
-    }
+    std::string path = config_.value("models", nlohmann::json::object()).value("llm_model_path", "models/phi4-aitc/phi-3-mini-4k-instruct-q4.gguf");
     return ResolvePath(path);
 }
 
 // === LinguaCore Configuration ===
 int ConfigManager::GetCheckIntervalSeconds() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    int value = config_.getInt("linguacore.check_interval_seconds", -1);
-    if (value == -1) {
-        value = config_.getInt("check_interval_seconds", 60);
-    }
-    return value;
+    return config_.value("linguacore", nlohmann::json::object()).value("check_interval_seconds", 60);
 }
 
 int ConfigManager::GetLinguaCoreBatchSize() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    int value = config_.getInt("linguacore.batch_size", -1);
-    if (value == -1) {
-        value = config_.getInt("linguacore_batch_size", 10);
-    }
-    return value;
+    return config_.value("linguacore", nlohmann::json::object()).value("batch_size", 10);
 }
 
 bool ConfigManager::IsLinguaCoreVerbose() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    // Check if section.key exists first
-    std::string strValue = config_.getString("linguacore.verbose", "");
-    if (!strValue.empty()) {
-        return config_.getBool("linguacore.verbose", true);
-    }
-    return config_.getBool("linguacore_verbose", true);
+    return config_.value("linguacore", nlohmann::json::object()).value("verbose", true);
 }
 
 // === PostgreSQL Configuration ===
 std::string ConfigManager::GetPostgreSQLHost() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string host = config_.getString("postgresql.host", "");
-    if (host.empty()) {
-        host = config_.getString("pg_host", "localhost");
-    }
-    return host;
+    return config_.value("postgresql", nlohmann::json::object()).value("host", "localhost");
 }
 
 int ConfigManager::GetPostgreSQLPort() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    int port = config_.getInt("postgresql.port", -1);
-    if (port == -1) {
-        port = config_.getInt("pg_port", 5432);
-    }
-    return port;
+    return config_.value("postgresql", nlohmann::json::object()).value("port", 5432);
 }
 
 std::string ConfigManager::GetPostgreSQLDatabase() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string dbname = config_.getString("postgresql.dbname", "");
-    if (dbname.empty()) {
-        dbname = config_.getString("pg_dbname", "perception_engine");
-    }
-    return dbname;
+    return config_.value("postgresql", nlohmann::json::object()).value("dbname", "perception_engine");
 }
 
 std::string ConfigManager::GetPostgreSQLUser() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string user = config_.getString("postgresql.user", "");
-    if (user.empty()) {
-        user = config_.getString("pg_user", "postgres");
-    }
-    return user;
+    return config_.value("postgresql", nlohmann::json::object()).value("user", "postgres");
 }
 
 std::string ConfigManager::GetPostgreSQLPassword() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string pwd = config_.getString("postgresql.password", "");
-    if (pwd.empty()) {
-        pwd = config_.getString("pg_password", "");
-    }
-    return pwd;
+    return config_.value("postgresql", nlohmann::json::object()).value("password", "");
 }
 
 std::string ConfigManager::GetPostgreSQLTable() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string table = config_.getString("postgresql.table", "");
-    if (table.empty()) {
-        table = config_.getString("pg_table", "perception_context");
-    }
-    return table;
+    return config_.value("postgresql", nlohmann::json::object()).value("table", "perception_context");
 }
 
 // === LLM Configuration ===
 int ConfigManager::GetLLMMaxTokens() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    int tokens = config_.getInt("llm.max_tokens", -1);
-    if (tokens == -1) {
-        tokens = config_.getInt("llm_max_tokens", 200);
-    }
-    return tokens;
+    return config_.value("llm", nlohmann::json::object()).value("max_tokens", 200);
 }
 
 float ConfigManager::GetLLMTemperature() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    float temp = static_cast<float>(config_.getDouble("llm.temperature", -1.0));
-    if (temp < 0.0f) {
-        temp = static_cast<float>(config_.getDouble("llm_temperature", 0.7));
-    }
-    return temp;
+    return config_.value("llm", nlohmann::json::object()).value("temperature", 0.7f);
 }
 
 // === Qdrant Configuration ===
 std::string ConfigManager::GetQdrantHost() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string host = config_.getString("qdrant.host", "");
-    if (host.empty()) {
-        host = config_.getString("qdrant_host", "localhost");
-    }
-    return host;
+    return config_.value("qdrant", nlohmann::json::object()).value("host", "localhost");
 }
 
 int ConfigManager::GetQdrantPort() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    int port = config_.getInt("qdrant.port", -1);
-    if (port == -1) {
-        port = config_.getInt("qdrant_port", 6333);
-    }
-    return port;
+    return config_.value("qdrant", nlohmann::json::object()).value("port", 6333);
 }
 
 std::string ConfigManager::GetQdrantCollection() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string collection = config_.getString("qdrant.collection", "");
-    if (collection.empty()) {
-        collection = config_.getString("qdrant_collection", "perception_summaries");
-    }
-    return collection;
+    return config_.value("qdrant", nlohmann::json::object()).value("collection", "perception_summaries");
 }
 
 std::string ConfigManager::GetTempDirectory() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string path = config_.getString("paths.temp_directory", "temp");
+    std::string path = config_.value("paths", nlohmann::json::object()).value("temp_directory", "temp");
     return ResolvePath(path);
 }
 
 std::string ConfigManager::GetLogDirectory() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string path = config_.getString("paths.log_directory", "logs");
+    std::string path = config_.value("paths", nlohmann::json::object()).value("log_directory", "logs");
     return ResolvePath(path);
 }
 
 void ConfigManager::SetEmbeddingModelPath(const std::wstring& path) {
     std::lock_guard<std::mutex> lock(mutex_);
     std::string utf8Path = ConvertToUtf8(path);
-    config_.set("embedding.model_path", utf8Path);
+    if (!config_.contains("embedding")) {
+        config_["embedding"] = nlohmann::json::object();
+    }
+    config_["embedding"]["model_path"] = utf8Path;
 }
 
 void ConfigManager::SetTokenizerPath(const std::string& path) {
     std::lock_guard<std::mutex> lock(mutex_);
-    config_.set("embedding.tokenizer_path", path);
+    if (!config_.contains("embedding")) {
+        config_["embedding"] = nlohmann::json::object();
+    }
+    config_["embedding"]["tokenizer_path"] = path;
 }
 
 void ConfigManager::SetCompressionThreshold(int threshold) {
     std::lock_guard<std::mutex> lock(mutex_);
-    config_.set("session_manager.compression_threshold", threshold);
+    if (!config_.contains("session_manager")) {
+        config_["session_manager"] = nlohmann::json::object();
+    }
+    config_["session_manager"]["compression_threshold"] = threshold;
 }
 
 void ConfigManager::SetSimilarityThreshold(float threshold) {
     std::lock_guard<std::mutex> lock(mutex_);
-    config_.set("session_manager.similarity_threshold", threshold);
+    if (!config_.contains("session_manager")) {
+        config_["session_manager"] = nlohmann::json::object();
+    }
+    config_["session_manager"]["similarity_threshold"] = threshold;
 }
 
 void ConfigManager::SetPythonExecutable(const std::string& execute) {
     std::lock_guard<std::mutex> lock(mutex_);
-    config_.set("embedding.python_executable", execute);
+    if (!config_.contains("embedding")) {
+        config_["embedding"] = nlohmann::json::object();
+    }
+    config_["embedding"]["python_executable"] = execute;
 }
 
 bool ConfigManager::ValidateConfiguration() const {
@@ -600,10 +572,7 @@ bool ConfigManager::ValidateConfiguration() const {
     }
     
     // Check LLM model path (optional, but warn if configured and not found)
-    std::string llmPath = config_.getString("models.llm_model_path", "");
-    if (llmPath.empty()) {
-        llmPath = config_.getString("llm_model_path", "");
-    }
+    std::string llmPath = config_.value("models", nlohmann::json::object()).value("llm_model_path", "");
     if (!llmPath.empty()) {
         std::string resolvedLlmPath = ResolvePath(llmPath);
         if (!std::filesystem::exists(resolvedLlmPath)) {

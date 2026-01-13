@@ -95,14 +95,14 @@ static std::string sanitizeUtf8ForJson(const std::string& input) {
 static std::string timestampToISO8601(std::time_t timestamp) {
     std::tm tm_val;
 #ifdef _WIN32
-    localtime_s(&tm_val, &timestamp);  // ʹ�ñ���ʱ��
+    localtime_s(&tm_val, &timestamp);  // Use local time
 #else
-    localtime_r(&timestamp, &tm_val);  // ʹ�ñ���ʱ��
+    localtime_r(&timestamp, &tm_val);  // Use local time
 #endif
     
     std::ostringstream oss;
     oss << std::put_time(&tm_val, "%Y-%m-%dT%H:%M:%S");
-    oss << ".000";  // �Ƴ� Z ��׺����ʾ����ʱ��
+    oss << ".000";  // Remove Z suffix to indicate local time
     return oss.str();
 }
 

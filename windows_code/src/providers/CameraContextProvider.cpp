@@ -9,15 +9,15 @@ void CameraContextProvider::update() {
     // Camera context is updated via updateDescription(), not via polling
 }
 
-void CameraContextProvider::collectContext(pe_base::Json& context) const {
+void CameraContextProvider::collectContext(nlohmann::json& context) const {
     std::lock_guard<std::mutex> lock(mutex_);
     
     if (!description_.empty()) {
-        context.set("cameraDescription", description_);
-        context.set("cameraLatency", static_cast<int>(latencyMs_));
+        context["cameraDescription"] = description_;
+        context["cameraLatency"] = static_cast<int>(latencyMs_);
     } else {
-        context.setRaw("cameraDescription", "null");
-        context.set("cameraLatency", 0);
+        context["cameraDescription"] = nullptr;
+        context["cameraLatency"] = 0;
     }
 }
 

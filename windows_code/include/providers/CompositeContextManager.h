@@ -10,6 +10,7 @@
 #include <map>
 #include <mutex>
 #include <chrono>
+#include <nlohmann/json.hpp>
 
 /**
  * @brief Composite Context Manager
@@ -24,7 +25,7 @@ public:
     
     bool initialize();
     void updateAll();
-    pe_base::Json collectAllContext();
+    nlohmann::json collectAllContext();
     
     // Get specific provider (type-safe)
     std::shared_ptr<SystemContextProvider> getSystemProvider() const;

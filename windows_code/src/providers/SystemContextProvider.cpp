@@ -23,67 +23,56 @@ void SystemContextProvider::update() {
     timestamp_ = std::time(nullptr);
 }
 
-void SystemContextProvider::collectContext(pe_base::Json& context) const {
+void SystemContextProvider::collectContext(nlohmann::json& context) const {
     std::lock_guard<std::mutex> lock(mutex_);
     
     // Battery
-    context.set("battery", battery_);
-    context.set("isCharging", isCharging_);
+    context["battery"] = battery_;
+    context["isCharging"] = isCharging_;
     
     // CPU
     if (cpuUsage_ >= 0) {
-        std::ostringstream cpuStream;
-        cpuStream << std::fixed << std::setprecision(2) << cpuUsage_;
-        context.setRaw("cpuUsage", cpuStream.str());
+        context["cpuUsage"] = cpuUsage_;
     } else {
-        context.setRaw("cpuUsage", "null");
+        context["cpuUsage"] = nullptr;
     }
     
     // Memory
     if (memoryUsage_ >= 0) {
-        std::ostringstream memStream;
-        memStream << std::fixed << std::setprecision(2) << memoryUsage_;
-        context.setRaw("memoryUsage", memStream.str());
+        context["memoryUsage"] = memoryUsage_;
     } else {
-        context.setRaw("memoryUsage", "null");
+        context["memoryUsage"] = nullptr;
     }
     
     if (memoryUsed_ >= 0) {
-        std::ostringstream memUsedStream;
-        memUsedStream << std::fixed << std::setprecision(2) << memoryUsed_;
-        context.setRaw("memoryUsedGB", memUsedStream.str());
+        context["memoryUsedGB"] = memoryUsed_;
     } else {
-        context.setRaw("memoryUsedGB", "null");
+        context["memoryUsedGB"] = nullptr;
     }
     
     if (totalMemory_ >= 0) {
-        std::ostringstream totalMemStream;
-        totalMemStream << std::fixed << std::setprecision(2) << totalMemory_;
-        context.setRaw("totalMemoryGB", totalMemStream.str());
+        context["totalMemoryGB"] = totalMemory_;
     } else {
-        context.setRaw("totalMemoryGB", "null");
+        context["totalMemoryGB"] = nullptr;
     }
     
     // Network
-    context.set("networkConnected", networkConnected_);
-    context.set("networkType", networkType_);
+    context["networkConnected"] = networkConnected_;
+    context["networkType"] = networkType_;
     
     // Location
     if (location_.valid && location_.latitude != 0.0 && location_.longitude != 0.0) {
-        std::ostringstream latStream, lonStream;
-        latStream << std::fixed << std::setprecision(8) << location_.latitude;
-        lonStream << std::fixed << std::setprecision(8) << location_.longitude;
-        context.setRaw("locationLat", latStream.str());
-        context.setRaw("locationLon", lonStream.str());
-        context.setRaw("locationValid", "true");
+        context["locationLat"] = location_.latitude;
+        context["locationLon"] = location_.longitude;
+        context["locationValid"] = true;
     } else {
-        context.setRaw("locationLat", "null");
-        context.setRaw("locationLon", "null");
-        context.setRaw("locationValid", "false");
+        context["locationLat"] = nullptr;
+        context["locationLon"] = nullptr;
+        context["locationValid"] = false;
     }
     
     // Timestamp
-    context.set("timestamp", timestamp_);
+    context["timestamp"] = timestamp_;
 }
 
 std::string SystemContextProvider::getName() const {

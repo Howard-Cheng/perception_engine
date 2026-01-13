@@ -281,13 +281,13 @@ namespace sessionmanager {
 
             // Process records into sessions
             std::vector<SessionContent> currentSession;
-            pe_base::Json previousRecord;
+            nlohmann::json previousRecord;  // Changed from pe_base::Json
             bool firstRecord = true;
             int sessionsCreated = 0;
             int recordsProcessed = 0;
 
             for (const auto& event : result) {
-                pe_base::Json currentRecord = ConvertEventToJson(event);
+                nlohmann::json currentRecord = ConvertEventToJson(event);  // Changed from pe_base::Json
 
                 if (firstRecord) {
                     // First record starts a new session
@@ -403,33 +403,28 @@ namespace sessionmanager {
         }
     }
 
-    pe_base::Json SessionManager::ConvertEventToJson(const database::RawEvent& event) {
-        pe_base::Json record;
-        record.set("app_name", event.appName);
-        record.set("window_title", event.windowTitle.value_or(""));
-        record.set("screen_content", event.screenContent.value_or(""));
-        record.set("timestamp", static_cast<long long>(event.timestamp));
+    nlohmann::json SessionManager::ConvertEventToJson(const database::RawEvent& event) {
+        nlohmann::json record;  // Changed from pe_base::Json
+        record["app_name"] = event.appName;
+        record["window_title"] = event.windowTitle.value_or("");
+        record["screen_content"] = event.screenContent.value_or("");
+        record["timestamp"] = static_cast<int64_t>(event.timestamp);
 
         // Build mouse_events array
-        std::ostringstream mouseEventsJson;
-        mouseEventsJson << "[";
-        bool firstMouse = true;
+        nlohmann::json mouseEventsArray = nlohmann::json::array();
         for (const auto& me : event.mouseEvents) {
-            if (!firstMouse) mouseEventsJson << ",";
-            firstMouse = false;
-            mouseEventsJson << "{"
-                << "\"x\":" << me.posX << ","
-                << "\"y\":" << me.posY << ","
-                << "\"timestamp\":" << me.timestamp
-                << "}";
+            nlohmann::json mouseEvent;
+            mouseEvent["x"] = me.posX;
+            mouseEvent["y"] = me.posY;
+            mouseEvent["timestamp"] = me.timestamp;
+            mouseEventsArray.push_back(mouseEvent);
         }
-        mouseEventsJson << "]";
-        record.setRaw("mouse_events", mouseEventsJson.str());
+        record["mouse_events"] = mouseEventsArray;
 
         return record;
     }
 
-    int SessionManager::CompareContent(const pe_base::Json& record1, const pe_base::Json& record2) {
+    int SessionManager::CompareContent(const nlohmann::json& record1, const nlohmann::json& record2) {
         switch (algorithm_) {
         case SimilarityAlgorithm::SIMPLE:
             return CompareContentSimple(record1, record2);
@@ -444,12 +439,12 @@ namespace sessionmanager {
         }
     }
 
-    int SessionManager::CompareContentMLBased(const pe_base::Json& record1, const pe_base::Json& record2) {
+    int SessionManager::CompareContentMLBased(const nlohmann::json& record1, const nlohmann::json& record2) {
 
         std::cout << "=== ML-Based Similarity Comparison ===" << std::endl;
 
-        std::string content1 = record1.getString("screen_content", "");
-        std::string content2 = record2.getString("screen_content", "");
+        std::string content1 = record1.value("screen_content", "");
+        std::string content2 = record2.value("screen_content", "");
 
         // Check if content is empty
         if (content1.empty() || content2.empty()) {
@@ -528,11 +523,11 @@ namespace sessionmanager {
         return static_cast<int>(similarity);
     }
 
-    int SessionManager::CompareContentSimple(const pe_base::Json& record1, const pe_base::Json& record2) {
-        std::string app1 = record1.getString("app_name", "");
-        std::string app2 = record2.getString("app_name", "");
-        std::string window1 = record1.getString("window_title", "");
-        std::string window2 = record2.getString("window_title", "");
+    int SessionManager::CompareContentSimple(const nlohmann::json& record1, const nlohmann::json& record2) {
+        std::string app1 = record1.value("app_name", "");
+        std::string app2 = record2.value("app_name", "");
+        std::string window1 = record1.value("window_title", "");
+        std::string window2 = record2.value("window_title", "");
 
         if (app1 == app2) {
             if (window1 == window2) {
@@ -546,7 +541,7 @@ namespace sessionmanager {
         return 0;  // Different app
     }
 
-    int SessionManager::CompareContentWithText(const pe_base::Json& record1, const pe_base::Json& record2) {
+    int SessionManager::CompareContentWithText(const nlohmann::json& record1, const nlohmann::json& record2) {
         // TODO: Implement text-based similarity
         // For now, fall back to simple comparison
         int baseSimilarity = CompareContentSimple(record1, record2);
@@ -556,14 +551,14 @@ namespace sessionmanager {
         }
 
         // Could add text content similarity here
-        // std::string content1 = record1.getString("screen_content", "");
-        // std::string content2 = record2.getString("screen_content", "");
+        // std::string content1 = record1.value("screen_content", "");
+        // std::string content2 = record2.value("screen_content", "");
         // ... calculate text similarity ...
 
         return baseSimilarity;
     }
 
-    int SessionManager::CompareContentWithTime(const pe_base::Json& record1, const pe_base::Json& record2) {
+    int SessionManager::CompareContentWithTime(const nlohmann::json& record1, const nlohmann::json& record2) {
         int baseSimilarity = CompareContentSimple(record1, record2);
 
         if (baseSimilarity == 0) {
@@ -571,9 +566,9 @@ namespace sessionmanager {
         }
 
         // Apply time decay
-        long long timestamp1 = record1.getInt("timestamp", 0);
-        long long timestamp2 = record2.getInt("timestamp", 0);
-        long long timeDiff = std::abs(timestamp2 - timestamp1);
+        int64_t timestamp1 = record1.value("timestamp", static_cast<int64_t>(0));
+        int64_t timestamp2 = record2.value("timestamp", static_cast<int64_t>(0));
+        int64_t timeDiff = std::abs(timestamp2 - timestamp1);
 
         // If more than 5 minutes apart, reduce similarity
         if (timeDiff > 300) {

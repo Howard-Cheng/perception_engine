@@ -90,7 +90,7 @@ std::wstring GetElementPropertyStatic(IUIAutomationElement* pElement, PROPERTYID
     VariantInit(&var);
     
     HRESULT hr = pElement->GetCurrentPropertyValue(propertyId, &var);
-    
+        
     std::wstring result;
     if (SUCCEEDED(hr)) {
         if (var.vt == VT_BSTR && var.bstrVal) {

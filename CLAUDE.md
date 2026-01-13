@@ -1,532 +1,234 @@
-# CLAUDE.md
+# CLAUDE.md - Perception Engine
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This document provides comprehensive context for working with the Perception Engine codebase.
 
 ## Project Overview
 
-**Nova Perception Engine** is a real-time multi-modal AI system that monitors user context through three perception streams: screen activity (Win32 API), voice/audio (Whisper.cpp + Silero VAD), and camera vision (FastVLM via Python). It's a hybrid C++/Python Windows application that serves context data via HTTP to a web dashboard and MCP servers.
+**Nova Perception Engine** is a cross-platform, multi-modal context capture and analytics system that:
+- Captures real-time context from user activity (screen, audio, camera, system metrics)
+- Processes events through a layered database architecture (raw to compressed to semantic)
+- Enables full-text and semantic search over user activity history
+- Provides APIs for AI assistant integration (Claude via MCP)
 
-**Architecture:** C++ backend handles screen monitoring and audio transcription with GPU acceleration support. Python client handles camera vision. Both communicate via HTTP. Dashboard polls context API every 500ms.
-
-## Build Commands
-
-### Initial Setup (One-Time)
-```powershell
-# Automated setup (downloads models, builds everything)
-.\setup.bat
-
-# Or manual setup for specific components
-cd windows_code
-
-# Build whisper.cpp with CUDA support (if NVIDIA GPU detected)
-.\rebuild_whisper_cuda.bat
-
-# Build whisper.cpp without CUDA (CPU-only)
-.\build_whisper.bat
-```
-
-### Building the Main Project
-```powershell
-cd windows_code
-
-# Configure CMake (first time only)
-cmake -B build -G "Visual Studio 17 2022" -A x64
-
-# Build release version
-cmake --build build --config Release --target PerceptionEngine
-
-# Quick rebuild (after code changes)
-cmake --build build --config Release
-```
-
-### Running
-
-#### Full Mode (Screen + Audio + Camera)
-```powershell
-# Option 1: Quick start (recommended - starts both C++ and Python)
-cd windows_code
-.\start_perception_engine.bat
-
-# Option 2: Manual start - C++ server only
-cd windows_code\build\bin\Release
-.\PerceptionEngine.exe --console
-
-# Option 3: Manual start - with Python camera client
-# Terminal 1:
-cd windows_code\build\bin\Release
-.\PerceptionEngine.exe --console
-
-# Terminal 2:
-cd windows_code
-python win_camera_fastvlm_pytorch.py
-
-# Dashboard accessible at http://localhost:8777/dashboard
-```
-
-#### Screen-Only Mode (Lightweight - No Audio/Camera)
-```powershell
-# Option 1: Using launcher script (recommended)
-cd windows_code
-.\start_perception_engine.bat --screen-only
-
-# Option 2: Direct executable
-cd windows_code\build\bin\Release
-.\PerceptionEngine.exe --console --screen-only
-
-# Dashboard accessible at http://localhost:8777/dashboard
-# Voice and camera cards will be hidden in dashboard
-```
-
-**When to use Screen-Only Mode:**
-- Lightweight deployment (lower CPU/memory usage)
-- Privacy-focused scenarios (no audio/camera capture)
-- Quick testing of screen monitoring features
-- Environments without GPU or heavy models
-
-### Windows Service Commands
-```powershell
-# Install as Windows service
-.\PerceptionEngine.exe --install
-
-# Start/stop service
-.\PerceptionEngine.exe --start
-.\PerceptionEngine.exe --stop
-
-# Uninstall service
-.\PerceptionEngine.exe --uninstall
-```
-
-### Testing
-```powershell
-# Build and run audio test
-cmake --build build --config Release --target test_audio
-.\build\bin\Release\test_audio.exe
-
-# Build and run vision encoder test
-cmake --build build --config Release --target test_vision_encoder
-.\build\bin\Release\test_vision_encoder.exe
-```
-
-### Common Development Tasks
-```powershell
-# Clean rebuild after major changes
-cd windows_code
-rmdir /s /q build
-cmake -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Release
-
-# Copy dashboard.html after editing
-copy dashboard.html build\bin\Release\dashboard.html
-
-# Kill stuck processes
-taskkill /F /IM PerceptionEngine.exe
-taskkill /F /IM python.exe
-
-# Check what's using port 8777
-netstat -ano | findstr :8777
-```
+---
 
 ## High-Level Architecture
 
-### System Design
-The application follows a **multi-threaded producer-consumer architecture** with three perception pipelines feeding into a central context aggregator:
+The system consists of three main components:
+1. **windows_code/** - Perception Engine (C++ Windows) - Real-time context capture
+2. **database_cpp/** - Database Layer (C++) - Multi-layered storage and processing  
+3. **mcp_server/** - MCP Server (C# .NET 8) - Claude integration
 
-```
-┌─────────────────────────────────────────────────────┐
-│  PerceptionEngine.exe (C++ - Port 8777)             │
-│                                                      │
-│  ┌──────────────┐  ┌──────────────┐  ┌───────────┐ │
-│  │ Screen       │  │ Audio        │  │ HTTP      │ │
-│  │ Monitor      │  │ Pipeline     │  │ Server    │ │
-│  │ (Win32 API)  │  │ (Whisper.cpp)│  │ (Winsock) │ │
-│  └──────┬───────┘  └──────┬───────┘  └─────┬─────┘ │
-│         │                 │                 │       │
-│         └─────────────────┼─────────────────┘       │
-│                           ▼                         │
-│         ┌────────────────────────────────┐          │
-│         │   ContextCollector             │          │
-│         │   • Aggregates all sources     │          │
-│         │   • Thread-safe updates        │          │
-│         │   • Periodic cache refresh     │          │
-│         └────────────────────────────────┘          │
-└─────────────────────────────────────────────────────┘
-                           ▲
-                           │ HTTP POST /update_context
-                           │
-               ┌───────────┴──────────┐
-               │  Python Camera       │
-               │  (FastVLM PyTorch)   │
-               │  win_camera_         │
-               │  fastvlm_pytorch.py  │
-               └──────────────────────┘
-```
+## Directory Structure
 
-### Key Components
+perception_engine/
+- windows_code/ - Perception Engine (C++ - Windows)
+  - include/ - Headers (audio/, context/, core/, platform/, providers/, communication/, utils/)
+  - src/ - Implementation
+  - database_client/ - DB integration wrapper
+  - third-party/ - whisper.cpp, OpenCV, ONNX
+  - CMakeLists.txt
+- database_cpp/ - Database Layer (C++)
+  - include/ - Headers (collector/, common/, layer0/, layer1/)
+  - src/ - Implementation
+  - elasticsearch_client_dll/ - ES HTTP client library
+  - CMakeLists.txt
+- mcp_server/csharp/ - MCP Server (.NET 8)
+- sdk/ - Client SDKs
+- setup.ps1 - PowerShell setup script
+- requirements.txt - Python dependencies
 
-**PerceptionEngine.cpp** - Main entry point
-- Initializes all subsystems (audio, HTTP, context collector)
-- Supports console mode (`--console`) and Windows service mode
-- Routes HTTP requests to appropriate handlers
+---
 
-**ContextCollector.cpp** - Central data fusion engine
-- Aggregates screen, voice, camera, and system metrics
-- Thread-safe with multiple mutexes (cacheMutex, voiceMutex, cameraMutex, metricsMutex)
-- Updates cached context every 1 second
-- Serves unified JSON via `/context` endpoint
+# WINDOWS_CODE ARCHITECTURE
 
-**AudioCaptureEngine.cpp** - Voice transcription pipeline
-- WASAPI audio capture (16kHz)
-- Silero VAD for speech detection (ONNX Runtime)
-- Whisper.cpp with GPU acceleration (CUDA auto-detected, CPU fallback)
-- AsyncWhisperQueue for non-blocking transcription
+## Overview
 
-**AsyncWhisperQueue.cpp** - Non-blocking transcription queue
-- Producer-consumer pattern prevents blocking audio capture
-- Background thread processes Whisper inference
-- Callbacks trigger when transcription completes
+The windows_code/ folder contains the Perception Engine - a real-time multi-modal context capture system for Windows. It captures screen content, audio (speech-to-text), camera imagery, and system metrics, exposing them via an HTTP API on port 8777.
 
-**HttpServer.cpp** - HTTP server implementation
-- Custom Winsock-based server (no external dependencies)
-- Handles GET /context, GET /dashboard, POST /update_context
-- Multi-threaded request handling
+## Key Components
 
-**WindowsAPIs.cpp** - System monitoring utilities
-- Active window detection via Win32 API
-- System metrics (CPU, memory, battery via WinRT)
-- Network status
+### 1. Context Providers (Composite Pattern)
 
-### Data Flow
+Interface: IContextProvider (include/providers/IContextProvider.h)
 
-1. **Screen Pipeline:** Win32 API → ContextCollector (real-time on window change)
-2. **Audio Pipeline:** Microphone → WASAPI → Silero VAD → AsyncWhisperQueue → Whisper.cpp → Callback → ContextCollector
-3. **Camera Pipeline:** Camera → FastVLM (Python) → HTTP POST → ContextCollector
-4. **Dashboard:** Browser → HTTP GET /context (every 500ms) → ContextCollector → JSON response
+Implementations:
+- SystemContextProvider - CPU, memory, battery, network
+- VoiceContextProvider - Speech transcription via whisper.cpp
+- CameraContextProvider - Camera descriptions via FastVLM
+- AppActivityContextProvider - Active app, window title, URL
 
-### Thread Architecture
+Manager: CompositeContextManager - Coordinates all providers
 
-- **Main Thread:** Initializes components, handles service lifecycle
-- **HTTP Server Thread:** Accepts connections, handles requests
-- **Audio Capture Thread:** Continuous WASAPI audio capture
-- **Whisper Processing Thread:** Background transcription (AsyncWhisperQueue)
-- **Audio Polling Thread:** Polls for transcription results, triggers callbacks
-- **Camera Thread:** Python process, updates every 10 seconds via HTTP POST
-- **Context Update Thread:** Periodic cache update (every 1 second)
+### 2. Audio Capture Engine
 
-### GPU Acceleration
+File: include/audio/AudioCaptureEngine.h
 
-The system automatically detects NVIDIA GPU + CUDA Toolkit and enables GPU acceleration:
+Features:
+- WASAPI microphone capture (user speech)
+- WASAPI system audio loopback (device playback)
+- Silero VAD for voice activity detection
+- whisper.cpp for speech-to-text (CUDA-accelerated)
+- Meeting mode for continuous transcription
 
-**Voice Transcription:**
-- Whisper.cpp with CUDA backend
-- 2-3x faster than CPU (500ms → 200ms latency)
-- Automatic CPU fallback if GPU unavailable
+Configuration:
+- Sample Rate: 16kHz (Whisper requirement)
+- VAD Chunk: 32ms (512 samples for Silero)
+- Whisper Chunk: 3 seconds
+- Max Buffer: 30 seconds @ 16kHz
 
-**Camera Vision:**
-- PyTorch with CUDA + FP16 (Python client)
-- 5-6x faster than CPU (10s → 1.7s latency)
-- Automatic CPU fallback
+### 3. Window Event Monitor
 
-**Build Configuration:**
-- `rebuild_whisper_cuda.bat` builds whisper.cpp with CUDA support
-- CMakeLists.txt copies CUDA DLLs (cudart64_13.dll, cublas64_13.dll, etc.)
-- GPU/CPU selection happens at runtime based on available hardware
+File: include/platform/WindowEventMonitor.h
 
-## Critical Implementation Details
+Events: WINDOW_ACTIVATED, WINDOW_CREATED, TAB_ACTIVATED, APPLICATION_STARTED, etc.
 
-### Mutex Deadlock Risk in ContextCollector
+### 4. HTTP Server
 
-**IMPORTANT:** There is a known intermittent deadlock issue in ContextCollector.cpp due to multiple threads acquiring locks in different orders. This affects dashboard reliability after 5-30 minutes of operation.
+File: include/communication/HttpServer.h
+Endpoint: GET http://localhost:8777/context
 
-**Affected methods:**
-- `CollectCurrentContext()` - Called by HTTP GET /context (locks cacheMutex → voiceMutex → metricsMutex)
-- `UpdateVoiceContext()` - Called by audio callback (locks metricsMutex → voiceMutex)
-- `UpdateCache()` - Called by periodic update thread (locks cacheMutex → voiceMutex → cameraMutex)
+## Dependencies (windows_code)
 
-**When making changes to ContextCollector:**
-- Avoid introducing new lock acquisitions
-- Keep critical sections as small as possible
-- Consider lock-free alternatives (std::atomic)
-- Acquire locks in consistent order across all methods
-- Release locks before calling external callbacks
+- whisper.cpp (Latest) - Speech-to-text
+- Silero VAD (1.0) - Voice detection
+- ONNX Runtime (1.16+) - ML inference
+- OpenCV (4.10.0) - Computer vision
+- nlohmann/json (3.x) - JSON parsing
 
-**Future fix:** Replace multiple mutexes with lock-free design or single mutex with scoped locks.
+---
 
-### Whisper.cpp Integration
+# DATABASE_CPP ARCHITECTURE
 
-**GPU Detection:**
-- Whisper context initialization checks for GPU availability via `use_gpu=true` parameter
-- If GPU unavailable, gracefully falls back to CPU
-- No code changes needed - automatic detection
+## Overview
 
-**Model Loading:**
-- Models located at `models/whisper/ggml-small.bin` (465MB, 99 languages, 244M params)
-- Smaller models available: tiny.en (40MB), base.en (140MB)
-- Larger = better quality but slower
+The database_cpp/ folder contains the Database Layer - multi-layered storage and processing:
+- Layer 0: Raw event storage with full-text search (Elasticsearch or SQLite)
+- Layer 1: Session detection, engagement scoring, LLM compression (DuckDB)
+- Layer 2: Vector embeddings for semantic search (Qdrant - planned)
 
-**Audio Format:**
-- 16kHz sample rate (Whisper requirement)
-- PCM float32 format
-- WASAPI captures 16-bit, AudioCaptureEngine converts to float32
+## Key Components
 
-### Python Camera Client Communication
+### 1. DataCollector
 
-**Protocol:** HTTP POST to `http://localhost:8777/update_context`
+File: include/collector/DataCollector.h
+- Polls http://localhost:8777/context every 5 seconds
+- Supports SQLite and Elasticsearch backends
 
-**Expected JSON format:**
-```json
-{
-  "device": "Camera",
-  "data": {
-    "objects": ["Scene description string"]
-  }
-}
-```
+### 2. SessionDetector
 
-**Parsing in C++:** Manual string parsing in PerceptionEngine.cpp (lines 425-457)
-- No JSON library dependency to keep executable small
-- Simple substring extraction for device type and caption
-- Consider using nlohmann/json for robustness if extending
+File: include/layer1/SessionDetector.h
+Break Conditions: Idle > 5min, App change, Domain change, Tab change
 
-**Update Frequency:** Camera client posts every 10 seconds (configurable in Python)
+### 3. EngagementCalculator
 
-### Dashboard Implementation
+File: include/layer1/EngagementCalculator.h
+Score Formula:
+- hasCopied: +0.4 (strongest signal)
+- hasSelected: +0.2
+- interactions > 5: +0.2
+- dwellTime > 30s: +0.2
+- copiedCount > 3: +0.1
 
-**File:** `dashboard.html` - Single-file HTML/CSS/JavaScript
-**Polling:** JavaScript setInterval() calls `/context` every 500ms
-**Auto-refresh:** Updates UI without page reload
+### 4. ContentClassifier
 
-**When modifying dashboard:**
-- Edit `dashboard.html` in `windows_code/`
-- Rebuild to copy to `build/bin/Release/dashboard.html`
-- Or manually copy: `copy dashboard.html build\bin\Release\dashboard.html`
-- Hard refresh in browser: Ctrl+F5
+File: include/layer1/ContentClassifier.h
+ContentTypes: EMAIL, CHAT, CODE, DOCUMENT, MEETING, VIDEO, SOCIAL, RESEARCH_PAPER
+Domains: WORK, ENTERTAINMENT, LIFE, INTERACTION
 
-## File Organization
+## Data Models
 
-```
-windows_code/
-├── Core Components
-│   ├── PerceptionEngine.cpp/h       # Main entry point
-│   ├── ContextCollector.cpp/h       # Data aggregator (⚠️ deadlock risk)
-│   ├── HttpServer.cpp/h             # HTTP server
-│   └── Logger.cpp/h                 # Logging system
-│
-├── Perception Pipelines
-│   ├── AudioCaptureEngine.cpp/h     # WASAPI + Whisper
-│   ├── AsyncWhisperQueue.cpp/h      # Non-blocking transcription
-│   ├── SileroVAD.cpp/h             # Speech detection
-│   ├── CameraVisionEngine.cpp/h     # Camera (C++ ONNX - not used)
-│   └── FastVLMTokenizer.cpp/h      # Vision tokenizer (not used)
-│
-├── System Integration
-│   ├── WindowsAPIs.cpp/h           # Win32 API wrappers
-│   ├── WindowsService.cpp/h        # Windows service support
-│   ├── WindowEventMonitor.cpp/h    # Window change events
-│   └── BrowserContentExtractor.cpp/h # Browser text extraction
-│
-├── Python Components
-│   └── win_camera_fastvlm_pytorch.py # Camera vision client
-│
-├── Build & Scripts
-│   ├── CMakeLists.txt              # Build configuration
-│   ├── start_perception_engine.bat # Quick start
-│   ├── rebuild_whisper_cuda.bat    # Build whisper with GPU
-│   ├── build_whisper.bat           # Build whisper CPU-only
-│   └── copy_cuda_dlls.bat          # Copy CUDA runtime
-│
-└── UI & Config
-    └── dashboard.html              # Web dashboard
-```
+- RawEvent (Layer 0): include/layer0/DataIngestion.h
+- CompressedSession (Layer 1): include/layer1/DuckDBManager.h
+- Types: include/common/Types.h
 
-### Third-Party Dependencies
+## Dependencies (database_cpp)
 
-**Required (included in repo):**
-- `third-party/whisper.cpp/` - Speech recognition (git submodule)
-- `third-party/opencv/` - Camera capture
-- `third-party/onnxruntime/` - Neural network runtime
-- `third-party/include/nlohmann/json.hpp` - JSON parser (header-only)
+- SQLite3 (3.x) - Local storage
+- nlohmann/json (3.x) - JSON serialization
+- libcurl (7.x) - HTTP client
+- DuckDB (0.9+) - Compressed session storage
 
-**Auto-downloaded:**
-- `models/whisper/ggml-small.bin` - Whisper model (setup.bat)
-- `models/vad/silero_vad.onnx` - VAD model (setup.bat)
+---
 
-## Python Environment
+## Tech Stack Summary
 
-```powershell
-# Install Python dependencies for camera client
-pip install -r requirements_windows.txt
+- Context Capture: C++17, whisper.cpp, Silero VAD (Windows-only)
+- Vision: FastVLM-0.5B (PyTorch), CUDA 12.1 recommended
+- Raw Storage: Elasticsearch (port 9200) - Primary
+- Alt Storage: SQLite + FTS5 - Local development
+- Session Storage: DuckDB - Compressed sessions
+- Vector DB: Qdrant (port 6333/6334) - Semantic search
+- MCP Server: C# .NET 8 - Claude integration
+- Build: CMake 3.15+, .NET 8 SDK
 
-# Key packages:
-# - torch (PyTorch with CUDA support if GPU available)
-# - transformers (Hugging Face for FastVLM)
-# - opencv-python (Camera capture)
-# - requests (HTTP communication)
-```
+## Build Instructions
 
-**Camera client location:** `windows_code/win_camera_fastvlm_pytorch.py`
-
-**Model auto-download:** FastVLM model (~1GB) downloads on first run via Hugging Face transformers
-
-## API Endpoints
-
-**GET /context** - Returns unified context JSON
-```json
-{
-  "activeApp": "chrome.exe",
-  "cpuUsage": 25.3,
-  "memoryUsage": 65.2,
-  "battery": 85,
-  "voiceTranscription": "hello world",
-  "voiceLatency": 180.5,
-  "cameraDescription": "A person sitting at desk",
-  "cameraLatency": 9200,
-  "contextUpdateLatency": 28.3,
-  "RecentPeriodActiveApps": [...],
-  "fusedContext": "Active: chrome.exe | Said: \"hello world\"",
-  "timestamp": "2025-10-10T10:30:45.123+08:00"
-}
-```
-
-**GET /dashboard** or **GET /** - Serves dashboard.html
-
-**POST /update_context** - Receives external updates (camera client)
-
-## MCP Server Integration
-
-The project includes a C# MCP server that bridges Perception Engine to Claude Desktop:
-
-**Location:** `mcp_server/csharp/`
-
-**Build:**
-```powershell
-cd mcp_server\csharp
-dotnet build
-dotnet publish -c Release -r win-x64 --self-contained false -o ./publish
-```
-
-**Claude Desktop Config:** Edit `%APPDATA%\Claude\claude_desktop_config.json`:
-```json
-{
-  "mcpServers": {
-    "perception-engine": {
-      "command": "path\\to\\publish\\PerceptionMcpBridge.exe",
-      "args": []
-    }
-  }
-}
-```
-
-**Tool Provided:** `get_perception_context` - Returns formatted context from Perception Engine
-
-## Common Issues and Solutions
-
-### Dashboard Not Updating
-**Symptom:** Dashboard shows stale "Last updated" timestamp
-**Cause:** Mutex deadlock in ContextCollector (known issue)
-**Solution:** Restart PerceptionEngine.exe
-```powershell
-taskkill /F /IM PerceptionEngine.exe
-cd windows_code\build\bin\Release
-.\PerceptionEngine.exe --console
-```
-
-### Port 8777 Already in Use
-```powershell
-# Find process using port
-netstat -ano | findstr :8777
-
-# Kill process (replace PID)
-taskkill /PID <PID> /F
-```
-
-### Whisper Model Not Found
-**Error:** "Failed to initialize audio engine"
-**Solution:** Run setup.bat or manually download model
-```powershell
-.\setup.bat
-# Or manually download to models/whisper/ggml-small.bin
-```
-
-### Build Errors After Git Pull
-```powershell
-# Submodules may be out of sync
-git submodule update --init --recursive
-
-# Rebuild whisper.cpp
+### Windows Perception Engine
 cd windows_code
-.\rebuild_whisper_cuda.bat
-```
+mkdir build && cd build
+cmake ..
+cmake --build . --config Release
+Output: build/bin/Release/PerceptionEngine.exe
 
-### CUDA DLLs Missing
-**Error:** "ggml-cuda.dll not found" or GPU not working
-**Solution:** Copy CUDA DLLs to output directory
-```powershell
-cd windows_code
-.\copy_cuda_dlls.bat
-```
+### Database Layer
+cd database_cpp
+mkdir build && cd build
+cmake .. -DCMAKE_TOOLCHAIN_FILE=[vcpkg-root]/scripts/buildsystems/vcpkg.cmake
+cmake --build . --config Release
+Output: build/bin/perception_data_collector
 
-## Performance Considerations
+### MCP Server
+cd mcp_server/csharp
+dotnet publish -c Release -o publish/
+Output: publish/PerceptionMcpBridge.exe
 
-**CPU Usage:**
-- Idle: 3-5%
-- Active (with GPU): 20-30%
-- Active (CPU-only): 45-60%
+## Running the System
 
-**Memory Usage:**
-- Typical: 800MB - 1.2GB
-- Whisper model: ~500MB
-- FastVLM model: ~1GB (Python process)
+1. Start Infrastructure (Docker):
+   docker run -d --name elasticsearch -p 9200:9200 -e "discovery.type=single-node" elasticsearch:8.11.0
+   docker run -d --name qdrant -p 6333:6333 -p 6334:6334 qdrant/qdrant
 
-**Latency Targets:**
-- Screen: <5ms
-- Context update: 0.5-2ms
-- Voice (GPU): 200-500ms
-- Voice (CPU): 4-6s
-- Camera (GPU): 1.5-2s
-- Camera (CPU): 8-12s
+2. Start Perception Engine:
+   cd windows_code/build/bin/Release && ./PerceptionEngine.exe
 
-**Optimization Tips:**
-- Use GPU acceleration for 2-10x speedup
-- Reduce camera update frequency (10s → 15s) to save CPU
-- Use smaller Whisper model (tiny.en) for faster voice at cost of accuracy
-- Disable camera client if not needed
+3. Start Data Collector:
+   cd database_cpp/build/bin && ./perception_data_collector --storage elasticsearch
 
-## Development Workflow
+4. Start MCP Server:
+   cd mcp_server/csharp/publish && ./PerceptionMcpBridge.exe
 
-1. **Make code changes** in `windows_code/*.cpp` or `windows_code/*.h`
-2. **Rebuild:** `cmake --build build --config Release`
-3. **Test:** `cd build\bin\Release && PerceptionEngine.exe --console`
-4. **Check logs:** Review console output or `PerceptionEngine.log`
-5. **Test dashboard:** Open http://localhost:8777/dashboard
-6. **Debug:** Use Visual Studio debugger or add LOG_DEBUG statements
+## Configuration
 
-**Hot Tips:**
-- Use `--console` mode for testing (easier to see logs)
-- Test with Python camera client separately before integration
-- Check JSON format with `curl http://localhost:8777/context`
-- Use Logger macros: LOG_INFO, LOG_DEBUG, LOG_ERROR, LOG_WARN, LOG_FATAL
+Environment Variables:
+- ELASTICSEARCH_URL=http://localhost:9200
+- QDRANT_URL=http://localhost:6333
+- OPENAI_API_KEY=sk-... (for LLM compression)
+- ANTHROPIC_API_KEY=sk-ant-... (alternative)
 
-## When Modifying Audio Pipeline
+Data Retention:
+- Layer 0: 24 hours (configurable)
+- Layer 1: 30 days (sessions)
+- Layer 2: Indefinite (vectors)
 
-1. Audio format must remain 16kHz PCM (Whisper requirement)
-2. Maintain AsyncWhisperQueue non-blocking design
-3. Update AudioCaptureEngine::GetMetrics() if adding metrics
-4. Test both GPU and CPU modes
-5. Verify hallucination filtering still works
+## Common Issues
 
-## When Modifying ContextCollector
+- whisper.cpp build fails: Ensure CUDA toolkit 12.1 installed, run git submodule update --init
+- Elasticsearch connection refused: Check docker ps, verify curl localhost:9200
+- FastVLM CUDA out of memory: Reduce image resolution or set CUDA_VISIBLE_DEVICES=""
 
-⚠️ **Critical:** Be extremely careful with thread synchronization
-- Document any new mutexes
-- Acquire locks in consistent order
-- Keep critical sections minimal
-- Consider using std::lock() for multiple mutexes
-- Test for deadlocks by running for 30+ minutes
+## Project Status
 
-## Version Information
-
-**Current Version:** 2.0.0 (Windows C++ Implementation)
-**Platform:** Windows 10/11 (x64)
-**Compiler:** MSVC (Visual Studio 2022)
-**C++ Standard:** C++17
-**CMake Version:** 3.15+
+| Feature | Status |
+|---------|--------|
+| Screen Capture | Done |
+| Audio (whisper.cpp) | Done |
+| Camera (FastVLM) | Done |
+| Elasticsearch Storage | Done |
+| Session Detection | Done |
+| Engagement Scoring | Done |
+| Content Classification | Done |
+| MCP Server | Done |
+| LLM Compression | In Progress |
+| Embedding Generation | Planned |
+| Qdrant Integration | Planned |

@@ -90,3 +90,5 @@ vectordb/tests/
 
 # vector db
 vectordb/cpp_lib/build/
+# test embedding (large model files)
+windows_code/test_embedding/

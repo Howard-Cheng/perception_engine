@@ -4,25 +4,34 @@ project(pe_base)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# ============================================================================
+# Options
+# ============================================================================
+option(BUILD_PE_BASE_TESTS "Build pe_base test programs" ON)
+
 # FetchContent
 include(FetchContent)
 
 # Import Boost
-FetchContent_Declare(
-    boost_repo
-    URL https://archives.boost.io/release/1.81.0/source/boost_1_81_0.7z
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-)
-FetchContent_MakeAvailable(boost_repo)
+# find_package(Boost REQUIRED)
+# Boost is now provided by vcpkg
+find_package(Boost REQUIRED COMPONENTS asio)
+
+# FetchContent_Declare(
+#     boost_repo
+#     URL https://archives.boost.io/release/1.81.0/source/boost_1_81_0.7z
+#     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+# )
+# FetchContent_MakeAvailable(boost_repo)
 
 # Define Boost::asio manually since header-only Boost from source 
 # does not automatically create imported targets like find_package does.
-if(NOT TARGET Boost::asio)
-    add_library(Boost::asio INTERFACE IMPORTED)
-    target_include_directories(Boost::asio INTERFACE ${boost_repo_SOURCE_DIR})
-    # Add other Boost header dependencies if necessary
-    target_compile_definitions(Boost::asio INTERFACE BOOST_ASIO_NO_DEPRECATED)
-endif()
+# if(NOT TARGET Boost::asio)
+#     add_library(Boost::asio INTERFACE IMPORTED)
+#     target_include_directories(Boost::asio INTERFACE ${boost_repo_SOURCE_DIR})
+#     # Add other Boost header dependencies if necessary
+#     target_compile_definitions(Boost::asio INTERFACE BOOST_ASIO_NO_DEPRECATED)
+# endif()
 
 # Import spdlog
 FetchContent_Declare(
@@ -81,17 +90,26 @@ target_compile_definitions(pe_base
 
 # Link Libraries
 target_link_libraries(pe_base
+    PUBLIC
+        nlohmann_json::nlohmann_json  # Changed to PUBLIC - config_manager.h needs it
     PRIVATE
         Boost::asio
         spdlog
-        nlohmann_json::nlohmann_json
 )
 
 if(WIN32)
     target_link_libraries(pe_base PRIVATE winmm ws2_32)
 endif()
 
+# ============================================================================
 # Testing
-add_executable(pe_base_test test/main.cpp)
-target_link_libraries(pe_base_test PRIVATE pe_base)
+# ============================================================================
+if(BUILD_PE_BASE_TESTS)
+    add_executable(pe_base_test test/main.cpp)
+    target_link_libraries(pe_base_test PRIVATE pe_base)
+    
+    message(STATUS "Building pe_base tests")
+else()
+    message(STATUS "Skipping pe_base tests (BUILD_PE_BASE_TESTS=OFF)")
+endif()
 

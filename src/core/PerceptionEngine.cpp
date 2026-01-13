@@ -14,7 +14,6 @@
 #include "core/WindowsService.h"
 #include "communication/HttpServer.h"
 #include "context/ContextCollector.h"  // UPDATED: Use context folder
-#include "audio/AudioCaptureEngine.h"
 #include "pe_base/config_manager.h"      // NEW: Add pe_base::ConfigManager
 
 // #include "CameraVisionEngine.h"  // Removed - using Python client instead
@@ -529,7 +528,6 @@ int main(int argc, char* argv[]) {
             try {
                 // Create separate instances for console mode
                 HttpServer server(8777);
-                AudioCaptureEngine audioEngine;
 
                 PE_INFO("Starting context collector...");
 

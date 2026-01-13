@@ -4,9 +4,49 @@ project(PerceptionEngine VERSION 2.0.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# ============================================================================
+# Global Build Options
+# ============================================================================
+option(BUILD_ALL_TESTS "Build all test programs (global switch)" OFF)
+option(BUILD_ALL_EXAMPLES "Build all example programs (global switch)" OFF)
+
 # Note: We use the default MSVC runtime library (/MD - Dynamic CRT)
 # This matches vcpkg defaults and most dependencies
 # SentencePiece should be built with /MD to match
+
+# ============================================================================
+# Set individual project options BEFORE add_subdirectory()
+# ============================================================================
+
+# Set test options based on global switch
+if(BUILD_ALL_TESTS)
+    set(BUILD_TESTS ON CACHE BOOL "Enabled by BUILD_ALL_TESTS=ON" FORCE)
+    set(BUILD_EMBEDDING_TESTS ON CACHE BOOL "Enabled by BUILD_ALL_TESTS=ON" FORCE)
+    set(BUILD_PE_BASE_TESTS ON CACHE BOOL "Enabled by BUILD_ALL_TESTS=ON" FORCE)
+else()
+    set(BUILD_TESTS OFF CACHE BOOL "Disabled by BUILD_ALL_TESTS=OFF" FORCE)
+    set(BUILD_EMBEDDING_TESTS OFF CACHE BOOL "Disabled by BUILD_ALL_TESTS=OFF" FORCE)
+    set(BUILD_PE_BASE_TESTS OFF CACHE BOOL "Disabled by BUILD_ALL_TESTS=OFF" FORCE)
+endif()
+
+# Set example options based on global switch
+if(BUILD_ALL_EXAMPLES)
+    set(BUILD_EXAMPLES ON CACHE BOOL "Enabled by BUILD_ALL_EXAMPLES=ON" FORCE)
+else()
+    set(BUILD_EXAMPLES OFF CACHE BOOL "Disabled by BUILD_ALL_EXAMPLES=OFF" FORCE)
+endif()
+
+# Print configuration
+message(STATUS "")
+message(STATUS "=== Global Build Configuration ===")
+message(STATUS "BUILD_ALL_TESTS: ${BUILD_ALL_TESTS}")
+message(STATUS "BUILD_ALL_EXAMPLES: ${BUILD_ALL_EXAMPLES}")
+message(STATUS "  ¡ú BUILD_TESTS: ${BUILD_TESTS}")
+message(STATUS "  ¡ú BUILD_EMBEDDING_TESTS: ${BUILD_EMBEDDING_TESTS}")
+message(STATUS "  ¡ú BUILD_PE_BASE_TESTS: ${BUILD_PE_BASE_TESTS}")
+message(STATUS "  ¡ú BUILD_EXAMPLES: ${BUILD_EXAMPLES}")
+message(STATUS "==================================")
+message(STATUS "")
 
 # Find vcpkg packages
 find_package(nlohmann_json CONFIG REQUIRED)
@@ -17,7 +57,10 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # ============================================================================
+# Subdirectories - Pass global options to subprojects
+# ============================================================================
 
+# ============================================================================
 # Database Client DLL (subdirectory)
 # ============================================================================
 
@@ -70,19 +113,19 @@ add_subdirectory(tools/revise_database)
 # ============================================================================
 
 # whisper.cpp (CUDA-enabled for GPU acceleration)
-set(WHISPER_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/include")
-set(WHISPER_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/src/Release")
-set(GGML_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/ggml/src/Release")
+# set(WHISPER_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/include")
+# set(WHISPER_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/src/Release")
+# set(GGML_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/build_cuda/ggml/src/Release")
 
 # Check if whisper.lib exists
-if(NOT EXISTS "${WHISPER_LIB_DIR}/whisper.lib")
-    message(FATAL_ERROR "whisper.lib not found! Run copy_whisper_lib.bat first")
-endif()
+# if(NOT EXISTS "${WHISPER_LIB_DIR}/whisper.lib")
+#     message(FATAL_ERROR "whisper.lib not found! Run copy_whisper_lib.bat first")
+# endif()
 
 # Check if ggml libraries exist
-if(NOT EXISTS "${GGML_LIB_DIR}/ggml.lib")
-    message(FATAL_ERROR "ggml.lib not found! Expected at: ${GGML_LIB_DIR}/ggml.lib")
-endif()
+# if(NOT EXISTS "${GGML_LIB_DIR}/ggml.lib")
+#     message(FATAL_ERROR "ggml.lib not found! Expected at: ${GGML_LIB_DIR}/ggml.lib")
+# endif()
 
 # nlohmann/json (header-only)
 set(JSON_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/include")
@@ -102,7 +145,7 @@ set(OpenCV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/opencv/opencv/build")
 set(OpenCV_INCLUDE_DIRS "${OpenCV_DIR}/include")
 set(OpenCV_LIB_DIR "${OpenCV_DIR}/x64/vc16/lib")
 set(OpenCV_BIN_DIR "${OpenCV_DIR}/x64/vc16/bin")
-
+    
 # Find OpenCV world library
 file(GLOB OPENCV_WORLD_LIB "${OpenCV_LIB_DIR}/opencv_world*.lib")
 
@@ -137,9 +180,9 @@ set(PERCEPTION_ENGINE_SOURCES
     src/platform/WindowEventMonitor.cpp
     src/platform/MouseTracker.cpp
     src/platform/BrowserContentExtractor.cpp
-    src/audio/AudioCaptureEngine.cpp
-    src/audio/AsyncWhisperQueue.cpp
-    src/audio/SileroVAD.cpp
+    # src/audio/AudioCaptureEngine.cpp
+    # src/audio/AsyncWhisperQueue.cpp
+    # src/audio/SileroVAD.cpp
     src/providers/SystemContextProvider.cpp
     src/providers/VoiceContextProvider.cpp
     src/providers/CameraContextProvider.cpp
@@ -157,9 +200,9 @@ set(PERCEPTION_ENGINE_HEADERS
     include/platform/WindowEventMonitor.h
     include/platform/MouseTracker.h
     include/platform/BrowserContentExtractor.h
-    include/audio/AudioCaptureEngine.h
-    include/audio/AsyncWhisperQueue.h
-    include/audio/SileroVAD.h
+    # include/audio/AudioCaptureEngine.h
+    # include/audio/AsyncWhisperQueue.h
+    # include/audio/SileroVAD.h
     include/providers/IContextProvider.h
     include/providers/CompositeContextManager.h
     include/providers/SystemContextProvider.h
@@ -210,6 +253,7 @@ add_executable(DataProcessServer ${DATAPROCESS_SERVER_SOURCES} ${DATAPROCESS_SER
 add_executable(LinguaCore ${LINGUACORE_SOURCES} ${LINGUACORE_HEADERS})
 
 # ============================================================================
+
 # Visual Studio Source Groups (organize files in Solution Explorer)
 # ============================================================================
 
@@ -246,11 +290,11 @@ source_group("Source Files\\platform" FILES
     src/platform/BrowserContentExtractor.cpp
 )
 
-source_group("Source Files\\audio" FILES
-    src/audio/AudioCaptureEngine.cpp
-    src/audio/AsyncWhisperQueue.cpp
-    src/audio/SileroVAD.cpp
-)
+# source_group("Source Files\\audio" FILES
+#     src/audio/AudioCaptureEngine.cpp
+#     src/audio/AsyncWhisperQueue.cpp
+#     src/audio/SileroVAD.cpp
+# )
 
 source_group("Source Files\\providers" FILES
     src/providers/SystemContextProvider.cpp
@@ -294,11 +338,11 @@ source_group("Header Files\\platform" FILES
     include/platform/BrowserContentExtractor.h
 )
 
-source_group("Header Files\\audio" FILES
-    include/audio/AudioCaptureEngine.h
-    include/audio/AsyncWhisperQueue.h
-    include/audio/SileroVAD.h
-)
+# source_group("Header Files\\audio" FILES
+#     include/audio/AudioCaptureEngine.h
+#     include/audio/AsyncWhisperQueue.h
+#     include/audio/SileroVAD.h
+# )
 
 source_group("Header Files\\providers" FILES
     include/providers/IContextProvider.h
@@ -357,8 +401,8 @@ target_include_directories(PerceptionEngine PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/embeddingmodel/include
     ${CMAKE_CURRENT_SOURCE_DIR}/pe_base/include
     ${CMAKE_CURRENT_SOURCE_DIR}/vectordb_client/include
-    ${WHISPER_INCLUDE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/ggml/include
+    # ${WHISPER_INCLUDE_DIR}
+    # ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/ggml/include
     ${JSON_INCLUDE_DIR}
     ${ONNXRUNTIME_INCLUDE_DIR}
     ${OpenCV_INCLUDE_DIRS}
@@ -406,10 +450,10 @@ endif()
 
 target_link_libraries(PerceptionEngine PRIVATE
     # whisper.cpp and ggml
-    ${WHISPER_LIB_DIR}/whisper.lib
-    ${GGML_LIB_DIR}/ggml.lib
-    ${GGML_LIB_DIR}/ggml-base.lib
-    ${GGML_LIB_DIR}/ggml-cpu.lib
+    # ${WHISPER_LIB_DIR}/whisper.lib
+    # ${GGML_LIB_DIR}/ggml.lib
+    # ${GGML_LIB_DIR}/ggml-base.lib
+    # ${GGML_LIB_DIR}/ggml-cpu.lib
     # NOTE: NOT linking ggml-cuda.lib - it's dynamically loaded via ggml-cuda.dll when use_gpu=true
     # This allows fallback to CPU if CUDA runtime is not available
 

@@ -5,6 +5,28 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ============================================================================
+# Runtime Library Configuration
+# ============================================================================
+# IMPORTANT: SentencePiece is built with /MD (Release runtime)
+# To avoid LNK2038 errors in Debug mode, we force /MD for all configurations
+if(MSVC)
+    # Force /MD (MultiThreaded DLL) for both Debug and Release
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:>DLL")
+    
+    # Alternative: Set flags directly
+    # This ensures Debug builds use /MD instead of /MDd
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MD")
+    string(REPLACE "/MDd" "/MD" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+    string(REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+    
+    # Disable iterator debug level in Debug mode to match Release libraries
+    add_compile_definitions($<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>)
+    
+    message(STATUS "E5EmbeddingDLL: Forcing /MD runtime library for all configurations")
+    message(STATUS "E5EmbeddingDLL: This matches the sentencepiece library build configuration")
+endif()
+
+# ============================================================================
 
 # E5EmbeddingDLL Library
 

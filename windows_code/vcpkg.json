@@ -5,7 +5,8 @@
   "dependencies": [
     "curl",
     "nlohmann-json",
-    "libpq"
+    "libpq",
+    "boost-asio"
   ],
   "builtin-baseline": "b27f6bfad367d64f8f0f3296351c5d246e182bb4"
 }

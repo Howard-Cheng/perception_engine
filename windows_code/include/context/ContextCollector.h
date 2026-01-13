@@ -7,6 +7,7 @@
 #include "DatabaseTypes.h"
 #include "sessionmanager/SessionManager.h"  // Add SessionManager
 #include "VectorStore.h"  // Add VectorStore (from vectordb_client)
+#include "providers/AppActivityContextProvider.h" // Include this to use AppActivityType in this file
 #include <chrono>
 #include <mutex>
 #include <string>

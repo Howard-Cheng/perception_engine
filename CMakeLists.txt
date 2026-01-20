@@ -9,6 +9,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # ============================================================================
 option(BUILD_ALL_TESTS "Build all test programs (global switch)" OFF)
 option(BUILD_ALL_EXAMPLES "Build all example programs (global switch)" OFF)
+option(BUILD_TEST_ASR "Build TestASR program" ON)
 
 # Note: We use the default MSVC runtime library (/MD - Dynamic CRT)
 # This matches vcpkg defaults and most dependencies
@@ -106,6 +107,19 @@ add_subdirectory(vectordb_client)
 
 # Add revise_database tool
 add_subdirectory(tools/revise_database)
+
+# ============================================================================
+
+# Test Programs
+# ============================================================================
+
+# Add TestASR if enabled
+if(BUILD_TEST_ASR)
+    add_subdirectory(test_asr)
+    message(STATUS "TestASR enabled")
+else()
+    message(STATUS "TestASR disabled (set BUILD_TEST_ASR=ON to enable)")
+endif()
 
 # ============================================================================
 

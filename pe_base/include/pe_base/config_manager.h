@@ -68,6 +68,7 @@ public:
     std::string GetPostgreSQLUser() const;
     std::string GetPostgreSQLPassword() const;
     std::string GetPostgreSQLTable() const;
+    int GetPostgreSQLMaxundeletelength() const;
     
     // === LLM Configuration ===
     int GetLLMMaxTokens() const;

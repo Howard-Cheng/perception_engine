@@ -94,9 +94,13 @@ public:
         const std::vector<std::string>& eventIds,
         const std::string& sessionId,
         const std::string& similarScreenContent);
-    
-    int deleteOlderThan(const std::string& collectionName, 
-                       std::time_t cutoffTime) override;
+
+    int deleteOlderThan(const std::string& collectionName,
+        std::time_t cutoffTime) override;
+    int findOlderThan(std::string collectionName,
+        std::time_t cutoffTime, SearchResult& result);
+    int countOlderThan(std::string collectionName,
+        std::time_t cutoffTime);
     bool refreshCollection(const std::string& collectionName) override;
     CollectionStats getCollectionStats(const std::string& collectionName) override;
     int getDocumentCount(const std::string& collectionName) override;

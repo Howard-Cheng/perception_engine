@@ -469,6 +469,11 @@ std::string ConfigManager::GetPostgreSQLPassword() const {
     return config_.value("postgresql", nlohmann::json::object()).value("password", "");
 }
 
+int ConfigManager::GetPostgreSQLMaxundeletelength() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.value("postgresql", nlohmann::json::object()).value("maxundeletelength", 100);
+}
+
 std::string ConfigManager::GetPostgreSQLTable() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return config_.value("postgresql", nlohmann::json::object()).value("table", "perception_context");

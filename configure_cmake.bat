@@ -176,17 +176,9 @@ REM ============================================================================
 set "VS_GENERATOR="
 set "VS_VERSION="
 
-REM Check for Visual Studio 2022 first
-set "VS2022_PATH=C:\Program Files\Microsoft Visual Studio\2022"
-if exist "%VS2022_PATH%" (
-    set "VS_GENERATOR=Visual Studio 17 2022"
-    set "VS_VERSION=2022"
-    echo [OK] Visual Studio 2022 detected
-    goto :vs_found
-)
 
 REM Check for Visual Studio 2026
-set "VS2026_PATH=C:\Program Files\Microsoft Visual Studio\2026"
+set "VS2026_PATH=C:\Program Files\Microsoft Visual Studio\18"
 if exist "%VS2026_PATH%" (
     set "VS_GENERATOR=Visual Studio 18 2026"
     set "VS_VERSION=2026"

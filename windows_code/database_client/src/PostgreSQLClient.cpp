@@ -1,5 +1,6 @@
 // src/PostgreSQLClient.cpp
 #include "PostgreSQLClient.h"
+#include "pe_base/logger.h"
 #include <libpq-fe.h>
 #include <nlohmann/json.hpp>
 #include <sstream>
@@ -7,7 +8,6 @@
 #include <cstring>
 #include <ctime>
 #include <chrono>
-#include <iostream>
 #include <vector>
 
 using json = nlohmann::json;
@@ -147,7 +147,7 @@ public:
         conn_ = PQconnectdb(connectionString_.c_str());
         
         if (PQstatus(conn_) != CONNECTION_OK) {
-            std::cerr << "PostgreSQL connection failed: " << PQerrorMessage(conn_) << std::endl;
+            PE_ERROR("PostgreSQL connection failed: " << PQerrorMessage(conn_));
             PQfinish(conn_);
             conn_ = nullptr;
             return false;
@@ -201,15 +201,15 @@ public:
         PGresult* res = PQexec(conn_, query.c_str());
         
         if (!res) {
-            std::cerr << "Query failed (null result): " << query.substr(0, 100) << std::endl;
+            PE_ERROR("Query failed (null result): " << query.substr(0, 100));
             return false;
         }
         
         ExecStatusType status = PQresultStatus(res);
         
         if (status != PGRES_COMMAND_OK && status != PGRES_TUPLES_OK) {
-            std::cerr << "Query failed: " << PQerrorMessage(conn_) << std::endl;
-            std::cerr << "Query (first 200 chars): " << query.substr(0, 200) << std::endl;
+            PE_ERROR("Query failed: " << PQerrorMessage(conn_));
+            PE_ERROR("Query (first 200 chars): " << query.substr(0, 200));
             PQclear(res);
             return false;
         }
@@ -566,8 +566,8 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
             std::string keyword = queryJson["keyword"].get<std::string>();
             
             // DEBUG: Log keyword details
-            std::cout << "[DEBUG] Keyword search - Original keyword: " << keyword << std::endl;
-            std::cout << "[DEBUG] Keyword length: " << keyword.length() << " bytes" << std::endl;
+            PE_INFO("[DEBUG] Keyword search - Original keyword: " << keyword);
+            PE_INFO("[DEBUG] Keyword length: " << keyword.length() << " bytes");
             
             // Apply multi-field search with case-insensitive matching for both ASCII and Unicode
             if (!keyword.empty()) {
@@ -583,7 +583,7 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
                 std::string escapedKeyword = escapeStringForSQL(pImpl_->conn_, keyword);
                 
                 // DEBUG: Log escaped keyword
-                std::cout << "[DEBUG] Escaped keyword: " << escapedKeyword << std::endl;
+                PE_INFO("[DEBUG] Escaped keyword: " << escapedKeyword);
                 
                 // Check if keyword contains non-ASCII characters (e.g., Chinese)
                 bool hasNonASCII = false;
@@ -594,7 +594,7 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
                     }
                 }
                 
-                std::cout << "[DEBUG] Has non-ASCII characters: " << (hasNonASCII ? "YES (Unicode/Chinese)" : "NO (ASCII)") << std::endl;
+                PE_INFO("[DEBUG] Has non-ASCII characters: " << (hasNonASCII ? "YES (Unicode/Chinese)" : "NO (ASCII)"));
                 
                 for (const auto& field : searchFields) {
                     if (hasNonASCII) {
@@ -622,7 +622,7 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
                     conditions.push_back(combined);
                     
                     // DEBUG: Log search condition
-                    std::cout << "[DEBUG] Search condition: " << combined.substr(0, 200) << "..." << std::endl;
+                    PE_INFO("[DEBUG] Search condition: " << combined.substr(0, 200) << "...");
                 }
             }
             
@@ -647,9 +647,9 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
                 std::strftime(start_buf, sizeof(start_buf), "%Y-%m-%d %H:%M:%S", &start_tm);
                 std::strftime(end_buf, sizeof(end_buf), "%Y-%m-%d %H:%M:%S", &end_tm);
                 
-                std::cout << "[DEBUG] Time range query (Local Time):" << std::endl;
-                std::cout << "  startTime: " << startTime << " ms -> " << start_buf << std::endl;
-                std::cout << "  endTime:   " << endTime << " ms -> " << end_buf << std::endl;
+                PE_INFO("[DEBUG] Time range query (Local Time):");
+                PE_INFO("  startTime: " << startTime << " ms -> " << start_buf);
+                PE_INFO("  endTime:   " << endTime << " ms -> " << end_buf);
             }
             
             // Handle compressed filter (default: only uncompressed)
@@ -865,7 +865,7 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
     sqlQuery << " ORDER BY timestamp " << sortOrder << " LIMIT " << size << " OFFSET " << from << ";";
     
     // DEBUG: Print generated SQL
-    std::cout << "[DEBUG] Generated SQL: " << sqlQuery.str() << std::endl;
+    PE_INFO("[DEBUG] Generated SQL: " << sqlQuery.str());
     
     PGresult* res = nullptr;
     if (!pImpl_->executeQuery(sqlQuery.str(), &res)) {
@@ -881,7 +881,7 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
     auto searchEndTime = std::chrono::steady_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(searchEndTime - searchStartTime);
     result.searchTimeMs = static_cast<long>(duration.count());
-    std::cout << "[DEBUG] PostgreSQL Search completed in " << result.searchTimeMs << " ms" << std::endl;
+    PE_INFO("[DEBUG] PostgreSQL Search completed in " << result.searchTimeMs << " ms");
 
     PQclear(res);
     return result;
@@ -1184,16 +1184,16 @@ SearchResult PostgreSQLClient::fuzzySearch(
           << " LIMIT " << size << " OFFSET " << from << ";";
     
     // DEBUG: Print generated SQL
-    std::cout << "[DEBUG fuzzySearch] SQL: " << query.str() << std::endl;
+    PE_INFO("[DEBUG fuzzySearch] SQL: " << query.str());
     
     PGresult* res = nullptr;
     if (!pImpl_->executeQuery(query.str(), &res)) {
-        std::cerr << "[ERROR fuzzySearch] Query failed!" << std::endl;
+        PE_ERROR("[ERROR fuzzySearch] Query failed!");
         return result;
     }
     
     int rows = PQntuples(res);
-    std::cout << "[DEBUG fuzzySearch] Returned " << rows << " rows" << std::endl;
+    PE_INFO("[DEBUG fuzzySearch] Returned " << rows << " rows");
     
     for (int i = 0; i < rows; ++i) {
         result.events.push_back(pImpl_->resultToEvent(res, i));
@@ -1203,7 +1203,7 @@ SearchResult PostgreSQLClient::fuzzySearch(
     auto searchEndTime = std::chrono::steady_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(searchEndTime - searchStartTime);
     result.searchTimeMs = static_cast<long>(duration.count());
-    std::cout << "[DEBUG] PostgreSQL Search completed in " << result.searchTimeMs << " ms" << std::endl;
+    PE_INFO("[DEBUG] PostgreSQL Search completed in " << result.searchTimeMs << " ms");
 
     PQclear(res);
     return result;
@@ -1214,54 +1214,53 @@ bool PostgreSQLClient::ensureDatabaseExists() {
     std::string dbName = pImpl_->parseDbName();
     
     if (dbName.empty()) {
-        std::cerr << "[PostgreSQL] Failed to parse database name from connection string" << std::endl;
+        PE_ERROR("[PostgreSQL] Failed to parse database name from connection string");
         return false;
     }
     
     // If database is 'postgres', assume it exists
     if (dbName == "postgres") {
-        std::cout << "[PostgreSQL] Using default 'postgres' database" << std::endl;
+        PE_INFO("[PostgreSQL] Using default 'postgres' database");
         return true;
     }
     
     // Try to connect to the target database
-    std::cout << "[PostgreSQL] Attempting to connect to database: " << dbName << std::endl;
+    PE_INFO("[PostgreSQL] Attempting to connect to database: " << dbName);
     
     if (pImpl_->connect()) {
-        std::cout << "[PostgreSQL] ✓ Successfully connected to database: " << dbName << std::endl;
+        PE_INFO("[PostgreSQL] ✓ Successfully connected to database: " << dbName);
         return true;
     }
     
     // Connection failed - database might not exist
-    std::cout << "\n========================================" << std::endl;
-    std::cout << "DATABASE '" << dbName << "' MAY NOT EXIST" << std::endl;
-    std::cout << "========================================" << std::endl;
-    std::cout << "\nAttempting to create database automatically...\n" << std::endl;
+    PE_INFO("\n========================================");
+    PE_INFO("DATABASE '" << dbName << "' MAY NOT EXIST");
+    PE_INFO("========================================");
+    PE_INFO("\nAttempting to create database automatically...\n");
     
     // Build connection string to 'postgres' database (always exists)
     std::string postgresConnStr = pImpl_->buildPostgresConnStr();
     
     // Create temporary connection to 'postgres' database
-    std::cout << "[PostgreSQL] Connecting to 'postgres' database..." << std::endl;
+    PE_INFO("[PostgreSQL] Connecting to 'postgres' database...");
     PGconn* tempConn = PQconnectdb(postgresConnStr.c_str());
     
     if (PQstatus(tempConn) != CONNECTION_OK) {
-        std::cerr << "[PostgreSQL] Failed to connect to 'postgres' database: " 
-                  << PQerrorMessage(tempConn) << std::endl;
-        std::cerr << "\nPlease create the database manually:" << std::endl;
-        std::cerr << "  psql -h 127.0.0.1 -p 5432 -U postgres -d postgres" << std::endl;
-        std::cerr << "  CREATE DATABASE " << dbName << " WITH ENCODING 'UTF8';" << std::endl;
-        std::cerr << "  \\q" << std::endl;
+        PE_ERROR("[PostgreSQL] Failed to connect to 'postgres' database: " << PQerrorMessage(tempConn));
+        PE_ERROR("\nPlease create the database manually:");
+        PE_ERROR("  psql -h 127.0.0.1 -p 5432 -U postgres -d postgres");
+        PE_ERROR("  CREATE DATABASE " << dbName << " WITH ENCODING 'UTF8';");
+        PE_ERROR("  \\q");
         
         PQfinish(tempConn);
         return false;
     }
     
-    std::cout << "[PostgreSQL] ✓ Successfully connected to 'postgres' database" << std::endl;
+    PE_INFO("[PostgreSQL] ✓ Successfully connected to 'postgres' database");
     
     // Execute CREATE DATABASE command
     std::string createDbQuery = "CREATE DATABASE " + dbName + " WITH ENCODING 'UTF8'";
-    std::cout << "[PostgreSQL] Executing: " << createDbQuery << std::endl;
+    PE_INFO("[PostgreSQL] Executing: " << createDbQuery);
     
     PGresult* res = PQexec(tempConn, createDbQuery.c_str());
     bool dbCreated = false;
@@ -1274,10 +1273,10 @@ bool PostgreSQLClient::ensureDatabaseExists() {
             std::string errorMsg = PQerrorMessage(tempConn);
             // Check if error is "database already exists"
             if (errorMsg.find("already exists") != std::string::npos) {
-                std::cout << "[PostgreSQL] Database already exists (created by another process)" << std::endl;
+                PE_INFO("[PostgreSQL] Database already exists (created by another process)");
                 dbCreated = true;
             } else {
-                std::cerr << "[PostgreSQL] Failed to create database: " << errorMsg << std::endl;
+                PE_ERROR("[PostgreSQL] Failed to create database: " << errorMsg);
             }
         }
         
@@ -1288,23 +1287,22 @@ bool PostgreSQLClient::ensureDatabaseExists() {
     PQfinish(tempConn);
     
     if (!dbCreated) {
-        std::cerr << "\nPlease create the database manually:" << std::endl;
-        std::cerr << "  psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -c \"CREATE DATABASE " 
-                  << dbName << " WITH ENCODING 'UTF8';\"" << std::endl;
+        PE_ERROR("\nPlease create the database manually:");
+        PE_ERROR("  psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -c \"CREATE DATABASE " << dbName << " WITH ENCODING 'UTF8';\"");
         return false;
     }
     
-    std::cout << "[PostgreSQL] ✓ Database '" << dbName << "' created successfully!" << std::endl;
+    PE_INFO("[PostgreSQL] ✓ Database '" << dbName << "' created successfully!");
     
     // Now reconnect to the newly created database
-    std::cout << "[PostgreSQL] Reconnecting to new database..." << std::endl;
+    PE_INFO("[PostgreSQL] Reconnecting to new database...");
     
     if (!pImpl_->connect()) {
-        std::cerr << "[PostgreSQL] Failed to reconnect to newly created database" << std::endl;
+        PE_ERROR("[PostgreSQL] Failed to reconnect to newly created database");
         return false;
     }
     
-    std::cout << "[PostgreSQL] ✓ Successfully reconnected to database: " << dbName << std::endl;
+    PE_INFO("[PostgreSQL] ✓ Successfully reconnected to database: " << dbName);
     return true;
 }
 

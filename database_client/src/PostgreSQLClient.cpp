@@ -489,8 +489,10 @@ std::string PostgreSQLClient::indexDocument(const std::string& tableName,
     sysInfo["network_type"] = event.systemInfo.networkType;
     if (event.systemInfo.locationLat) 
         sysInfo["location_lat"] = *event.systemInfo.locationLat;
-    if (event.systemInfo.locationLon) 
+    if (event.systemInfo.locationLon)
         sysInfo["location_lon"] = *event.systemInfo.locationLon;
+    if (event.systemInfo.locationDescription)
+        sysInfo["location_description"] = *event.systemInfo.locationDescription;
     if (event.systemInfo.cpuUsage) 
         sysInfo["cpu_usage"] = *event.systemInfo.cpuUsage;
     if (event.systemInfo.memoryUsage) 

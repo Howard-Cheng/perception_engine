@@ -68,12 +68,12 @@ void SystemContextProvider::collectContext(nlohmann::json& context) const {
         context["locationLat"] = location_.latitude;
         context["locationLon"] = location_.longitude;
         context["locationValid"] = true;
-        context["description"] = location_.description;
+        context["locationDescription"] = location_.description;
     } else {
         context["locationLat"] = nullptr;
         context["locationLon"] = nullptr;
         context["locationValid"] = false;
-        context["description"] = nullptr;
+        context["locationDescription"] = nullptr;
     }
     
     // Timestamp

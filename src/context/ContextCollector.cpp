@@ -383,9 +383,11 @@ database::RawEvent ContextCollector::jsonContextToRawEvent(const nlohmann::json&
             context.contains("locationLon") && !context["locationLon"].is_null()) {
             double lat = context["locationLat"].get<double>();
             double lon = context["locationLon"].get<double>();
+            std::string description = context["locationDescription"].get<std::string>();
             if (lat != 0.0 || lon != 0.0) {
                 event.systemInfo.locationLat = lat;
                 event.systemInfo.locationLon = lon;
+                event.systemInfo.locationDescription = description;
             }
         }
     }
@@ -462,7 +464,8 @@ nlohmann::json ContextCollector::GetESDBData(const std::string& keyword,
             if (event.systemInfo.locationLat.has_value() && event.systemInfo.locationLon.has_value()) {
                 eventJson["location"] = {
                     {"lat", event.systemInfo.locationLat.value()},
-                    {"lon", event.systemInfo.locationLon.value()}
+                    {"lon", event.systemInfo.locationLon.value()},
+                    {"description", event.systemInfo.locationDescription.value() }
                 };
             }
 

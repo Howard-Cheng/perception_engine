@@ -47,6 +47,8 @@ target_include_directories(database_client
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
         ${PostgreSQL_INCLUDE_DIRS}
+        # ADD: pe_base include directory for logger.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/../pe_base/include
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
@@ -57,6 +59,8 @@ target_link_libraries(database_client
         CURL::libcurl
         nlohmann_json::nlohmann_json
         ${PostgreSQL_LIBRARIES}
+        # ADD: Link to pe_base library for logger
+        pe_base
 )
 
 # Compiler definitions for DLL export
@@ -176,6 +180,7 @@ endif()
 message(STATUS "Database Client DLL configured")
 message(STATUS "  Output: ${CMAKE_BINARY_DIR}/bin/database_client.dll")
 message(STATUS "  Supported databases: Elasticsearch, PostgreSQL, MeiliSearch (MongoDB - planned)")
+message(STATUS "  pe_base logger dependency: ENABLED")
 
 # Optional: Build tests
 option(BUILD_TESTS "Build test programs" ON)

@@ -474,6 +474,11 @@ int ConfigManager::GetPostgreSQLMaxundeletelength() const {
     return config_.value("postgresql", nlohmann::json::object()).value("maxundeletelength", 100);
 }
 
+float ConfigManager::GetPostgreSQLOutofdatehour() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.value("postgresql", nlohmann::json::object()).value("outofdatehour", 24.0f);
+}
+
 std::string ConfigManager::GetPostgreSQLTable() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return config_.value("postgresql", nlohmann::json::object()).value("table", "perception_context");

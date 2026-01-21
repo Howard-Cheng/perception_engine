@@ -128,6 +128,8 @@ int main(int argc, char* argv[]) {
         config.pg_user = configManager.GetPostgreSQLUser();
         config.pg_password = configManager.GetPostgreSQLPassword();
         config.pg_table = configManager.GetPostgreSQLTable();
+        config.pg_max_undelete_length = configManager.GetPostgreSQLMaxundeletelength();
+        config.pg_out_of_date_hour = configManager.GetPostgreSQLOutofdatehour();
         
         // Get LLM settings
         config.llm_max_tokens = configManager.GetLLMMaxTokens();
@@ -137,8 +139,6 @@ int main(int argc, char* argv[]) {
         config.qdrant_host = configManager.GetQdrantHost();
         config.qdrant_port = configManager.GetQdrantPort();
         config.qdrant_collection = configManager.GetQdrantCollection();
-		config.pg_max_undelete_length = configManager.GetPostgreSQLMaxundeletelength();
-		config.pg_out_of_date_hour = configManager.GetPostgreSQLOutofdatehour();
         
         PE_INFO("Configuration summary:");
         PE_INFO("  Embedding model: " << config.embedding_model_path);

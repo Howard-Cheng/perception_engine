@@ -65,6 +65,15 @@ ConfigManager::ConfigManager() : loaded_(false) {
     config_["qdrant"]["port"] = 6333;
     config_["qdrant"]["collection"] = "perception_summaries";
 
+    // Onlinelocation settings
+    config_["onlinelocation"]["baseUrl"] = "https://nominatim.openstreetmap.org/reverse";
+    config_["onlinelocation"]["format"] = "json";
+    config_["onlinelocation"]["addressdetails"] = 1;
+    config_["onlinelocation"]["extratags"] = 1;
+    config_["onlinelocation"]["zoom"] = 18;
+    config_["onlinelocation"]["email"] = "lixb18@lenovo.com";
+    config_["onlinelocation"]["accept-language"] = "en";
+
     // Paths
     config_["paths"]["temp_directory"] = "temp";
     config_["paths"]["log_directory"] = "logs";
@@ -289,6 +298,15 @@ bool ConfigManager::SaveConfig(const std::string& configPath) {
         file << "port=" << getInt("qdrant", "port", 6333) << "\n";
         file << "collection=" << getString("qdrant", "collection", "") << "\n";
         
+        file << "\n[onlinelocation]\n";
+        file << "baseUrl=" << getString("onlinelocation", "baseUrl", "") << "\n";
+        file << "format=" << getString("onlinelocation", "format", "") << "\n";
+        file << "addressdetails=" << getInt("onlinelocation", "addressdetails", 1) << "\n";
+        file << "extratags=" << getInt("onlinelocation", "extratags", 1) << "\n";
+        file << "zoom=" << getInt("onlinelocation", "zoom", 18) << "\n";
+        file << "email=" << getString("onlinelocation", "email", "") << "\n";
+        file << "accept-language=" << getString("onlinelocation", "accept-language", "") << "\n";
+        
         file << "\n[paths]\n";
         file << "temp_directory=" << getString("paths", "temp_directory", "") << "\n";
         file << "log_directory=" << getString("paths", "log_directory", "") << "\n";
@@ -509,6 +527,42 @@ int ConfigManager::GetQdrantPort() const {
 std::string ConfigManager::GetQdrantCollection() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return config_.value("qdrant", nlohmann::json::object()).value("collection", "perception_summaries");
+}
+
+// === Onlinelocation Configuration ===
+std::string ConfigManager::GetOnlineLocationBaseUrl() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.value("onlinelocation", nlohmann::json::object()).value("baseUrl", "https://nominatim.openstreetmap.org/reverse");
+}
+
+std::string ConfigManager::GetOnlineLocationFormat() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.value("onlinelocation", nlohmann::json::object()).value("format", "json");
+}
+
+int ConfigManager::GetOnlineLocationAddressDetails() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.value("onlinelocation", nlohmann::json::object()).value("addressdetails", 1);
+}
+
+int ConfigManager::GetOnlineLocationExtraTags() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.value("onlinelocation", nlohmann::json::object()).value("extratags", 1);
+}
+
+int ConfigManager::GetOnlineLocationZoom() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.value("onlinelocation", nlohmann::json::object()).value("zoom", 18);
+}
+
+std::string ConfigManager::GetOnlineLocationEmail() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.value("onlinelocation", nlohmann::json::object()).value("email", "");
+}
+
+std::string ConfigManager::GetOnlineLocationAcceptLanguage() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.value("onlinelocation", nlohmann::json::object()).value("accept-language", "en");
 }
 
 std::string ConfigManager::GetTempDirectory() const {

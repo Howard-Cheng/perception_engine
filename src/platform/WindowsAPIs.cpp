@@ -3,6 +3,7 @@
 #include "platform/BrowserContentExtractor.h"
 #include "utils/AsyncTaskQueue.h"  // ? NEW: Include async task queue
 #include "pe_base/windows_helper.h" // For WideStringToUtf8
+#include "pe_base/config_manager.h"
 #define WIN32_LEAN_AND_MEAN
 #define _WINSOCKAPI_    // Prevent inclusion of winsock.h
 #include <windows.h>
@@ -880,17 +881,34 @@ namespace WindowsAPIs {
 		loc.longitude = lon;
 		loc.valid = true;
 
-        std::string email = "lixb18@lenovo.com";
+        // Get configuration from ConfigManager
+        auto& config = pe_base::ConfigManager::GetInstance();
+        std::string baseUrl = config.GetOnlineLocationBaseUrl();
+        std::string format = config.GetOnlineLocationFormat();
+        int addressDetails = config.GetOnlineLocationAddressDetails();
+        int extraTags = config.GetOnlineLocationExtraTags();
+        int zoom = config.GetOnlineLocationZoom();
+        std::string email = config.GetOnlineLocationEmail();
+        std::string acceptLanguage = config.GetOnlineLocationAcceptLanguage();
+
+        // Build URL with configuration parameters
         std::stringstream url_ss;
-        url_ss << "https://nominatim.openstreetmap.org/reverse?"
+        url_ss << baseUrl << "?"
             << "lat=" << lat
             << "&lon=" << lon
-            << "&format=json"
-            << "&addressdetails=1"
-            << "&extratags=1"
-            << "&zoom=18"
-            << "&email=" << email
-            << "&accept-language=en";
+            << "&format=" << format
+            << "&addressdetails=" << addressDetails
+            << "&extratags=" << extraTags
+            << "&zoom=" << zoom;
+        
+        if (!email.empty()) {
+            url_ss << "&email=" << email;
+        }
+        
+        if (!acceptLanguage.empty()) {
+            url_ss << "&accept-language=" << acceptLanguage;
+        }
+        
         std::string url = url_ss.str();
         std::string response = curlHttpsGet(url);
         if (!response.empty()) {

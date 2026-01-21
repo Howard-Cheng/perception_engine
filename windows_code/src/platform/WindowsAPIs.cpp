@@ -30,6 +30,8 @@
 #include <winrt/base.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Devices.Geolocation.h>
+#include <curl/curl.h>
+#include <nlohmann/json.hpp>
 
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "oleaut32.lib")
@@ -817,6 +819,95 @@ namespace WindowsAPIs {
         }
     }
 
+    size_t writeCallback(void* contents, size_t size, size_t nmemb, std::string* output) {
+        size_t total = size * nmemb;
+        output->append(static_cast<char*>(contents), total);
+        return total;
+    }
+
+    std::string curlHttpsGet(const std::string& url) {
+        CURL* curl = curl_easy_init();
+        std::string response;
+        if (!curl) {
+            return "";
+        }
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+        if (curl_easy_perform(curl) != CURLE_OK) {
+            response = "";
+        }
+        curl_easy_cleanup(curl);
+        return response;
+    }
+
+    Location WindowsAPIsManager::GetOnlineLocation()
+    {
+        Location loc;
+        using namespace winrt;
+        using namespace Windows::Devices::Geolocation;
+        using namespace Windows::Foundation;
+
+        Geolocator locator;
+        locator.DesiredAccuracy(PositionAccuracy::High);
+        locator.ReportInterval(1000);
+        fwprintf(stdout, L"Getting high-precision latitude and longitude... (Please ensure location services are enabled and authorized)\n");
+
+        std::optional<Geoposition> pos_opt;
+        bool location_success = false;
+        for (int retry = 0; retry < 3; ++retry) {
+            try {
+                pos_opt = locator.GetGeopositionAsync().get();
+                location_success = true;
+                break;
+            }
+            catch (const hresult_error&) {
+                fwprintf(stderr, L"Location attempt %d failed, retrying...\n", retry + 1);
+                return loc;
+            }
+        }
+
+        if (!location_success || !pos_opt) {
+            return loc;
+        }
+
+        // 4. Parse latitude and longitude
+        const Geoposition& pos = *pos_opt;
+        double lat = pos.Coordinate().Point().Position().Latitude;
+        double lon = pos.Coordinate().Point().Position().Longitude;
+
+        loc.latitude = lat;
+		loc.longitude = lon;
+		loc.valid = true;
+
+        std::string email = "lixb18@lenovo.com";
+        std::stringstream url_ss;
+        url_ss << "https://nominatim.openstreetmap.org/reverse?"
+            << "lat=" << lat
+            << "&lon=" << lon
+            << "&format=json"
+            << "&addressdetails=1"
+            << "&extratags=1"
+            << "&zoom=18"
+            << "&email=" << email
+            << "&accept-language=en";
+        std::string url = url_ss.str();
+        std::string response = curlHttpsGet(url);
+        if (!response.empty()) {
+            try {
+                auto json = nlohmann::json::parse(response);
+                std::string display_name = json.value("display_name", "");
+                loc.description = display_name;
+            }
+            catch (...) {
+                loc.description = nullptr;
+            }
+        }
+        else {
+            loc.description = nullptr;
+        }
+        return loc;
+    }
 
     std::string GetCurrentTimestamp() {
         try {

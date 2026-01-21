@@ -138,6 +138,7 @@ int main(int argc, char* argv[]) {
         config.qdrant_port = configManager.GetQdrantPort();
         config.qdrant_collection = configManager.GetQdrantCollection();
 		config.pg_max_undelete_length = configManager.GetPostgreSQLMaxundeletelength();
+		config.pg_out_of_date_hour = configManager.GetPostgreSQLOutofdatehour();
         
         PE_INFO("Configuration summary:");
         PE_INFO("  Embedding model: " << config.embedding_model_path);

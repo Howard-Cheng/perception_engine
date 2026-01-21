@@ -273,15 +273,15 @@ std::vector<database::RawEvent> LinguaCore::queryUnsummarizedEvents(
     
 	//database::SearchResult result;
     std::time_t now = std::time(nullptr);
-    std::time_t time_24h_ago = now - 24 * 60 * 60;
-    database::PostgreSQLClient* pg_clienter = 
-		dynamic_cast<database::PostgreSQLClient*>(pg_client_.get());
-	int cntOverADay = pg_clienter->countOlderThan(
-		config_.pg_table, time_24h_ago);
+    std::time_t time_to_del = now - static_cast<int>(config_.pg_out_of_date_hour * 60 * 60);
+    database::PostgreSQLClient* pg_clienter =
+        dynamic_cast<database::PostgreSQLClient*>(pg_client_.get());
+    int cntOverADay = pg_clienter->countOlderThan(
+        config_.pg_table, time_to_del);
     if (cntOverADay > config_.pg_max_undelete_length)
     {
         pg_clienter->deleteOlderThan(
-			config_.pg_table, time_24h_ago);
+            config_.pg_table, time_to_del);
     }
 
     try {

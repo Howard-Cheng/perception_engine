@@ -80,6 +80,17 @@ public:
     int GetQdrantPort() const;
     std::string GetQdrantCollection() const;
 
+	// === Onlinelocation Configuration ===
+	std::string GetOnlineLocationBaseUrl() const;
+	std::string GetOnlineLocationFormat() const;
+	int GetOnlineLocationAddressDetails() const;
+	int GetOnlineLocationExtraTags() const;
+	int GetOnlineLocationZoom() const;
+	std::string GetOnlineLocationEmail() const;
+	std::string GetOnlineLocationAcceptLanguage() const;
+
+	
+
     // === Runtime Paths ===
     std::string GetTempDirectory() const;
     std::string GetLogDirectory() const;

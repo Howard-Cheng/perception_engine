@@ -90,6 +90,8 @@ vectordb/tests/
 
 # vector db
 vectordb/cpp_lib/build/
+# test embedding (large model files)
+windows_code/test_embedding/
 pg_data
 postgresql-18.1-2
 collections

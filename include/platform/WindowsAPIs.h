@@ -33,6 +33,7 @@ namespace WindowsAPIs {
         double latitude = 0.0;
         double longitude = 0.0;
         bool valid = false;
+        std::string description="";
     };
 
     // ⚡ NEW: WindowsAPIsManager - Singleton class for managing Windows APIs
@@ -73,6 +74,7 @@ namespace WindowsAPIs {
 
         // Location (optional)
         Location GetLocation();
+		Location GetOnlineLocation();
 
     private:
         WindowsAPIsManager();

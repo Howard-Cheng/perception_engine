@@ -51,6 +51,7 @@ message(STATUS "")
 
 # Find vcpkg packages
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(curl CONFIG REQUIRED)
 
 # Output directories
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -476,6 +477,9 @@ target_link_libraries(PerceptionEngine PRIVATE
 
     # OpenCV
     ${OPENCV_WORLD_LIB}
+
+    # libcurl for HTTP requests
+    CURL::libcurl
 
     # Windows APIs
     ws2_32      # Winsock

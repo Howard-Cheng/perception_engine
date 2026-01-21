@@ -1,5 +1,7 @@
 #include "providers/SystemContextProvider.h"
 
+#include <sstream>
+
 bool SystemContextProvider::initialize() {
     // System APIs are always available
     return true;
@@ -17,7 +19,8 @@ void SystemContextProvider::update() {
     totalMemory_ = WindowsAPIs::GetTotalMemory();
     networkConnected_ = WindowsAPIs::IsNetworkConnected();
     networkType_ = WindowsAPIs::GetNetworkType();
-    location_ = WindowsAPIs::WindowsAPIsManager::GetInstance().GetLocation();
+    //location_ = WindowsAPIs::WindowsAPIsManager::GetInstance().GetLocation();
+    location_ = WindowsAPIs::WindowsAPIsManager::GetInstance().GetOnlineLocation();
     
     // FIX: GetCurrentTimestamp returns std::string, convert to timestamp
     timestamp_ = std::time(nullptr);
@@ -65,10 +68,12 @@ void SystemContextProvider::collectContext(nlohmann::json& context) const {
         context["locationLat"] = location_.latitude;
         context["locationLon"] = location_.longitude;
         context["locationValid"] = true;
+        context["description"] = location_.description;
     } else {
         context["locationLat"] = nullptr;
         context["locationLon"] = nullptr;
         context["locationValid"] = false;
+        context["description"] = nullptr;
     }
     
     // Timestamp

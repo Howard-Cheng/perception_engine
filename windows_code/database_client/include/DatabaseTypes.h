@@ -53,6 +53,7 @@ struct DB_CLIENT_API SystemInfo {
     std::optional<double> locationLon;
     std::optional<double> cpuUsage;
     std::optional<double> memoryUsage;
+    std::optional<std::string> locationDescription;
     
     SystemInfo() : isCharging(false) {}
 };

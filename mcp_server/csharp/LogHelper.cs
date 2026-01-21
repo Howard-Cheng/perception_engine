@@ -41,6 +41,33 @@ internal static class LogHelper
         logger.LogInformation($"[{fileName}:{lineNumber}] {message}", arg1, arg2);
     }
 
+    public static void LogInformationWithCaller(
+        this ILogger logger,
+        string message,
+        object arg1,
+        object arg2,
+        object arg3,
+        [CallerFilePath] string filePath = "",
+        [CallerLineNumber] int lineNumber = 0)
+    {
+        var fileName = Path.GetFileName(filePath);
+        logger.LogInformation($"[{fileName}:{lineNumber}] {message}", arg1, arg2, arg3);
+    }
+
+    public static void LogInformationWithCaller(
+        this ILogger logger,
+        string message,
+        object arg1,
+        object arg2,
+        object arg3,
+        object arg4,
+        [CallerFilePath] string filePath = "",
+        [CallerLineNumber] int lineNumber = 0)
+    {
+        var fileName = Path.GetFileName(filePath);
+        logger.LogInformation($"[{fileName}:{lineNumber}] {message}", arg1, arg2, arg3, arg4);
+    }
+
     public static void LogErrorWithCaller(
         this ILogger logger,
         Exception ex,

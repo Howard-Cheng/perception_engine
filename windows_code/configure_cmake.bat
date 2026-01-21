@@ -170,6 +170,33 @@ if not exist "%BUILD_DIR%" (
 echo.
 
 REM ============================================================================
+REM Detect Visual Studio version
+REM ============================================================================
+
+set "VS_GENERATOR="
+set "VS_VERSION="
+
+
+REM Check for Visual Studio 2026
+set "VS2026_PATH=C:\Program Files\Microsoft Visual Studio\18"
+if exist "%VS2026_PATH%" (
+    set "VS_GENERATOR=Visual Studio 18 2026"
+    set "VS_VERSION=2026"
+    echo [OK] Visual Studio 2026 detected
+    goto :vs_found
+)
+
+REM Visual Studio not found
+echo [ERROR] Neither Visual Studio 2022 nor 2026 found!
+echo Please install Visual Studio 2022 or 2026 with C++ development tools.
+pause
+exit /b 1
+
+:vs_found
+echo     Using generator: !VS_GENERATOR!
+echo.
+
+REM ============================================================================
 REM Run CMake configuration
 REM ============================================================================
 
@@ -177,13 +204,13 @@ echo [INFO] Running CMake configuration...
 echo.
 echo CMake command:
 echo   cmake -B "%BUILD_DIR%" -S . ^
-echo         -G "Visual Studio 17 2022" ^
+echo         -G "!VS_GENERATOR!" ^
 echo         -A x64 ^
 echo         -DCMAKE_TOOLCHAIN_FILE="%VCPKG_TOOLCHAIN%"
 echo.
 
 cmake -B "%BUILD_DIR%" -S . ^
-      -G "Visual Studio 17 2022" ^
+      -G "!VS_GENERATOR!" ^
       -A x64 ^
       -DCMAKE_TOOLCHAIN_FILE="%VCPKG_TOOLCHAIN%"
 
@@ -213,7 +240,7 @@ if "!CMAKE_EXIT_CODE!"=="0" (
     echo [ERROR] CMake configuration failed!
     echo.
     echo Possible issues:
-    echo   - Visual Studio 2022 not installed
+    echo   - Visual Studio 2022 or 2026 not installed
     echo   - Missing dependencies (whisper.lib, ONNX Runtime, OpenCV)
     echo   - Check CMakeLists.txt for required paths
     echo.

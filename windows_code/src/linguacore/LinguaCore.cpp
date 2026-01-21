@@ -11,6 +11,7 @@
 #include "LLMClient.h"
 #include "VectorStore.h"
 #include "QdrantClient.h"
+#include "PostgreSQLClient.h"
 
 #include <windows.h>
 #include <fstream>
@@ -270,6 +271,19 @@ std::vector<database::RawEvent> LinguaCore::queryUnsummarizedEvents(
     // NEW: Sort by timestamp ascending (oldest first) for chronological processing
     query["sortOrder"] = "asc";  // "asc" for oldest first, "desc" for newest first
     
+	//database::SearchResult result;
+    std::time_t now = std::time(nullptr);
+    std::time_t time_to_del = now - static_cast<int>(config_.pg_out_of_date_hour * 60 * 60);
+    database::PostgreSQLClient* pg_clienter =
+        dynamic_cast<database::PostgreSQLClient*>(pg_client_.get());
+    int cntOverADay = pg_clienter->countOlderThan(
+        config_.pg_table, time_to_del);
+    if (cntOverADay > config_.pg_max_undelete_length)
+    {
+        pg_clienter->deleteOlderThan(
+            config_.pg_table, time_to_del);
+    }
+
     try {
         // Call search with PostgreSQL client
         // PostgreSQL returns events ordered by timestamp ASC (oldest first)

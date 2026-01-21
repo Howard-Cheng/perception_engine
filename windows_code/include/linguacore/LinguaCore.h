@@ -43,6 +43,8 @@ struct LinguaCoreConfig {
     std::string pg_user = "postgres";
     std::string pg_password = "";
     std::string pg_table = "perception_context";
+	int pg_max_undelete_length = 100;
+    float pg_out_of_date_hour = 24.0f;
     
     // Check interval
     int check_interval_seconds = 60;  // Default 1 minute

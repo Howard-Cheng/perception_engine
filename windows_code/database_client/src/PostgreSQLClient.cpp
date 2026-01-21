@@ -1006,7 +1006,7 @@ bool PostgreSQLClient::markEventsAsCompressedWithSimilarity(
 int PostgreSQLClient::deleteOlderThan(const std::string& tableName,
                                      std::time_t cutoffTime) {
     std::ostringstream query;
-    query << "DELETE FROM " << tableName 
+    query << "DELETE FROM " << tableName
           << " WHERE timestamp < " << escapeString(pImpl_->conn_, timestampToPostgreSQL(cutoffTime))
           << ";";
     
@@ -1020,6 +1020,45 @@ int PostgreSQLClient::deleteOlderThan(const std::string& tableName,
     
     PQclear(res);
     return deleted;
+}
+
+int PostgreSQLClient::findOlderThan(std::string tableName,
+    std::time_t cutoffTime, SearchResult& result)
+{
+    std::ostringstream query;
+    query << "SELECT FROM " << tableName
+        << " WHERE timestamp < " << escapeString(pImpl_->conn_, timestampToPostgreSQL(cutoffTime))
+        << ";";
+    PGresult* res = nullptr;
+    if (!pImpl_->executeQuery(query.str(), &res)) {
+        return 0;
+    }
+
+	int rows = PQntuples(res);
+	for (int i = 0; i < rows; ++i) {
+		result.events.push_back(pImpl_->resultToEvent(res, i));
+	}
+	result.totalHits = rows;
+
+    return rows;
+}
+
+int PostgreSQLClient::countOlderThan(std::string tableName,
+    std::time_t cutoffTime)
+{
+    std::ostringstream query;
+    query << "SELECT FROM " << tableName
+        << " WHERE timestamp < " << escapeString(pImpl_->conn_, timestampToPostgreSQL(cutoffTime))
+        << ";";
+    PGresult* res = nullptr;
+    if (!pImpl_->executeQuery(query.str(), &res)) {
+        return 0;
+    }
+
+    int rows = PQntuples(res);
+    
+
+    return rows;
 }
 
 bool PostgreSQLClient::refreshCollection(const std::string& tableName) {

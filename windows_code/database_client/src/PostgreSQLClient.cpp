@@ -11,6 +11,7 @@
 #include <vector>
 #include <set>
 #include <map>
+#include <fstream>
 
 using json = nlohmann::json;
 
@@ -415,6 +416,7 @@ bool PostgreSQLClient::initializeCollection(const std::string& tableName) {
         PE_INFO("[PostgreSQL] Warning: Could not create pg_trgm extension (may require superuser privileges). Fuzzy search will be limited.");
     }
     
+    
     // Define expected columns with their types and defaults
 // Format: {column_name, {data_type, character_maximum_length (0 if N/A), is_nullable, default_value, extra_constraints}}
 struct ColumnDef {
@@ -425,16 +427,80 @@ struct ColumnDef {
     std::string defaultValue;    // Default value (empty if none)
     std::string extraConstraints; // e.g., "PRIMARY KEY"
 };
-    
-std::vector<ColumnDef> expectedColumns = {
-    {"event_id",              "character varying", 255, false, "",       "PRIMARY KEY"},
-    {"timestamp",             "timestamp without time zone", 0, false, "", ""},
-    {"created_at",            "timestamp without time zone", 0, false, "", ""},
-    {"device_id",             "character varying", 255, false, "",       ""},
-    {"app_name",              "character varying", 255, false, "",       ""},
-    {"window_title",          "text",              0,   true,  "",       ""},
-    {"url",                   "text",              0,   true,  "",       ""},
-    {"screen_content",        "text",              0,   true,  "",       ""},
+
+// Define indexes with their properties for dynamic creation
+struct IndexDef {
+    std::string columnName;
+    std::string indexType;      // "btree", "gin", "gist", etc.
+    std::string indexMethod;    // "", "trgm", "tsvector"
+    std::string language;       // For tsvector, e.g., "english"
+};
+
+std::vector<ColumnDef> expectedColumns;
+std::vector<IndexDef> expectedIndexes;
+
+// Try to load from db_structure.ini config file
+bool configLoaded = false;
+std::ifstream configFile("db_structure.ini");
+if (configFile.is_open()) {
+    try {
+        json config;
+        configFile >> config;
+        configFile.close();
+        
+        // Parse columns
+        if (config.contains("columns") && config["columns"].is_array()) {
+            for (const auto& col : config["columns"]) {
+                ColumnDef colDef;
+                colDef.name = col.value("name", "");
+                colDef.dataType = col.value("dataType", "");
+                colDef.maxLength = col.value("maxLength", 0);
+                colDef.nullable = col.value("nullable", true);
+                colDef.defaultValue = col.value("defaultValue", "");
+                colDef.extraConstraints = col.value("extraConstraints", "");
+                if (!colDef.name.empty() && !colDef.dataType.empty()) {
+                    expectedColumns.push_back(colDef);
+                }
+            }
+        }
+        
+        // Parse indexes
+        if (config.contains("indexes") && config["indexes"].is_array()) {
+            for (const auto& idx : config["indexes"]) {
+                IndexDef idxDef;
+                idxDef.columnName = idx.value("columnName", "");
+                idxDef.indexType = idx.value("indexType", "btree");
+                idxDef.indexMethod = idx.value("indexMethod", "");
+                idxDef.language = idx.value("language", "");
+                if (!idxDef.columnName.empty()) {
+                    expectedIndexes.push_back(idxDef);
+                }
+            }
+        }
+        
+        if (!expectedColumns.empty()) {
+            configLoaded = true;
+            PE_INFO("[PostgreSQL] Loaded db_structure.ini with " << expectedColumns.size() 
+                   << " columns and " << expectedIndexes.size() << " indexes");
+        }
+    } catch (const std::exception& e) {
+        PE_ERROR("[PostgreSQL] Failed to parse db_structure.ini: " << e.what());
+    }
+} else {
+    PE_INFO("[PostgreSQL] db_structure.ini not found, using default schema definition");
+}
+
+// Use default values if config file not loaded or parsing failed
+if (!configLoaded) {
+    expectedColumns = {
+        {"event_id",              "character varying", 255, false, "",       "PRIMARY KEY"},
+        {"timestamp",             "timestamp without time zone", 0, false, "", ""},
+        {"created_at",            "timestamp without time zone", 0, false, "", ""},
+        {"device_id",             "character varying", 255, false, "",       ""},
+        {"app_name",              "character varying", 255, false, "",       ""},
+        {"window_title",          "text",              0,   true,  "",       ""},
+        {"url",                   "text",              0,   true,  "",       ""},
+        {"screen_content",        "text",              0,   true,  "",       ""},
         {"screen_content_hash",   "character varying", 64,  true,  "",       ""},
         {"similar_screen_content","text",              0,   true,  "",       ""},
         {"voice_transcription",   "text",              0,   true,  "",       ""},
@@ -450,6 +516,20 @@ std::vector<ColumnDef> expectedColumns = {
         {"mouse_events",          "jsonb",             0,   true,  "",       ""},
         {"system_info",           "jsonb",             0,   true,  "",       ""}
     };
+    
+    expectedIndexes = {
+        {"timestamp",      "btree", "",        ""},
+        {"app_name",       "btree", "",        ""},
+        {"compressed",     "btree", "",        ""},
+        {"summarized",     "btree", "",        ""},
+        {"session_id",     "btree", "",        ""},
+        {"screen_content", "gin",   "tsvector", "english"},
+        {"screen_content", "gin",   "trgm",    ""},
+        {"window_title",   "gin",   "trgm",    ""},
+        {"app_name",       "gin",   "trgm",    ""},
+        {"audio_content",  "gin",   "trgm",    ""}
+    };
+}
     
     // Helper lambda to build column definition string for CREATE TABLE
     // Note: Column names are quoted with double quotes to handle reserved words like "timestamp", "domain"
@@ -666,34 +746,37 @@ std::vector<ColumnDef> expectedColumns = {
         } else {
             PE_INFO("[PostgreSQL] Schema is up to date.");
         }
+        
+        // Delete extra columns that are not in expectedColumns
+        // Build a set of expected column names for quick lookup
+        std::set<std::string> expectedColumnNames;
+        for (const auto& col : expectedColumns) {
+            expectedColumnNames.insert(col.name);
+        }
+        
+        int deletedColumns = 0;
+        for (const auto& existingCol : existingColumns) {
+            if (expectedColumnNames.find(existingCol.first) == expectedColumnNames.end()) {
+                // This column is not in the expected list - delete it
+                std::string dropQuery = "ALTER TABLE " + tableName + 
+                                       " DROP COLUMN IF EXISTS \"" + existingCol.first + "\";";
+                
+                if (pImpl_->executeQuery(dropQuery)) {
+                    PE_INFO("[PostgreSQL] Deleted extra column: " << existingCol.first);
+                    deletedColumns++;
+                } else {
+                    PE_ERROR("[PostgreSQL] Failed to delete column: " << existingCol.first);
+                }
+            }
+        }
+        
+        if (deletedColumns > 0) {
+            PE_INFO("[PostgreSQL] Deleted " << deletedColumns << " extra column(s).");
+        }
     }
     
-    // Define indexes with their properties for dynamic creation
-    // Format: {column_name, index_type, index_method, extra_expression}
-    // index_type: "btree" (default), "gin", "gist", etc.
-    // index_method: "" (column only), "trgm" (trigram), "tsvector" (full-text)
-    struct IndexDef {
-        std::string columnName;
-        std::string indexType;      // "btree", "gin", "gist", etc.
-        std::string indexMethod;    // "", "trgm", "tsvector"
-        std::string language;       // For tsvector, e.g., "english"
-    };
-    
-    std::vector<IndexDef> expectedIndexes = {
-        // Basic B-tree indexes for common queries
-        {"timestamp",      "btree", "",        ""},
-        {"app_name",       "btree", "",        ""},
-        {"compressed",     "btree", "",        ""},
-        {"summarized",     "btree", "",        ""},
-        {"session_id",     "btree", "",        ""},
-        // Full-text search index (GIN with tsvector)
-        {"screen_content", "gin",   "tsvector", "english"},
-        // Trigram indexes for fuzzy search (GIN with pg_trgm)
-        {"screen_content", "gin",   "trgm",    ""},
-        {"window_title",   "gin",   "trgm",    ""},
-        {"app_name",       "gin",   "trgm",    ""},
-        {"audio_content",  "gin",   "trgm",    ""}
-    };
+    // Build a set of expected index names for cleanup
+    std::set<std::string> expectedIndexNames;
     
     // Build and execute index creation queries
     for (const auto& idx : expectedIndexes) {
@@ -725,7 +808,45 @@ std::vector<ColumnDef> expectedColumns = {
             }
         }
         
+        expectedIndexNames.insert(indexName);
         pImpl_->executeQuery(indexQuery);
+    }
+    
+    // Delete extra indexes that are not in expectedIndexes
+    // Query existing indexes for this table (excluding primary key and unique constraints)
+    std::string indexListQuery = 
+        "SELECT indexname FROM pg_indexes "
+        "WHERE tablename = '" + tableName + "' "
+        "AND schemaname = 'public' "
+        "AND indexname LIKE 'idx_" + tableName + "_%';";
+    
+    PGresult* indexRes = nullptr;
+    if (pImpl_->executeQuery(indexListQuery, &indexRes)) {
+        int indexRows = PQntuples(indexRes);
+        int deletedIndexes = 0;
+        
+        for (int i = 0; i < indexRows; ++i) {
+            std::string existingIndexName = PQgetvalue(indexRes, i, 0);
+            
+            // Check if this index is in the expected list
+            if (expectedIndexNames.find(existingIndexName) == expectedIndexNames.end()) {
+                // This index is not in the expected list - delete it
+                std::string dropIndexQuery = "DROP INDEX IF EXISTS \"" + existingIndexName + "\";";
+                
+                if (pImpl_->executeQuery(dropIndexQuery)) {
+                    PE_INFO("[PostgreSQL] Deleted extra index: " << existingIndexName);
+                    deletedIndexes++;
+                } else {
+                    PE_ERROR("[PostgreSQL] Failed to delete index: " << existingIndexName);
+                }
+            }
+        }
+        
+        if (deletedIndexes > 0) {
+            PE_INFO("[PostgreSQL] Deleted " << deletedIndexes << " extra index(es).");
+        }
+        
+        PQclear(indexRes);
     }
     
     return true;

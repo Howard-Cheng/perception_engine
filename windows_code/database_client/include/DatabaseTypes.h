@@ -103,6 +103,7 @@ struct DB_CLIENT_API RawEvent {
     // Multimodal data
     std::optional<std::string> voiceTranscription;
     std::optional<std::string> cameraDescription;
+    std::optional<std::string> audioContent;  // Audio content text
     
     // Interaction signals
     std::vector<MouseEvent> mouseEvents;

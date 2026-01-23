@@ -10,6 +10,7 @@
 #include <chrono>
 #include <vector>
 #include <set>
+#include <map>
 
 using json = nlohmann::json;
 
@@ -372,35 +373,77 @@ DatabaseType PostgreSQLClient::getType() const {
     return DatabaseType::POSTGRESQL;
 }
 
+
 bool PostgreSQLClient::initializeCollection(const std::string& tableName) {
     // Enable pg_trgm extension for fuzzy search (if not already enabled)
     pImpl_->executeQuery("CREATE EXTENSION IF NOT EXISTS pg_trgm;");
     
     // Define expected columns with their types and defaults
-    // Format: {column_name, column_definition}
-    std::vector<std::pair<std::string, std::string>> expectedColumns = {
-        {"event_id", "VARCHAR(255) PRIMARY KEY"},
-        {"timestamp", "TIMESTAMP NOT NULL"},
-        {"created_at", "TIMESTAMP NOT NULL"},
-        {"device_id", "VARCHAR(255) NOT NULL"},
-        {"app_name", "VARCHAR(255) NOT NULL"},
-        {"window_title", "TEXT"},
-        {"url", "TEXT"},
-        {"screen_content", "TEXT"},
-        {"screen_content_hash", "VARCHAR(64)"},
-        {"similar_screen_content", "TEXT"},
-        {"voice_transcription", "TEXT"},
-        {"camera_description", "TEXT"},
-        {"audio_content", "TEXT"},
-        {"session_id", "VARCHAR(255)"},
-        {"content_type", "VARCHAR(50)"},
-        {"domain", "VARCHAR(50)"},
-        {"interaction_count", "INTEGER DEFAULT 0"},
-        {"dwell_time_seconds", "INTEGER DEFAULT 0"},
-        {"compressed", "BOOLEAN DEFAULT FALSE"},
-        {"summarized", "BOOLEAN DEFAULT FALSE"},
-        {"mouse_events", "JSONB"},
-        {"system_info", "JSONB"}
+    // Format: {column_name, {data_type, character_maximum_length (0 if N/A), is_nullable, default_value, extra_constraints}}
+    struct ColumnDef {
+        std::string name;
+        std::string dataType;        // PostgreSQL data type (lowercase)
+        int maxLength;               // For varchar, 0 means no limit or N/A
+        bool nullable;               // true = nullable, false = NOT NULL
+        std::string defaultValue;    // Default value (empty if none)
+        std::string extraConstraints; // e.g., "PRIMARY KEY"
+    };
+    
+    std::vector<ColumnDef> expectedColumns = {
+        {"event_id",              "character varying", 255, false, "",       "PRIMARY KEY"},
+        {"timestamp",             "timestamp without time zone", 0, false, "", ""},
+        {"created_at",            "timestamp without time zone", 0, false, "", ""},
+        {"device_id",             "character varying", 255, false, "",       ""},
+        {"app_name",              "character varying", 255, false, "",       ""},
+        {"window_title",          "text",              0,   true,  "",       ""},
+        {"url",                   "text",              0,   true,  "",       ""},
+        {"screen_content",        "text",              0,   true,  "",       ""},
+        {"screen_content_hash",   "character varying", 64,  true,  "",       ""},
+        {"similar_screen_content","text",              0,   true,  "",       ""},
+        {"voice_transcription",   "text",              0,   true,  "",       ""},
+        {"camera_description",    "text",              0,   true,  "",       ""},
+        {"audio_content",         "text",              0,   true,  "",       ""},
+        {"session_id",            "character varying", 255, true,  "",       ""},
+        {"content_type",          "character varying", 50,  true,  "",       ""},
+        {"domain",                "character varying", 50,  true,  "",       ""},
+        {"interaction_count",     "integer",           0,   true,  "0",      ""},
+        {"dwell_time_seconds",    "integer",           0,   true,  "0",      ""},
+        {"compressed",            "boolean",           0,   true,  "false",  ""},
+        {"summarized",            "boolean",           0,   true,  "false",  ""},
+        {"mouse_events",          "jsonb",             0,   true,  "",       ""},
+        {"system_info",           "jsonb",             0,   true,  "",       ""}
+    };
+    
+    // Helper lambda to build column definition string for CREATE TABLE
+    auto buildColumnDef = [](const ColumnDef& col) -> std::string {
+        std::string def = col.name + " ";
+        
+        if (col.dataType == "character varying" && col.maxLength > 0) {
+            def += "VARCHAR(" + std::to_string(col.maxLength) + ")";
+        } else if (col.dataType == "character varying") {
+            def += "VARCHAR(255)";  // Default length
+        } else if (col.dataType == "timestamp without time zone") {
+            def += "TIMESTAMP";
+        } else {
+            // TEXT, INTEGER, BOOLEAN, JSONB, etc.
+            std::string upperType = col.dataType;
+            std::transform(upperType.begin(), upperType.end(), upperType.begin(), ::toupper);
+            def += upperType;
+        }
+        
+        if (!col.extraConstraints.empty()) {
+            def += " " + col.extraConstraints;
+        }
+        
+        if (!col.nullable && col.extraConstraints.find("PRIMARY KEY") == std::string::npos) {
+            def += " NOT NULL";
+        }
+        
+        if (!col.defaultValue.empty()) {
+            def += " DEFAULT " + col.defaultValue;
+        }
+        
+        return def;
     };
     
     // Check if table exists
@@ -412,8 +455,8 @@ bool PostgreSQLClient::initializeCollection(const std::string& tableName) {
         createTable << "CREATE TABLE IF NOT EXISTS " << tableName << " (";
         
         for (size_t i = 0; i < expectedColumns.size(); ++i) {
-            if (i > 0) createTable << ",";
-            createTable << expectedColumns[i].first << " " << expectedColumns[i].second;
+            if (i > 0) createTable << ", ";
+            createTable << buildColumnDef(expectedColumns[i]);
         }
         createTable << ");";
         
@@ -423,64 +466,160 @@ bool PostgreSQLClient::initializeCollection(const std::string& tableName) {
         
         PE_INFO("[PostgreSQL] Created table: " << tableName);
     } else {
-        // Table exists - check for missing columns and add them
+        // Table exists - check schema and migrate if needed
         PE_INFO("[PostgreSQL] Table '" << tableName << "' exists, checking schema...");
         
-        // Get existing columns from the table
+        // Get detailed column information from the table
         std::string columnQuery = 
-            "SELECT column_name FROM information_schema.columns "
+            "SELECT column_name, data_type, character_maximum_length, is_nullable, column_default "
+            "FROM information_schema.columns "
             "WHERE table_name = '" + tableName + "' AND table_schema = 'public';";
         
+        struct ExistingColumn {
+            std::string dataType;
+            int maxLength;
+            bool nullable;
+            std::string defaultValue;
+        };
+        
         PGresult* res = nullptr;
-        std::set<std::string> existingColumns;
+        std::map<std::string, ExistingColumn> existingColumns;
         
         if (pImpl_->executeQuery(columnQuery, &res)) {
             int rows = PQntuples(res);
             for (int i = 0; i < rows; ++i) {
                 std::string colName = PQgetvalue(res, i, 0);
-                existingColumns.insert(colName);
+                ExistingColumn col;
+                col.dataType = PQgetvalue(res, i, 1);
+                col.maxLength = PQgetisnull(res, i, 2) ? 0 : std::atoi(PQgetvalue(res, i, 2));
+                col.nullable = (std::string(PQgetvalue(res, i, 3)) == "YES");
+                col.defaultValue = PQgetisnull(res, i, 4) ? "" : PQgetvalue(res, i, 4);
+                existingColumns[colName] = col;
             }
             PQclear(res);
         }
         
-        // Add missing columns
         int addedColumns = 0;
-        for (const auto& col : expectedColumns) {
-            const std::string& colName = col.first;
-            std::string colDef = col.second;
+        int modifiedColumns = 0;
+        
+        for (const auto& expected : expectedColumns) {
+            auto it = existingColumns.find(expected.name);
             
-            if (existingColumns.find(colName) == existingColumns.end()) {
-                // Column doesn't exist, need to add it
-                // For ALTER TABLE, we need to handle NOT NULL columns specially
-                // Remove PRIMARY KEY from definition (can't add via ALTER TABLE)
-                size_t pkPos = colDef.find(" PRIMARY KEY");
-                if (pkPos != std::string::npos) {
-                    colDef = colDef.substr(0, pkPos);
+            if (it == existingColumns.end()) {
+                // Column doesn't exist - add it
+                std::string colDef;
+                
+                if (expected.dataType == "character varying" && expected.maxLength > 0) {
+                    colDef = "VARCHAR(" + std::to_string(expected.maxLength) + ")";
+                } else if (expected.dataType == "character varying") {
+                    colDef = "VARCHAR(255)";
+                } else if (expected.dataType == "timestamp without time zone") {
+                    colDef = "TIMESTAMP";
+                } else {
+                    std::string upperType = expected.dataType;
+                    std::transform(upperType.begin(), upperType.end(), upperType.begin(), ::toupper);
+                    colDef = upperType;
                 }
                 
-                // For NOT NULL columns without default, we need to add with a default first
-                // then we can't really enforce NOT NULL on existing NULL data
-                // So we'll add as nullable for existing tables
-                size_t notNullPos = colDef.find(" NOT NULL");
-                if (notNullPos != std::string::npos) {
-                    // Remove NOT NULL for ALTER TABLE ADD COLUMN
-                    colDef = colDef.substr(0, notNullPos) + colDef.substr(notNullPos + 9);
+                // Add default if specified
+                if (!expected.defaultValue.empty()) {
+                    colDef += " DEFAULT " + expected.defaultValue;
                 }
+                
+                // Skip PRIMARY KEY for ALTER TABLE (can't add via ALTER)
+                // Skip NOT NULL for existing tables to avoid issues with existing NULL data
                 
                 std::string alterQuery = "ALTER TABLE " + tableName + 
-                                        " ADD COLUMN IF NOT EXISTS " + colName + " " + colDef + ";";
+                                        " ADD COLUMN IF NOT EXISTS " + expected.name + " " + colDef + ";";
                 
                 if (pImpl_->executeQuery(alterQuery)) {
-                    PE_INFO("[PostgreSQL] Added missing column: " << colName << " (" << colDef << ")");
+                    PE_INFO("[PostgreSQL] Added missing column: " << expected.name << " (" << colDef << ")");
                     addedColumns++;
                 } else {
-                    PE_ERROR("[PostgreSQL] Failed to add column: " << colName);
+                    PE_ERROR("[PostgreSQL] Failed to add column: " << expected.name);
+                }
+            } else {
+                // Column exists - check if type/size/constraints match
+                const ExistingColumn& existing = it->second;
+                bool needsTypeChange = false;
+                bool needsLengthChange = false;
+                bool needsDefaultChange = false;
+                
+                // Check data type
+                if (existing.dataType != expected.dataType) {
+                    needsTypeChange = true;
+                }
+                
+                // Check length for varchar
+                if (expected.dataType == "character varying" && expected.maxLength > 0) {
+                    if (existing.maxLength != expected.maxLength) {
+                        needsLengthChange = true;
+                    }
+                }
+                
+                // Check default value (simplified comparison)
+                // PostgreSQL stores defaults with type casts, e.g., "0" becomes "0" or "'0'::integer"
+                if (!expected.defaultValue.empty() && existing.defaultValue.empty()) {
+                    needsDefaultChange = true;
+                }
+                
+                // Apply type/length changes
+                if (needsTypeChange || needsLengthChange) {
+                    std::string newType;
+                    if (expected.dataType == "character varying" && expected.maxLength > 0) {
+                        newType = "VARCHAR(" + std::to_string(expected.maxLength) + ")";
+                    } else if (expected.dataType == "character varying") {
+                        newType = "VARCHAR(255)";
+                    } else if (expected.dataType == "timestamp without time zone") {
+                        newType = "TIMESTAMP";
+                    } else {
+                        std::string upperType = expected.dataType;
+                        std::transform(upperType.begin(), upperType.end(), upperType.begin(), ::toupper);
+                        newType = upperType;
+                    }
+                    
+                    // Use ALTER COLUMN ... TYPE with USING clause for safe conversion
+                    std::string alterQuery = "ALTER TABLE " + tableName + 
+                                            " ALTER COLUMN " + expected.name + 
+                                            " TYPE " + newType + 
+                                            " USING " + expected.name + "::" + newType + ";";
+                    
+                    if (pImpl_->executeQuery(alterQuery)) {
+                        PE_INFO("[PostgreSQL] Modified column type: " << expected.name 
+                               << " (" << existing.dataType << " -> " << newType << ")");
+                        modifiedColumns++;
+                    } else {
+                        PE_ERROR("[PostgreSQL] Failed to modify column type: " << expected.name);
+                    }
+                }
+                
+                // Apply default value changes
+                if (needsDefaultChange) {
+                    std::string alterQuery = "ALTER TABLE " + tableName + 
+                                            " ALTER COLUMN " + expected.name + 
+                                            " SET DEFAULT " + expected.defaultValue + ";";
+                    
+                    if (pImpl_->executeQuery(alterQuery)) {
+                        PE_INFO("[PostgreSQL] Set default value for column: " << expected.name 
+                               << " = " << expected.defaultValue);
+                        modifiedColumns++;
+                    } else {
+                        PE_ERROR("[PostgreSQL] Failed to set default for column: " << expected.name);
+                    }
+                }
+                
+                // Note: Changing nullable constraint is risky with existing data
+                // We only log a warning if there's a mismatch
+                if (existing.nullable != expected.nullable && !expected.nullable) {
+                    PE_INFO("[PostgreSQL] Warning: Column '" << expected.name 
+                           << "' should be NOT NULL but contains nullable data. Skipping constraint change.");
                 }
             }
         }
         
-        if (addedColumns > 0) {
-            PE_INFO("[PostgreSQL] Schema migration complete. Added " << addedColumns << " column(s).");
+        if (addedColumns > 0 || modifiedColumns > 0) {
+            PE_INFO("[PostgreSQL] Schema migration complete. Added " << addedColumns 
+                   << " column(s), modified " << modifiedColumns << " column(s).");
         } else {
             PE_INFO("[PostgreSQL] Schema is up to date.");
         }

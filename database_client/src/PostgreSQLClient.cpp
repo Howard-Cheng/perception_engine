@@ -271,6 +271,7 @@ public:
         event.similarScreenContent = getOptionalString("similar_screen_content");
         event.voiceTranscription = getOptionalString("voice_transcription");
         event.cameraDescription = getOptionalString("camera_description");
+        event.audioContent = getOptionalString("audio_content");
         event.sessionId = getOptionalString("session_id");
         
         // Enum fields
@@ -389,6 +390,7 @@ bool PostgreSQLClient::initializeCollection(const std::string& tableName) {
                 << "similar_screen_content TEXT,"
                 << "voice_transcription TEXT,"
                 << "camera_description TEXT,"
+                << "audio_content TEXT,"
                 << "session_id VARCHAR(255),"
                 << "content_type VARCHAR(50),"
                 << "domain VARCHAR(50),"
@@ -432,7 +434,7 @@ std::string PostgreSQLClient::indexDocument(const std::string& tableName,
     query << "INSERT INTO " << tableName << " ("
           << "event_id, timestamp, created_at, device_id, app_name, "
           << "window_title, url, screen_content, screen_content_hash, similar_screen_content, "
-          << "voice_transcription, camera_description, session_id, "
+          << "voice_transcription, camera_description, audio_content, session_id, "
           << "content_type, domain, interaction_count, dwell_time_seconds, "
           << "compressed, summarized, mouse_events, system_info"
           << ") VALUES (";
@@ -451,6 +453,7 @@ std::string PostgreSQLClient::indexDocument(const std::string& tableName,
     query << (event.similarScreenContent ? escapeString(pImpl_->conn_, *event.similarScreenContent) : "NULL") << ", ";
     query << (event.voiceTranscription ? escapeString(pImpl_->conn_, *event.voiceTranscription) : "NULL") << ", ";
     query << (event.cameraDescription ? escapeString(pImpl_->conn_, *event.cameraDescription) : "NULL") << ", ";
+    query << (event.audioContent ? escapeString(pImpl_->conn_, *event.audioContent) : "NULL") << ", ";
     query << (event.sessionId ? escapeString(pImpl_->conn_, *event.sessionId) : "NULL") << ", ";
     
     // Enum fields

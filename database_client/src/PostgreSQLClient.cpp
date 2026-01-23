@@ -9,6 +9,7 @@
 #include <ctime>
 #include <chrono>
 #include <vector>
+#include <set>
 
 using json = nlohmann::json;
 
@@ -375,35 +376,114 @@ bool PostgreSQLClient::initializeCollection(const std::string& tableName) {
     // Enable pg_trgm extension for fuzzy search (if not already enabled)
     pImpl_->executeQuery("CREATE EXTENSION IF NOT EXISTS pg_trgm;");
     
-    // Create table with all fields
-    std::ostringstream createTable;
-    createTable << "CREATE TABLE IF NOT EXISTS " << tableName << " ("
-                << "event_id VARCHAR(255) PRIMARY KEY,"
-                << "timestamp TIMESTAMP NOT NULL,"
-                << "created_at TIMESTAMP NOT NULL,"
-                << "device_id VARCHAR(255) NOT NULL,"
-                << "app_name VARCHAR(255) NOT NULL,"
-                << "window_title TEXT,"
-                << "url TEXT,"
-                << "screen_content TEXT,"
-                << "screen_content_hash VARCHAR(64),"
-                << "similar_screen_content TEXT,"
-                << "voice_transcription TEXT,"
-                << "camera_description TEXT,"
-                << "audio_content TEXT,"
-                << "session_id VARCHAR(255),"
-                << "content_type VARCHAR(50),"
-                << "domain VARCHAR(50),"
-                << "interaction_count INTEGER DEFAULT 0,"
-                << "dwell_time_seconds INTEGER DEFAULT 0,"
-                << "compressed BOOLEAN DEFAULT FALSE,"
-                << "summarized BOOLEAN DEFAULT FALSE,"
-                << "mouse_events JSONB,"
-                << "system_info JSONB"
-                << ");";
+    // Define expected columns with their types and defaults
+    // Format: {column_name, column_definition}
+    std::vector<std::pair<std::string, std::string>> expectedColumns = {
+        {"event_id", "VARCHAR(255) PRIMARY KEY"},
+        {"timestamp", "TIMESTAMP NOT NULL"},
+        {"created_at", "TIMESTAMP NOT NULL"},
+        {"device_id", "VARCHAR(255) NOT NULL"},
+        {"app_name", "VARCHAR(255) NOT NULL"},
+        {"window_title", "TEXT"},
+        {"url", "TEXT"},
+        {"screen_content", "TEXT"},
+        {"screen_content_hash", "VARCHAR(64)"},
+        {"similar_screen_content", "TEXT"},
+        {"voice_transcription", "TEXT"},
+        {"camera_description", "TEXT"},
+        {"audio_content", "TEXT"},
+        {"session_id", "VARCHAR(255)"},
+        {"content_type", "VARCHAR(50)"},
+        {"domain", "VARCHAR(50)"},
+        {"interaction_count", "INTEGER DEFAULT 0"},
+        {"dwell_time_seconds", "INTEGER DEFAULT 0"},
+        {"compressed", "BOOLEAN DEFAULT FALSE"},
+        {"summarized", "BOOLEAN DEFAULT FALSE"},
+        {"mouse_events", "JSONB"},
+        {"system_info", "JSONB"}
+    };
     
-    if (!pImpl_->executeQuery(createTable.str())) {
-        return false;
+    // Check if table exists
+    bool tableExists = collectionExists(tableName);
+    
+    if (!tableExists) {
+        // Create table with all fields
+        std::ostringstream createTable;
+        createTable << "CREATE TABLE IF NOT EXISTS " << tableName << " (";
+        
+        for (size_t i = 0; i < expectedColumns.size(); ++i) {
+            if (i > 0) createTable << ",";
+            createTable << expectedColumns[i].first << " " << expectedColumns[i].second;
+        }
+        createTable << ");";
+        
+        if (!pImpl_->executeQuery(createTable.str())) {
+            return false;
+        }
+        
+        PE_INFO("[PostgreSQL] Created table: " << tableName);
+    } else {
+        // Table exists - check for missing columns and add them
+        PE_INFO("[PostgreSQL] Table '" << tableName << "' exists, checking schema...");
+        
+        // Get existing columns from the table
+        std::string columnQuery = 
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = '" + tableName + "' AND table_schema = 'public';";
+        
+        PGresult* res = nullptr;
+        std::set<std::string> existingColumns;
+        
+        if (pImpl_->executeQuery(columnQuery, &res)) {
+            int rows = PQntuples(res);
+            for (int i = 0; i < rows; ++i) {
+                std::string colName = PQgetvalue(res, i, 0);
+                existingColumns.insert(colName);
+            }
+            PQclear(res);
+        }
+        
+        // Add missing columns
+        int addedColumns = 0;
+        for (const auto& col : expectedColumns) {
+            const std::string& colName = col.first;
+            std::string colDef = col.second;
+            
+            if (existingColumns.find(colName) == existingColumns.end()) {
+                // Column doesn't exist, need to add it
+                // For ALTER TABLE, we need to handle NOT NULL columns specially
+                // Remove PRIMARY KEY from definition (can't add via ALTER TABLE)
+                size_t pkPos = colDef.find(" PRIMARY KEY");
+                if (pkPos != std::string::npos) {
+                    colDef = colDef.substr(0, pkPos);
+                }
+                
+                // For NOT NULL columns without default, we need to add with a default first
+                // then we can't really enforce NOT NULL on existing NULL data
+                // So we'll add as nullable for existing tables
+                size_t notNullPos = colDef.find(" NOT NULL");
+                if (notNullPos != std::string::npos) {
+                    // Remove NOT NULL for ALTER TABLE ADD COLUMN
+                    colDef = colDef.substr(0, notNullPos) + colDef.substr(notNullPos + 9);
+                }
+                
+                std::string alterQuery = "ALTER TABLE " + tableName + 
+                                        " ADD COLUMN IF NOT EXISTS " + colName + " " + colDef + ";";
+                
+                if (pImpl_->executeQuery(alterQuery)) {
+                    PE_INFO("[PostgreSQL] Added missing column: " << colName << " (" << colDef << ")");
+                    addedColumns++;
+                } else {
+                    PE_ERROR("[PostgreSQL] Failed to add column: " << colName);
+                }
+            }
+        }
+        
+        if (addedColumns > 0) {
+            PE_INFO("[PostgreSQL] Schema migration complete. Added " << addedColumns << " column(s).");
+        } else {
+            PE_INFO("[PostgreSQL] Schema is up to date.");
+        }
     }
     
     // Create indexes for common queries

@@ -9,6 +9,9 @@
 #include <ctime>
 #include <chrono>
 #include <vector>
+#include <set>
+#include <map>
+#include <fstream>
 
 using json = nlohmann::json;
 
@@ -142,6 +145,7 @@ public:
     bool connect() {
         if (conn_) {
             PQfinish(conn_);
+            conn_ = nullptr;
         }
         
         conn_ = PQconnectdb(connectionString_.c_str());
@@ -153,8 +157,19 @@ public:
             return false;
         }
         
+        // Set search_path to public schema after successful connection
+        PGresult* res = PQexec(conn_, "SET search_path TO public;");
+        if (res) {
+            ExecStatusType status = PQresultStatus(res);
+            if (status != PGRES_COMMAND_OK) {
+                PE_ERROR("Failed to set search_path: " << PQerrorMessage(conn_));
+            }
+            PQclear(res);
+        }
+        
         return true;
     }
+    
     
     /**
      * @brief Parse database name from connection string
@@ -271,6 +286,7 @@ public:
         event.similarScreenContent = getOptionalString("similar_screen_content");
         event.voiceTranscription = getOptionalString("voice_transcription");
         event.cameraDescription = getOptionalString("camera_description");
+        event.audioContent = getOptionalString("audio_content");
         event.sessionId = getOptionalString("session_id");
         
         // Enum fields
@@ -370,72 +386,483 @@ DatabaseType PostgreSQLClient::getType() const {
     return DatabaseType::POSTGRESQL;
 }
 
+
+
+
 bool PostgreSQLClient::initializeCollection(const std::string& tableName) {
-    // Enable pg_trgm extension for fuzzy search (if not already enabled)
-    pImpl_->executeQuery("CREATE EXTENSION IF NOT EXISTS pg_trgm;");
-    
-    // Create table with all fields
-    std::ostringstream createTable;
-    createTable << "CREATE TABLE IF NOT EXISTS " << tableName << " ("
-                << "event_id VARCHAR(255) PRIMARY KEY,"
-                << "timestamp TIMESTAMP NOT NULL,"
-                << "created_at TIMESTAMP NOT NULL,"
-                << "device_id VARCHAR(255) NOT NULL,"
-                << "app_name VARCHAR(255) NOT NULL,"
-                << "window_title TEXT,"
-                << "url TEXT,"
-                << "screen_content TEXT,"
-                << "screen_content_hash VARCHAR(64),"
-                << "similar_screen_content TEXT,"
-                << "voice_transcription TEXT,"
-                << "camera_description TEXT,"
-                << "session_id VARCHAR(255),"
-                << "content_type VARCHAR(50),"
-                << "domain VARCHAR(50),"
-                << "interaction_count INTEGER DEFAULT 0,"
-                << "dwell_time_seconds INTEGER DEFAULT 0,"
-                << "compressed BOOLEAN DEFAULT FALSE,"
-                << "summarized BOOLEAN DEFAULT FALSE,"
-                << "mouse_events JSONB,"
-                << "system_info JSONB"
-                << ");";
-    
-    if (!pImpl_->executeQuery(createTable.str())) {
+    // Ensure we have a valid connection
+    if (!pImpl_->conn_) {
+        PE_ERROR("[PostgreSQL] No database connection available");
         return false;
     }
     
-    // Create indexes for common queries
-    std::vector<std::string> indexes = {
-        "CREATE INDEX IF NOT EXISTS idx_" + tableName + "_timestamp ON " + tableName + "(timestamp);",
-        "CREATE INDEX IF NOT EXISTS idx_" + tableName + "_app_name ON " + tableName + "(app_name);",
-        "CREATE INDEX IF NOT EXISTS idx_" + tableName + "_compressed ON " + tableName + "(compressed);",
-        "CREATE INDEX IF NOT EXISTS idx_" + tableName + "_summarized ON " + tableName + "(summarized);",
-        "CREATE INDEX IF NOT EXISTS idx_" + tableName + "_session_id ON " + tableName + "(session_id);",
-        // Full-text search index
-        "CREATE INDEX IF NOT EXISTS idx_" + tableName + "_screen_content ON " + tableName + " USING gin(to_tsvector('english', screen_content));",
-        // Trigram indexes for fuzzy search
-        "CREATE INDEX IF NOT EXISTS idx_" + tableName + "_screen_content_trgm ON " + tableName + " USING gin(screen_content gin_trgm_ops);",
-        "CREATE INDEX IF NOT EXISTS idx_" + tableName + "_window_title_trgm ON " + tableName + " USING gin(window_title gin_trgm_ops);",
-        "CREATE INDEX IF NOT EXISTS idx_" + tableName + "_app_name_trgm ON " + tableName + " USING gin(app_name gin_trgm_ops);"
+    // Ensure public schema exists (some cloud PostgreSQL instances don't have it by default)
+    if (!pImpl_->executeQuery("CREATE SCHEMA IF NOT EXISTS public;")) {
+        PE_INFO("[PostgreSQL] Warning: Could not create public schema (may already exist or require privileges)");
+    }
+    
+    // Grant permissions on public schema (may fail without superuser privileges, but that's OK)
+    pImpl_->executeQuery("GRANT ALL ON SCHEMA public TO PUBLIC;");
+    
+    // Set the search path to public schema explicitly
+    if (!pImpl_->executeQuery("SET search_path TO public;")) {
+        PE_ERROR("[PostgreSQL] Failed to set search_path to public schema");
+        // Continue anyway - try with default search path
+    }
+    
+    // Try to enable pg_trgm extension for fuzzy search (may fail without superuser privileges)
+    // This is optional - fuzzy search will just not work if extension is not available
+    if (!pImpl_->executeQuery("CREATE EXTENSION IF NOT EXISTS pg_trgm;")) {
+        PE_INFO("[PostgreSQL] Warning: Could not create pg_trgm extension (may require superuser privileges). Fuzzy search will be limited.");
+    }
+    
+    
+    // Define expected columns with their types and defaults
+// Format: {column_name, {data_type, character_maximum_length (0 if N/A), is_nullable, default_value, extra_constraints}}
+struct ColumnDef {
+    std::string name;
+    std::string dataType;        // PostgreSQL data type (lowercase)
+    int maxLength;               // For varchar, 0 means no limit or N/A
+    bool nullable;               // true = nullable, false = NOT NULL
+    std::string defaultValue;    // Default value (empty if none)
+    std::string extraConstraints; // e.g., "PRIMARY KEY"
+};
+
+// Define indexes with their properties for dynamic creation
+struct IndexDef {
+    std::string columnName;
+    std::string indexType;      // "btree", "gin", "gist", etc.
+    std::string indexMethod;    // "", "trgm", "tsvector"
+    std::string language;       // For tsvector, e.g., "english"
+};
+
+std::vector<ColumnDef> expectedColumns;
+std::vector<IndexDef> expectedIndexes;
+
+// Try to load from db_structure.ini config file
+bool configLoaded = false;
+std::ifstream configFile("db_structure.ini");
+if (configFile.is_open()) {
+    try {
+        json config;
+        configFile >> config;
+        configFile.close();
+        
+        // Parse columns
+        if (config.contains("columns") && config["columns"].is_array()) {
+            for (const auto& col : config["columns"]) {
+                ColumnDef colDef;
+                colDef.name = col.value("name", "");
+                colDef.dataType = col.value("dataType", "");
+                colDef.maxLength = col.value("maxLength", 0);
+                colDef.nullable = col.value("nullable", true);
+                colDef.defaultValue = col.value("defaultValue", "");
+                colDef.extraConstraints = col.value("extraConstraints", "");
+                if (!colDef.name.empty() && !colDef.dataType.empty()) {
+                    expectedColumns.push_back(colDef);
+                }
+            }
+        }
+        
+        // Parse indexes
+        if (config.contains("indexes") && config["indexes"].is_array()) {
+            for (const auto& idx : config["indexes"]) {
+                IndexDef idxDef;
+                idxDef.columnName = idx.value("columnName", "");
+                idxDef.indexType = idx.value("indexType", "btree");
+                idxDef.indexMethod = idx.value("indexMethod", "");
+                idxDef.language = idx.value("language", "");
+                if (!idxDef.columnName.empty()) {
+                    expectedIndexes.push_back(idxDef);
+                }
+            }
+        }
+        
+        if (!expectedColumns.empty()) {
+            configLoaded = true;
+            PE_INFO("[PostgreSQL] Loaded db_structure.ini with " << expectedColumns.size() 
+                   << " columns and " << expectedIndexes.size() << " indexes");
+        }
+    } catch (const std::exception& e) {
+        PE_ERROR("[PostgreSQL] Failed to parse db_structure.ini: " << e.what());
+    }
+} else {
+    PE_INFO("[PostgreSQL] db_structure.ini not found, using default schema definition");
+}
+
+// Use default values if config file not loaded or parsing failed
+if (!configLoaded) {
+    expectedColumns = {
+        {"event_id",              "character varying", 255, false, "",       "PRIMARY KEY"},
+        {"timestamp",             "timestamp without time zone", 0, false, "", ""},
+        {"created_at",            "timestamp without time zone", 0, false, "", ""},
+        {"device_id",             "character varying", 255, false, "",       ""},
+        {"app_name",              "character varying", 255, false, "",       ""},
+        {"window_title",          "text",              0,   true,  "",       ""},
+        {"url",                   "text",              0,   true,  "",       ""},
+        {"screen_content",        "text",              0,   true,  "",       ""},
+        {"screen_content_hash",   "character varying", 64,  true,  "",       ""},
+        {"similar_screen_content","text",              0,   true,  "",       ""},
+        {"voice_transcription",   "text",              0,   true,  "",       ""},
+        {"camera_description",    "text",              0,   true,  "",       ""},
+        {"audio_content",         "text",              0,   true,  "",       ""},
+        {"session_id",            "character varying", 255, true,  "",       ""},
+        {"content_type",          "character varying", 50,  true,  "",       ""},
+        {"domain",                "character varying", 50,  true,  "",       ""},
+        {"interaction_count",     "integer",           0,   true,  "0",      ""},
+        {"dwell_time_seconds",    "integer",           0,   true,  "0",      ""},
+        {"compressed",            "boolean",           0,   true,  "false",  ""},
+        {"summarized",            "boolean",           0,   true,  "false",  ""},
+        {"mouse_events",          "jsonb",             0,   true,  "",       ""},
+        {"system_info",           "jsonb",             0,   true,  "",       ""}
     };
     
-    for (const auto& indexQuery : indexes) {
+    expectedIndexes = {
+        {"timestamp",      "btree", "",        ""},
+        {"app_name",       "btree", "",        ""},
+        {"compressed",     "btree", "",        ""},
+        {"summarized",     "btree", "",        ""},
+        {"session_id",     "btree", "",        ""},
+        {"screen_content", "gin",   "tsvector", "english"},
+        {"screen_content", "gin",   "trgm",    ""},
+        {"window_title",   "gin",   "trgm",    ""},
+        {"app_name",       "gin",   "trgm",    ""},
+        {"audio_content",  "gin",   "trgm",    ""}
+    };
+}
+    
+    // Helper lambda to build column definition string for CREATE TABLE
+    // Note: Column names are quoted with double quotes to handle reserved words like "timestamp", "domain"
+    auto buildColumnDef = [](const ColumnDef& col) -> std::string {
+        std::string def = "\"" + col.name + "\" ";  // Quote column name
+        
+        if (col.dataType == "character varying" && col.maxLength > 0) {
+            def += "VARCHAR(" + std::to_string(col.maxLength) + ")";
+        } else if (col.dataType == "character varying") {
+            def += "VARCHAR(255)";  // Default length
+        } else if (col.dataType == "timestamp without time zone") {
+            def += "TIMESTAMP";
+        } else {
+            // TEXT, INTEGER, BOOLEAN, JSONB, etc.
+            std::string upperType = col.dataType;
+            std::transform(upperType.begin(), upperType.end(), upperType.begin(), ::toupper);
+            def += upperType;
+        }
+        
+        if (!col.extraConstraints.empty()) {
+            def += " " + col.extraConstraints;
+        }
+        
+        if (!col.nullable && col.extraConstraints.find("PRIMARY KEY") == std::string::npos) {
+            def += " NOT NULL";
+        }
+        
+        if (!col.defaultValue.empty()) {
+            def += " DEFAULT " + col.defaultValue;
+        }
+        
+        return def;
+    };
+    
+    // Check if table exists
+    bool tableExists = collectionExists(tableName);
+    
+    if (!tableExists) {
+        // Create table with all fields
+        std::ostringstream createTable;
+        createTable << "CREATE TABLE IF NOT EXISTS public." << tableName << " (";
+        
+        for (size_t i = 0; i < expectedColumns.size(); ++i) {
+            if (i > 0) createTable << ", ";
+            createTable << buildColumnDef(expectedColumns[i]);
+        }
+        createTable << ");";
+        
+        if (!pImpl_->executeQuery(createTable.str())) {
+            PE_ERROR("[PostgreSQL] Failed to create table: " << tableName);
+            return false;
+        }
+        
+        PE_INFO("[PostgreSQL] Created table: public." << tableName);
+    } else {
+        // Table exists - check schema and migrate if needed
+        PE_INFO("[PostgreSQL] Table '" << tableName << "' exists, checking schema...");
+        
+        // Get detailed column information from the table
+        std::string columnQuery = 
+            "SELECT column_name, data_type, character_maximum_length, is_nullable, column_default "
+            "FROM information_schema.columns "
+            "WHERE table_name = '" + tableName + "' AND table_schema = 'public';";
+        
+        struct ExistingColumn {
+            std::string dataType;
+            int maxLength;
+            bool nullable;
+            std::string defaultValue;
+        };
+        
+        PGresult* res = nullptr;
+        std::map<std::string, ExistingColumn> existingColumns;
+        
+        if (pImpl_->executeQuery(columnQuery, &res)) {
+            int rows = PQntuples(res);
+            for (int i = 0; i < rows; ++i) {
+                std::string colName = PQgetvalue(res, i, 0);
+                ExistingColumn col;
+                col.dataType = PQgetvalue(res, i, 1);
+                col.maxLength = PQgetisnull(res, i, 2) ? 0 : std::atoi(PQgetvalue(res, i, 2));
+                col.nullable = (std::string(PQgetvalue(res, i, 3)) == "YES");
+                col.defaultValue = PQgetisnull(res, i, 4) ? "" : PQgetvalue(res, i, 4);
+                existingColumns[colName] = col;
+            }
+            PQclear(res);
+        }
+        
+        int addedColumns = 0;
+        int modifiedColumns = 0;
+        
+        
+        for (const auto& expected : expectedColumns) {
+            auto it = existingColumns.find(expected.name);
+            
+            if (it == existingColumns.end()) {
+                // Column doesn't exist - add it
+                std::string colDef;
+                
+                if (expected.dataType == "character varying" && expected.maxLength > 0) {
+                    colDef = "VARCHAR(" + std::to_string(expected.maxLength) + ")";
+                } else if (expected.dataType == "character varying") {
+                    colDef = "VARCHAR(255)";
+                } else if (expected.dataType == "timestamp without time zone") {
+                    colDef = "TIMESTAMP";
+                } else {
+                    std::string upperType = expected.dataType;
+                    std::transform(upperType.begin(), upperType.end(), upperType.begin(), ::toupper);
+                    colDef = upperType;
+                }
+                
+                // Add default if specified
+                if (!expected.defaultValue.empty()) {
+                    colDef += " DEFAULT " + expected.defaultValue;
+                }
+                
+                // Skip PRIMARY KEY for ALTER TABLE (can't add via ALTER)
+                // Skip NOT NULL for existing tables to avoid issues with existing NULL data
+                
+                // Quote column name to handle reserved words like "timestamp", "domain"
+                std::string alterQuery = "ALTER TABLE " + tableName + 
+                                        " ADD COLUMN IF NOT EXISTS \"" + expected.name + "\" " + colDef + ";";
+                
+                if (pImpl_->executeQuery(alterQuery)) {
+                    PE_INFO("[PostgreSQL] Added missing column: " << expected.name << " (" << colDef << ")");
+                    addedColumns++;
+                } else {
+                    PE_ERROR("[PostgreSQL] Failed to add column: " << expected.name);
+                }
+            } else {
+                // Column exists - check if type/size/constraints match
+                const ExistingColumn& existing = it->second;
+                bool needsTypeChange = false;
+                bool needsLengthChange = false;
+                bool needsDefaultChange = false;
+                
+                // Check data type
+                if (existing.dataType != expected.dataType) {
+                    needsTypeChange = true;
+                }
+                
+                // Check length for varchar
+                if (expected.dataType == "character varying" && expected.maxLength > 0) {
+                    if (existing.maxLength != expected.maxLength) {
+                        needsLengthChange = true;
+                    }
+                }
+                
+                // Check default value (simplified comparison)
+                // PostgreSQL stores defaults with type casts, e.g., "0" becomes "0" or "'0'::integer"
+                if (!expected.defaultValue.empty() && existing.defaultValue.empty()) {
+                    needsDefaultChange = true;
+                }
+                
+                // Apply type/length changes
+                if (needsTypeChange || needsLengthChange) {
+                    std::string newType;
+                    if (expected.dataType == "character varying" && expected.maxLength > 0) {
+                        newType = "VARCHAR(" + std::to_string(expected.maxLength) + ")";
+                    } else if (expected.dataType == "character varying") {
+                        newType = "VARCHAR(255)";
+                    } else if (expected.dataType == "timestamp without time zone") {
+                        newType = "TIMESTAMP";
+                    } else {
+                        std::string upperType = expected.dataType;
+                        std::transform(upperType.begin(), upperType.end(), upperType.begin(), ::toupper);
+                        newType = upperType;
+                    }
+                    
+                    // Use ALTER COLUMN ... TYPE with USING clause for safe conversion
+                    // Quote column name to handle reserved words
+                    std::string alterQuery = "ALTER TABLE " + tableName + 
+                                            " ALTER COLUMN \"" + expected.name + "\"" +
+                                            " TYPE " + newType + 
+                                            " USING \"" + expected.name + "\"::" + newType + ";";
+                    
+                    if (pImpl_->executeQuery(alterQuery)) {
+                        PE_INFO("[PostgreSQL] Modified column type: " << expected.name 
+                               << " (" << existing.dataType << " -> " << newType << ")");
+                        modifiedColumns++;
+                    } else {
+                        PE_ERROR("[PostgreSQL] Failed to modify column type: " << expected.name);
+                    }
+                }
+                
+                // Apply default value changes
+                if (needsDefaultChange) {
+                    // Quote column name to handle reserved words
+                    std::string alterQuery = "ALTER TABLE " + tableName + 
+                                            " ALTER COLUMN \"" + expected.name + "\"" +
+                                            " SET DEFAULT " + expected.defaultValue + ";";
+                    
+                    if (pImpl_->executeQuery(alterQuery)) {
+                        PE_INFO("[PostgreSQL] Set default value for column: " << expected.name 
+                               << " = " << expected.defaultValue);
+                        modifiedColumns++;
+                    } else {
+                        PE_ERROR("[PostgreSQL] Failed to set default for column: " << expected.name);
+                    }
+                }
+                
+                // Note: Changing nullable constraint is risky with existing data
+                // We only log a warning if there's a mismatch
+                if (existing.nullable != expected.nullable && !expected.nullable) {
+                    PE_INFO("[PostgreSQL] Warning: Column '" << expected.name 
+                           << "' should be NOT NULL but contains nullable data. Skipping constraint change.");
+                }
+            }
+        }
+        
+        if (addedColumns > 0 || modifiedColumns > 0) {
+            PE_INFO("[PostgreSQL] Schema migration complete. Added " << addedColumns 
+                   << " column(s), modified " << modifiedColumns << " column(s).");
+        } else {
+            PE_INFO("[PostgreSQL] Schema is up to date.");
+        }
+        
+        // Delete extra columns that are not in expectedColumns
+        // Build a set of expected column names for quick lookup
+        std::set<std::string> expectedColumnNames;
+        for (const auto& col : expectedColumns) {
+            expectedColumnNames.insert(col.name);
+        }
+        
+        int deletedColumns = 0;
+        for (const auto& existingCol : existingColumns) {
+            if (expectedColumnNames.find(existingCol.first) == expectedColumnNames.end()) {
+                // This column is not in the expected list - delete it
+                std::string dropQuery = "ALTER TABLE " + tableName + 
+                                       " DROP COLUMN IF EXISTS \"" + existingCol.first + "\";";
+                
+                if (pImpl_->executeQuery(dropQuery)) {
+                    PE_INFO("[PostgreSQL] Deleted extra column: " << existingCol.first);
+                    deletedColumns++;
+                } else {
+                    PE_ERROR("[PostgreSQL] Failed to delete column: " << existingCol.first);
+                }
+            }
+        }
+        
+        if (deletedColumns > 0) {
+            PE_INFO("[PostgreSQL] Deleted " << deletedColumns << " extra column(s).");
+        }
+    }
+    
+    // Build a set of expected index names for cleanup
+    std::set<std::string> expectedIndexNames;
+    
+    // Build and execute index creation queries
+    for (const auto& idx : expectedIndexes) {
+        std::string indexName = "idx_" + tableName + "_" + idx.columnName;
+        std::string indexQuery;
+        std::string quotedColumn = "\"" + idx.columnName + "\"";  // Quote column name
+        
+        if (idx.indexMethod == "tsvector") {
+            // Full-text search index
+            indexName += "_fts";
+            indexQuery = "CREATE INDEX IF NOT EXISTS " + indexName + 
+                        " ON " + tableName + 
+                        " USING " + idx.indexType + "(to_tsvector('" + idx.language + "', " + quotedColumn + "));";
+        } else if (idx.indexMethod == "trgm") {
+            // Trigram index for fuzzy search
+            indexName += "_trgm";
+            indexQuery = "CREATE INDEX IF NOT EXISTS " + indexName + 
+                        " ON " + tableName + 
+                        " USING " + idx.indexType + "(" + quotedColumn + " gin_trgm_ops);";
+        } else {
+            // Standard B-tree or other index
+            if (idx.indexType == "btree") {
+                indexQuery = "CREATE INDEX IF NOT EXISTS " + indexName + 
+                            " ON " + tableName + "(" + quotedColumn + ");";
+            } else {
+                indexQuery = "CREATE INDEX IF NOT EXISTS " + indexName + 
+                            " ON " + tableName + 
+                            " USING " + idx.indexType + "(" + quotedColumn + ");";
+            }
+        }
+        
+        expectedIndexNames.insert(indexName);
         pImpl_->executeQuery(indexQuery);
+    }
+    
+    // Delete extra indexes that are not in expectedIndexes
+    // Query existing indexes for this table (excluding primary key and unique constraints)
+    std::string indexListQuery = 
+        "SELECT indexname FROM pg_indexes "
+        "WHERE tablename = '" + tableName + "' "
+        "AND schemaname = 'public' "
+        "AND indexname LIKE 'idx_" + tableName + "_%';";
+    
+    PGresult* indexRes = nullptr;
+    if (pImpl_->executeQuery(indexListQuery, &indexRes)) {
+        int indexRows = PQntuples(indexRes);
+        int deletedIndexes = 0;
+        
+        for (int i = 0; i < indexRows; ++i) {
+            std::string existingIndexName = PQgetvalue(indexRes, i, 0);
+            
+            // Check if this index is in the expected list
+            if (expectedIndexNames.find(existingIndexName) == expectedIndexNames.end()) {
+                // This index is not in the expected list - delete it
+                std::string dropIndexQuery = "DROP INDEX IF EXISTS \"" + existingIndexName + "\";";
+                
+                if (pImpl_->executeQuery(dropIndexQuery)) {
+                    PE_INFO("[PostgreSQL] Deleted extra index: " << existingIndexName);
+                    deletedIndexes++;
+                } else {
+                    PE_ERROR("[PostgreSQL] Failed to delete index: " << existingIndexName);
+                }
+            }
+        }
+        
+        if (deletedIndexes > 0) {
+            PE_INFO("[PostgreSQL] Deleted " << deletedIndexes << " extra index(es).");
+        }
+        
+        PQclear(indexRes);
     }
     
     return true;
 }
 
 std::string PostgreSQLClient::indexDocument(const std::string& tableName, 
-                                           const RawEvent& event) {
-    std::ostringstream query;
-    query << "INSERT INTO " << tableName << " ("
-          << "event_id, timestamp, created_at, device_id, app_name, "
-          << "window_title, url, screen_content, screen_content_hash, similar_screen_content, "
-          << "voice_transcription, camera_description, session_id, "
-          << "content_type, domain, interaction_count, dwell_time_seconds, "
-          << "compressed, summarized, mouse_events, system_info"
-          << ") VALUES (";
+                                       const RawEvent& event) {
+std::ostringstream query;
+// Quote all column names to handle reserved words like "timestamp", "domain"
+query << "INSERT INTO " << tableName << " ("
+      << "\"event_id\", \"timestamp\", \"created_at\", \"device_id\", \"app_name\", "
+      << "\"window_title\", \"url\", \"screen_content\", \"screen_content_hash\", \"similar_screen_content\", "
+      << "\"voice_transcription\", \"camera_description\", \"audio_content\", \"session_id\", "
+      << "\"content_type\", \"domain\", \"interaction_count\", \"dwell_time_seconds\", "
+      << "\"compressed\", \"summarized\", \"mouse_events\", \"system_info\""
+      << ") VALUES (";
     
     query << escapeString(pImpl_->conn_, event.eventId) << ", ";
     query << escapeString(pImpl_->conn_, timestampToPostgreSQL(event.timestamp)) << ", ";
@@ -451,6 +878,7 @@ std::string PostgreSQLClient::indexDocument(const std::string& tableName,
     query << (event.similarScreenContent ? escapeString(pImpl_->conn_, *event.similarScreenContent) : "NULL") << ", ";
     query << (event.voiceTranscription ? escapeString(pImpl_->conn_, *event.voiceTranscription) : "NULL") << ", ";
     query << (event.cameraDescription ? escapeString(pImpl_->conn_, *event.cameraDescription) : "NULL") << ", ";
+    query << (event.audioContent ? escapeString(pImpl_->conn_, *event.audioContent) : "NULL") << ", ";
     query << (event.sessionId ? escapeString(pImpl_->conn_, *event.sessionId) : "NULL") << ", ";
     
     // Enum fields
@@ -489,8 +917,10 @@ std::string PostgreSQLClient::indexDocument(const std::string& tableName,
     sysInfo["network_type"] = event.systemInfo.networkType;
     if (event.systemInfo.locationLat) 
         sysInfo["location_lat"] = *event.systemInfo.locationLat;
-    if (event.systemInfo.locationLon) 
+    if (event.systemInfo.locationLon)
         sysInfo["location_lon"] = *event.systemInfo.locationLon;
+    if (event.systemInfo.locationDescription)
+        sysInfo["location_description"] = *event.systemInfo.locationDescription;
     if (event.systemInfo.cpuUsage) 
         sysInfo["cpu_usage"] = *event.systemInfo.cpuUsage;
     if (event.systemInfo.memoryUsage) 
@@ -502,9 +932,9 @@ std::string PostgreSQLClient::indexDocument(const std::string& tableName,
         query << "NULL";
     }
     
-    query << ") ON CONFLICT (event_id) DO UPDATE SET "
-          << "timestamp = EXCLUDED.timestamp, "
-          << "screen_content = EXCLUDED.screen_content;";
+    query << ") ON CONFLICT (\"event_id\") DO UPDATE SET "
+          << "\"timestamp\" = EXCLUDED.\"timestamp\", "
+          << "\"screen_content\" = EXCLUDED.\"screen_content\";";
     
     if (pImpl_->executeQuery(query.str())) {
         return event.eventId;
@@ -572,11 +1002,11 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
             // Apply multi-field search with case-insensitive matching for both ASCII and Unicode
             if (!keyword.empty()) {
                 std::vector<std::string> searchFields = {
-                    "screen_content",
-                    "voice_transcription",
-                    "camera_description",
-                    "app_name",
-                    "window_title"
+                    "\"screen_content\"",
+                    "\"voice_transcription\"",
+                    "\"camera_description\"",
+                    "\"app_name\"",
+                    "\"window_title\""
                 };
                 
                 std::vector<std::string> fieldConditions;
@@ -633,8 +1063,8 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
                 
                 // Convert milliseconds to seconds for to_timestamp()
                 // Both storage and query use local time, so direct comparison works
-                conditions.push_back("timestamp >= to_timestamp(" + std::to_string(startTime / 1000) + ")");
-                conditions.push_back("timestamp <= to_timestamp(" + std::to_string(endTime / 1000) + ")");
+                conditions.push_back("\"timestamp\" >= to_timestamp(" + std::to_string(startTime / 1000) + ")");
+                conditions.push_back("\"timestamp\" <= to_timestamp(" + std::to_string(endTime / 1000) + ")");
                 
                 // DEBUG: Print time range for verification (in local time)
                 std::time_t start_t = static_cast<std::time_t>(startTime / 1000);
@@ -654,12 +1084,12 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
             
             // Handle compressed filter (default: only uncompressed)
             if (!queryJson.contains("includeCompressed") || !queryJson["includeCompressed"].get<bool>()) {
-                conditions.push_back("compressed = FALSE");
+                conditions.push_back("\"compressed\" = FALSE");
             }
             
             // NEW: Handle summarized filter (default: only unsummarized)
             if (!queryJson.contains("includeSummarized") || !queryJson["includeSummarized"].get<bool>()) {
-                conditions.push_back("summarized = FALSE");
+                conditions.push_back("\"summarized\" = FALSE");
             }
             
             // Override size if specified in JSON
@@ -862,7 +1292,7 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
     
     // Add ORDER BY and LIMIT
     // Use sortOrder variable determined earlier (default: DESC)
-    sqlQuery << " ORDER BY timestamp " << sortOrder << " LIMIT " << size << " OFFSET " << from << ";";
+    sqlQuery << " ORDER BY \"timestamp\" " << sortOrder << " LIMIT " << size << " OFFSET " << from << ";";
     
     // DEBUG: Print generated SQL
     PE_INFO("[DEBUG] Generated SQL: " << sqlQuery.str());
@@ -888,14 +1318,14 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
 }
 
 std::vector<RawEvent> PostgreSQLClient::getUncompressedEvents(
-    const std::string& tableName, 
-    int max_count) {
+const std::string& tableName, 
+int max_count) {
     
-    std::ostringstream query;
-    query << "SELECT * FROM " << tableName 
-          << " WHERE compressed = FALSE "
-          << "ORDER BY timestamp ASC "
-          << "LIMIT " << max_count << ";";
+std::ostringstream query;
+query << "SELECT * FROM " << tableName 
+      << " WHERE \"compressed\" = FALSE "
+      << "ORDER BY \"timestamp\" ASC "
+      << "LIMIT " << max_count << ";";
     
     PGresult* res = nullptr;
     if (!pImpl_->executeQuery(query.str(), &res)) {
@@ -950,7 +1380,7 @@ bool PostgreSQLClient::updateDocument(const std::string& tableName,
             query << updates[i];
         }
         
-        query << " WHERE event_id = " << escapeString(pImpl_->conn_, docId) << ";";
+        query << " WHERE \"event_id\" = " << escapeString(pImpl_->conn_, docId) << ";";
         
         return pImpl_->executeQuery(query.str());
     } catch (...) {
@@ -965,8 +1395,8 @@ bool PostgreSQLClient::markEventsAsCompressed(const std::string& tableName,
     
     std::ostringstream query;
     query << "UPDATE " << tableName 
-          << " SET compressed = TRUE, session_id = " << escapeString(pImpl_->conn_, sessionId)
-          << " WHERE event_id IN (";
+          << " SET \"compressed\" = TRUE, \"session_id\" = " << escapeString(pImpl_->conn_, sessionId)
+          << " WHERE \"event_id\" IN (";
     
     for (size_t i = 0; i < eventIds.size(); ++i) {
         if (i > 0) query << ", ";
@@ -988,10 +1418,10 @@ bool PostgreSQLClient::markEventsAsCompressedWithSimilarity(
     
     std::ostringstream query;
     query << "UPDATE " << tableName 
-          << " SET compressed = TRUE, "
-          << "session_id = " << escapeString(pImpl_->conn_, sessionId) << ", "
-          << "similar_screen_content = " << escapeString(pImpl_->conn_, similarScreenContent)
-          << " WHERE event_id IN (";
+          << " SET \"compressed\" = TRUE, "
+          << "\"session_id\" = " << escapeString(pImpl_->conn_, sessionId) << ", "
+          << "\"similar_screen_content\" = " << escapeString(pImpl_->conn_, similarScreenContent)
+          << " WHERE \"event_id\" IN (";
     
     for (size_t i = 0; i < eventIds.size(); ++i) {
         if (i > 0) query << ", ";
@@ -1007,7 +1437,7 @@ int PostgreSQLClient::deleteOlderThan(const std::string& tableName,
                                      std::time_t cutoffTime) {
     std::ostringstream query;
     query << "DELETE FROM " << tableName
-          << " WHERE timestamp < " << escapeString(pImpl_->conn_, timestampToPostgreSQL(cutoffTime))
+          << " WHERE \"timestamp\" < " << escapeString(pImpl_->conn_, timestampToPostgreSQL(cutoffTime))
           << ";";
     
     PGresult* res = nullptr;
@@ -1026,8 +1456,8 @@ int PostgreSQLClient::findOlderThan(std::string tableName,
     std::time_t cutoffTime, SearchResult& result)
 {
     std::ostringstream query;
-    query << "SELECT FROM " << tableName
-        << " WHERE timestamp < " << escapeString(pImpl_->conn_, timestampToPostgreSQL(cutoffTime))
+    query << "SELECT * FROM " << tableName
+        << " WHERE \"timestamp\" < " << escapeString(pImpl_->conn_, timestampToPostgreSQL(cutoffTime))
         << ";";
     PGresult* res = nullptr;
     if (!pImpl_->executeQuery(query.str(), &res)) {
@@ -1047,18 +1477,21 @@ int PostgreSQLClient::countOlderThan(std::string tableName,
     std::time_t cutoffTime)
 {
     std::ostringstream query;
-    query << "SELECT FROM " << tableName
-        << " WHERE timestamp < " << escapeString(pImpl_->conn_, timestampToPostgreSQL(cutoffTime))
+    query << "SELECT COUNT(*) FROM " << tableName
+        << " WHERE \"timestamp\" < " << escapeString(pImpl_->conn_, timestampToPostgreSQL(cutoffTime))
         << ";";
     PGresult* res = nullptr;
     if (!pImpl_->executeQuery(query.str(), &res)) {
         return 0;
     }
 
-    int rows = PQntuples(res);
+    int count = 0;
+    if (PQntuples(res) > 0) {
+        count = std::atoi(PQgetvalue(res, 0, 0));
+    }
     
-
-    return rows;
+    PQclear(res);
+    return count;
 }
 
 bool PostgreSQLClient::refreshCollection(const std::string& tableName) {
@@ -1106,7 +1539,7 @@ int PostgreSQLClient::getDocumentCount(const std::string& tableName) {
 }
 
 int PostgreSQLClient::getUncompressedCount(const std::string& tableName) {
-    std::string query = "SELECT COUNT(*) FROM " + tableName + " WHERE compressed = FALSE;";
+std::string query = "SELECT COUNT(*) FROM " + tableName + " WHERE \"compressed\" = FALSE;";
     
     PGresult* res = nullptr;
     if (!pImpl_->executeQuery(query, &res)) {
@@ -1171,7 +1604,7 @@ std::string PostgreSQLClient::getServerInfo() {
 RawEvent PostgreSQLClient::getDocumentByAppName(const std::string& tableName, 
                                                 const std::string& appName) {
     std::string query = "SELECT * FROM " + tableName + 
-                       " WHERE app_name = " + escapeString(pImpl_->conn_, appName) + 
+                       " WHERE \"app_name\" = " + escapeString(pImpl_->conn_, appName) + 
                        " LIMIT 1;";
     
     PGresult* res = nullptr;
@@ -1191,7 +1624,7 @@ RawEvent PostgreSQLClient::getDocumentByAppName(const std::string& tableName,
 bool PostgreSQLClient::deleteDocumentByAppName(const std::string& tableName, 
                                               const std::string& appName) {
     std::string query = "DELETE FROM " + tableName + 
-                       " WHERE app_name = " + escapeString(pImpl_->conn_, appName) + ";";
+                       " WHERE \"app_name\" = " + escapeString(pImpl_->conn_, appName) + ";";
     
     return pImpl_->executeQuery(query);
 }

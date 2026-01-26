@@ -85,6 +85,24 @@ set_target_properties(database_client PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
 )
 
+# Copy db_structure.ini to build directory during configure
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/db_structure.ini"
+    "${CMAKE_BINARY_DIR}/db_structure.ini"
+    COPYONLY
+)
+
+# Post-build: Copy db_structure.ini to output directory
+add_custom_command(TARGET database_client POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/db_structure.ini"
+        ${CMAKE_BINARY_DIR}/bin/db_structure.ini
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/db_structure.ini"
+        ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/db_structure.ini
+    COMMENT "Copying db_structure.ini to output directory"
+)
+
 # Post-build: Copy CURL DLL to output directory
 if(WIN32)
     set(VCPKG_INSTALLED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../vcpkg_installed/x64-windows")

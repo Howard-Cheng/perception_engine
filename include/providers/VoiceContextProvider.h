@@ -33,10 +33,9 @@ public:
         std::string language = "zh-CN";
         
         // Embedded mode configuration
-        std::string embeddedModelPath;
-        std::string embeddedModelName;
-        std::string embeddedModelLicense;
-        
+         std::string embeddedModelPath = "";
+        std::string embeddedModelName = "";
+        std::string embeddedModelLicense = "";
         // Recognition mode
         bool useEmbeddedModel = true;  // true: use embedded/offline mode, false: use online mode
         bool autoStart = true;          // Automatically start recognition after initialization
@@ -48,6 +47,12 @@ public:
         // Keyword recognition
         bool enableKeyword = false;
         std::string keywordModelPath;
+
+        /**
+         * @brief Load configuration from global ConfigManager
+         * @return Config populated with values from ConfigManager
+         */
+        static Config LoadFromConfigManager();
     };
     
     VoiceContextProvider();

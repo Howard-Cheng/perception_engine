@@ -180,8 +180,6 @@ namespace WindowsAPIs {
                 return;
             }
 
-            std::lock_guard<std::mutex> lock(m_historyMutex);
-
             auto now = std::chrono::system_clock::now();
 
             // Check if this is a different app OR different window title
@@ -202,7 +200,7 @@ namespace WindowsAPIs {
                 std::cout << "  -> Duration: " << duration.count() << " seconds" << std::endl;
 
                 // Only record if the app was active for more than 2 seconds
-                if (duration.count() > 2) {
+                if (duration.count() > 2 && !m_lastActiveAppContent.empty()) {
                     int durationSecs = static_cast<int>(duration.count());
 
                     // Generate unique key from appName + windowTitle
@@ -227,11 +225,12 @@ namespace WindowsAPIs {
                 }
             }
 
+            std::string newAppContent = GetCurrentActiveAppContent();
             // Update current active app and window title
             m_lastActiveApp = appName;
             m_lastActiveAppWindowTitle = windowTitle;
             m_lastAppStartTime = now;
-            m_lastActiveAppContent = GetCurrentActiveAppContent();
+            m_lastActiveAppContent = newAppContent;  // ? FIX: Use pre-fetched content
 
             std::cout << "  -> Updated current app: " << m_lastActiveApp << std::endl;
 
@@ -386,6 +385,19 @@ namespace WindowsAPIs {
 
     // Get current active app content
     std::string WindowsAPIsManager::GetCurrentActiveAppContent() {
+        // ? FIX: Reentrancy guard - if we're already extracting content, return empty
+        // This prevents deadlock when COM calls during UI Automation trigger recursive window events
+        if (m_isExtractingContent.exchange(true)) {
+            std::cout << "[GetCurrentActiveAppContent] Skipping - already extracting (reentrancy guard)" << std::endl;
+            return "";
+        }
+        
+        // RAII guard to reset the flag when we exit
+        struct ReentrancyGuard {
+            std::atomic<bool>& flag;
+            ~ReentrancyGuard() { flag.store(false); }
+        } guard{m_isExtractingContent};
+        
         try {
             std::lock_guard<std::mutex> lock(m_extractorMutex);
 
@@ -918,11 +930,13 @@ namespace WindowsAPIs {
                 loc.description = display_name;
             }
             catch (...) {
-                loc.description = nullptr;
+                // ? FIX: Use empty string instead of nullptr
+                loc.description = "";
             }
         }
         else {
-            loc.description = nullptr;
+            // ? FIX: Use empty string instead of nullptr
+            loc.description = "";
         }
         return loc;
     }

@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <atomic>
 
 // Forward declarations
 class WindowEventMonitor;
@@ -107,6 +108,9 @@ namespace WindowsAPIs {
         std::unique_ptr<BrowserContentExtractor> m_contentExtractor;
         std::mutex m_extractorMutex;
         bool m_extractorInitialized;
+        
+        // ✅ FIX: Reentrancy guard to prevent recursive calls during COM operations
+        std::atomic<bool> m_isExtractingContent{false};
 
         // Window switch callback
         WindowSwitchCallback m_windowSwitchCallback;

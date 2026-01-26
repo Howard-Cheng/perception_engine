@@ -1,11 +1,43 @@
 #include "providers/VoiceContextProvider.h"
 #include "SpeechRecognition.h"
+#include "pe_base/config_manager.h"
 #include <sstream>
 #include <iomanip>
 #include <chrono>
 
+// Static method to load config from ConfigManager
+VoiceContextProvider::Config VoiceContextProvider::Config::LoadFromConfigManager() {
+    Config config;
+    auto& configManager = pe_base::ConfigManager::GetInstance();
+    
+    // Online mode configuration
+    config.subscriptionKey = configManager.GetVoiceContextSubscriptionKey();
+    config.serviceRegion = configManager.GetVoiceContextServiceRegion();
+    config.language = configManager.GetVoiceContextLanguage();
+    
+    // Embedded mode configuration
+    config.embeddedModelPath = configManager.GetVoiceContextEmbeddedModelPath();
+    config.embeddedModelName = configManager.GetVoiceContextEmbeddedModelName();
+    config.embeddedModelLicense = configManager.GetVoiceContextEmbeddedModelLicense();
+    
+    // Recognition mode
+    config.useEmbeddedModel = configManager.GetVoiceContextUseEmbeddedModel();
+    config.autoStart = configManager.GetVoiceContextAutoStart();
+    
+    // Recognition parameters
+    config.silenceTimeoutMs = configManager.GetVoiceContextSilenceTimeoutMs();
+    config.endSilenceTimeoutMs = configManager.GetVoiceContextEndSilenceTimeoutMs();
+    
+    // Keyword recognition
+    config.enableKeyword = configManager.GetVoiceContextEnableKeyword();
+    config.keywordModelPath = configManager.GetVoiceContextKeywordModelPath();
+    
+    return config;
+}
+
 VoiceContextProvider::VoiceContextProvider() 
-    : speechRecognition_(std::make_unique<SpeechRecognitionModule::SpeechRecognition>()) {
+    : config_(Config::LoadFromConfigManager())
+    , speechRecognition_(std::make_unique<SpeechRecognitionModule::SpeechRecognition>()) {
 }
 
 VoiceContextProvider::VoiceContextProvider(const Config& config)

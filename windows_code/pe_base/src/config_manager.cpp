@@ -94,6 +94,50 @@ static std::string trim(const std::string& str) {
     return str.substr(first, (last - first + 1));
 }
 
+// Helper function to check if a string is a valid integer
+static bool isInteger(const std::string& str) {
+    if (str.empty()) return false;
+    size_t start = 0;
+    if (str[0] == '-' || str[0] == '+') {
+        if (str.length() == 1) return false;
+        start = 1;
+    }
+    for (size_t i = start; i < str.length(); ++i) {
+        if (!std::isdigit(static_cast<unsigned char>(str[i]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Helper function to check if a string is a valid float
+static bool isFloat(const std::string& str) {
+    if (str.empty()) return false;
+    size_t start = 0;
+    bool hasDot = false;
+    bool hasDigit = false;
+    
+    if (str[0] == '-' || str[0] == '+') {
+        if (str.length() == 1) return false;
+        start = 1;
+    }
+    
+    for (size_t i = start; i < str.length(); ++i) {
+        char c = str[i];
+        if (c == '.') {
+            if (hasDot) return false; // Multiple dots
+            hasDot = true;
+        } else if (std::isdigit(static_cast<unsigned char>(c))) {
+            hasDigit = true;
+        } else {
+            return false; // Invalid character
+        }
+    }
+    
+    // Must have at least one digit and exactly one dot to be a float (not an integer)
+    return hasDigit && hasDot;
+}
+
 bool ConfigManager::LoadConfig(const std::string& configPath) {
     std::lock_guard<std::mutex> lock(mutex_);
     
@@ -152,18 +196,20 @@ bool ConfigManager::LoadConfig(const std::string& configPath) {
                         config_[currentSection][key] = true;
                     } else if (value == "false" || value == "FALSE") {
                         config_[currentSection][key] = false;
-                    } else if (value.find('.') != std::string::npos) {
+                    } else if (isFloat(value)) {
                         try {
                             config_[currentSection][key] = std::stof(value);
                         } catch (...) {
                             config_[currentSection][key] = value;
                         }
-                    } else {
+                    } else if (isInteger(value)) {
                         try {
                             config_[currentSection][key] = std::stoi(value);
                         } catch (...) {
                             config_[currentSection][key] = value;
                         }
+                    } else {
+                        config_[currentSection][key] = value;
                     }
                 } else {
                     // Top-level key without section

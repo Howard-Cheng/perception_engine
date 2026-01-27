@@ -363,18 +363,35 @@ bool LinguaCore::processSingleEvent(const database::RawEvent& event) {
     
     const std::string& content = *event.screenContent;
     
-    // Generate summary
+    // Generate summary for screen content
     std::string summary = generateSummary(content);
     if (summary.empty()) {
         PE_ERROR("Failed to generate summary");
         return false;
     }
     
-    PE_INFO("Generated summary (" << summary.length() << " chars)");
+    PE_INFO("Generated screen content summary (" << summary.length() << " chars)");
+    
+    // Generate summary for voice transcription if available
+    std::string audio_summary;
+    if (event.voiceTranscription.has_value() && !event.voiceTranscription->empty()) {
+        const std::string& voice_content = *event.voiceTranscription;
+        PE_INFO("Processing voice transcription (" << voice_content.length() << " chars)");
+        
+        audio_summary = generateSummary(voice_content);
+        if (audio_summary.empty()) {
+            PE_WARN("Failed to generate audio summary, continuing without it");
+        } else {
+            PE_INFO("Generated audio summary (" << audio_summary.length() << " chars)");
+        }
+    } else {
+        PE_INFO("No voice transcription available for this event");
+    }
     
     // Store in vector database with created_at timestamp
     std::string session_id = event.sessionId.value_or(event.eventId);
-    if (!storeSummaryInVectorDB(session_id, summary, content, event.createdAt)) {
+    // Pass audio_summary to storeSummaryInVectorDB
+    if (!storeSummaryInVectorDB(session_id, summary, content, event.createdAt, audio_summary)) {
         PE_ERROR("Failed to store summary in vector DB");
         return false;
     }
@@ -398,17 +415,31 @@ bool LinguaCore::processMultipleEvents(const std::vector<database::RawEvent>& ev
     
     // Combine similar_screen_content from all events
     std::ostringstream combined_content;
+    // Combine voice transcriptions from all events
+    std::ostringstream combined_voice_content;
     std::vector<std::string> event_ids;
+    
+    bool has_voice_content = false;
     
     for (size_t i = 0; i < events.size(); ++i) {
         const auto& event = events[i];
         event_ids.push_back(event.eventId);
         
+        // Combine screen content
         if (event.similarScreenContent.has_value() && !event.similarScreenContent->empty()) {
             if (i > 0) {
                 combined_content << "\n\n--- Next Event ---\n\n";
             }
             combined_content << *event.similarScreenContent;
+        }
+        
+        // Combine voice transcriptions
+        if (event.voiceTranscription.has_value() && !event.voiceTranscription->empty()) {
+            if (has_voice_content) {
+                combined_voice_content << "\n\n--- Next Event ---\n\n";
+            }
+            combined_voice_content << *event.voiceTranscription;
+            has_voice_content = true;
         }
     }
     
@@ -421,17 +452,34 @@ bool LinguaCore::processMultipleEvents(const std::vector<database::RawEvent>& ev
     
     PE_INFO("Combined content length: " << content.length() << " chars");
     
-    // Generate summary
+    // Generate summary for screen content
     std::string summary = generateSummary(content);
     if (summary.empty()) {
         PE_ERROR("Failed to generate summary");
         return false;
     }
     
-    PE_INFO("Generated summary (" << summary.length() << " chars)");
+    PE_INFO("Generated screen content summary (" << summary.length() << " chars)");
+    
+    // Generate summary for combined voice transcriptions
+    std::string audio_summary;
+    if (has_voice_content) {
+        std::string voice_content = combined_voice_content.str();
+        PE_INFO("Processing combined voice transcriptions (" << voice_content.length() << " chars)");
+        
+        audio_summary = generateSummary(voice_content);
+        if (audio_summary.empty()) {
+            PE_WARN("Failed to generate audio summary, continuing without it");
+        } else {
+            PE_INFO("Generated audio summary (" << audio_summary.length() << " chars)");
+        }
+    } else {
+        PE_INFO("No voice transcriptions found in any event");
+    }
     
     // Store in vector database with first event's created_at timestamp
-    if (!storeSummaryInVectorDB(session_id, summary, content, events[0].createdAt)) {
+    // Pass audio_summary to storeSummaryInVectorDB
+    if (!storeSummaryInVectorDB(session_id, summary, content, events[0].createdAt, audio_summary)) {
         PE_ERROR("Failed to store summary in vector DB");
         return false;
     }
@@ -459,7 +507,8 @@ bool LinguaCore::storeSummaryInVectorDB(
     const std::string& session_id,
     const std::string& summary,
     const std::string& original_content,
-    std::time_t created_at) {
+    std::time_t created_at,
+    const std::string& audio_summary) {  // Add audio_summary parameter
     
     try {
         // Check if vector store is properly initialized
@@ -488,6 +537,13 @@ bool LinguaCore::storeSummaryInVectorDB(
         metadata["created_at"] = static_cast<int64_t>(created_at);
         metadata["original_length"] = static_cast<int64_t>(original_content.length());
         metadata["summary_length"] = static_cast<int64_t>(summary.length());
+        
+        // Add audio_summary to metadata if available
+        if (!audio_summary.empty()) {
+            metadata["audio_summary"] = audio_summary;
+            metadata["audio_summary_length"] = static_cast<int64_t>(audio_summary.length());
+            PE_INFO("Including audio summary in metadata (" << audio_summary.length() << " chars)");
+        }
         
         PE_INFO("Storing in Qdrant - session_id: " << session_id << 
             ", summary length: " << summary.length() <<
@@ -518,7 +574,8 @@ bool LinguaCore::storeSummaryInVectorDB(
             return false;
         }
         
-        PE_INFO("Successfully stored summary in Qdrant");
+        PE_INFO("Successfully stored summary in Qdrant" << 
+            (audio_summary.empty() ? "" : " (with audio summary)"));
         
         // Verify by checking collection point count
         auto collectionInfo = vector_store_->getClient().getCollectionInfo(vector_store_->getCollectionName());

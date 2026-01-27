@@ -388,6 +388,12 @@ database::RawEvent ContextCollector::jsonContextToRawEvent(const nlohmann::json&
     // Extract app context using safe helper functions (handles null values)
     event.appName = safeGetString(context, "activeApp", "Unknown");
     event.windowTitle = safeGetString(context, "windowTitle", "");
+    
+    // Extract URL from context and store in database
+    std::string url = safeGetString(context, "url", "");
+    if (!url.empty()) {
+        event.url = url;
+    }
 
     // Extract content
     std::string screenContent = safeGetString(context, "activeAppContent", "");

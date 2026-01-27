@@ -4,6 +4,7 @@
 #include <sstream>
 #include <iomanip>
 #include <chrono>
+#include <iostream>
 
 // Static method to load config from ConfigManager
 VoiceContextProvider::Config VoiceContextProvider::Config::LoadFromConfigManager() {
@@ -306,6 +307,7 @@ void VoiceContextProvider::onRecognized(const std::string& text) {
             transcription_ = cleaned;
         }
     }
+    std::cout << "[VoiceContextProvider] Recognized text: " << cleaned << std::endl;
     currentPartialText_.clear();
     latencyMs_ = static_cast<float>(duration.count());
 }

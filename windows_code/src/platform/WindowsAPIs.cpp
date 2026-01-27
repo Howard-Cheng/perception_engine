@@ -219,6 +219,12 @@ namespace WindowsAPIs {
                     record.durationSeconds = durationSecs;
                     // ? UPDATED: Convert BrowserContentInfo to string for ActiveAppRecord
                     record.appContent = pe_base::WindowsHelper::ConvertToChar(m_lastActiveAppContent->textContent.c_str()).ToString();
+                    //  Extract and store URL from BrowserContentInfo
+                    if (!m_lastActiveAppContent->url.empty()) {
+                        record.url = pe_base::WindowsHelper::ConvertToChar(m_lastActiveAppContent->url.c_str()).ToString();
+                    } else {
+                        record.url = "";  // Empty string for non-browser apps
+                    }
                     m_activeAppHistory[key] = record;
 
                     std::cout << "  -> RECORDED: " << m_lastActiveApp << " (" << durationSecs << "s)" << std::endl;

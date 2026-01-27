@@ -170,13 +170,15 @@ private:
      * @param summary Summary text
      * @param original_content Original content (for metadata)
      * @param created_at Event creation timestamp
+     * @param audio_summary Audio transcription summary (optional)
      * @return true if stored successfully
      */
     bool storeSummaryInVectorDB(
         const std::string& session_id,
         const std::string& summary,
         const std::string& original_content,
-        std::time_t created_at);
+        std::time_t created_at,
+        const std::string& audio_summary = "");  //Add audio_summary parameter with default value
     
     /**
      * @brief Update summarized flag in PostgreSQL

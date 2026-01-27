@@ -13,6 +13,7 @@ class WindowEventMonitor;
 class BrowserContentExtractor;
 class AsyncTaskQueue;
 struct WindowInfo;
+struct BrowserContentInfo;  // Forward declaration only
 
 // Windows APIs wrapper functions
 namespace WindowsAPIs {
@@ -37,7 +38,7 @@ namespace WindowsAPIs {
         std::string description="";
     };
 
-    // ⚡ NEW: WindowsAPIsManager - Singleton class for managing Windows APIs
+    // WindowsAPIsManager - Singleton class for managing Windows APIs
     class WindowsAPIsManager {
     public:
         // Callback type for window switch events - ⚡ UPDATED: Now passes ActiveAppRecord
@@ -67,8 +68,8 @@ namespace WindowsAPIs {
         // Get recent active apps within the specified time period
         std::vector<ActiveAppRecord> GetRecentPeriodActiveAppList();
 
-        // Get current active app content using UIA
-        std::string GetCurrentActiveAppContent();
+        // ? UPDATED: Get current active app content using UIA (returns BrowserContentInfo)
+        BrowserContentInfo GetCurrentActiveAppContent();
 
         // Get foreground app name
         std::string GetForegroundAppName();
@@ -84,7 +85,7 @@ namespace WindowsAPIs {
         // Event callback function for window monitoring (internal)
         void OnWindowEventInternal(const WindowInfo& info);
 
-        // ✅ NEW: Process window switch event asynchronously
+        // Process window switch event asynchronously
         void ProcessWindowSwitchAsync(const ActiveAppRecord& record);
 
         // Cleanup old records (older than 1 hour)
@@ -102,21 +103,22 @@ namespace WindowsAPIs {
         std::mutex m_historyMutex;
         std::string m_lastActiveApp;
         std::string m_lastActiveAppWindowTitle;
-        std::string m_lastActiveAppContent;
+        //  Use unique_ptr to avoid incomplete type issue
+        std::unique_ptr<BrowserContentInfo> m_lastActiveAppContent;
         std::chrono::system_clock::time_point m_lastAppStartTime;
         
         std::unique_ptr<BrowserContentExtractor> m_contentExtractor;
         std::mutex m_extractorMutex;
         bool m_extractorInitialized;
         
-        // ✅ FIX: Reentrancy guard to prevent recursive calls during COM operations
+        // Reentrancy guard to prevent recursive calls during COM operations
         std::atomic<bool> m_isExtractingContent{false};
 
         // Window switch callback
         WindowSwitchCallback m_windowSwitchCallback;
         std::mutex m_callbackMutex;
         
-        // ✅ NEW: Async task queue for callback execution
+        // Async task queue for callback execution
         std::unique_ptr<AsyncTaskQueue> m_callbackTaskQueue;
         
         // Global location cache
@@ -126,12 +128,13 @@ namespace WindowsAPIs {
         bool m_locationInitialized = false;
     };
 
-    // ⚡ Compatibility layer: Keep original namespace functions for backward compatibility
+    // Compatibility layer: Keep original namespace functions for backward compatibility
     
     // Active Application
     std::string GetForegroundAppName();
 
-    // Active Application Content
+    // ? DEPRECATED: Active Application Content (returns string for backward compatibility)
+    // ? Consider using WindowsAPIsManager::GetCurrentActiveAppContent() for full BrowserContentInfo
     std::string GetCurrentActiveAppContent();
 
     // Time utilities

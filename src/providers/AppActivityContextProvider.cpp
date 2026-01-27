@@ -63,6 +63,7 @@ void AppActivityContextProvider::collectContext(nlohmann::json& context) const {
     context["activeApp"] = currentApp_;
     context["windowTitle"] = currentWindowTitle_;
     context["activeAppContent"] = currentContent_;
+    context["url"] = currentUrl_;  // Include URL in context
     context["duration"] = dwellTimeSeconds_;
     context["interactionCount"] = static_cast<int64_t>(interactionCount_);
     context["startTime"] = startSwitchTime_;
@@ -114,6 +115,7 @@ void AppActivityContextProvider::onWindowSwitch(const WindowsAPIs::ActiveAppReco
         currentApp_ = record.appName;
         currentWindowTitle_ = record.windowTitle;
         currentContent_ = record.appContent;
+        currentUrl_ = record.url;  // Extract URL from record
         dwellTimeSeconds_ = record.durationSeconds;
         startSwitchTime_ = pe_base::TimeUtil::TimestampMs();
         

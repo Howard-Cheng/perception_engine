@@ -22,6 +22,7 @@ namespace WindowsAPIs {
         std::string appName;
         std::string appContent;
         std::string windowTitle;
+        std::string url;  // Browser URL (for Chrome/Edge/Firefox)
         std::chrono::system_clock::time_point timestamp;
         int durationSeconds;
 

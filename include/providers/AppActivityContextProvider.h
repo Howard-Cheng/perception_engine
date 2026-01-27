@@ -55,6 +55,7 @@ private:
     std::string currentApp_;
     std::string currentWindowTitle_;
     std::string currentContent_;
+    std::string currentUrl_;  // Store current URL
     int dwellTimeSeconds_ = 0;
     UINT64 interactionCount_ = 0;  // Changed from int to UINT64
     long long startSwitchTime_ = 0;

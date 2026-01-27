@@ -61,6 +61,7 @@ namespace WindowsAPIs {
     WindowsAPIsManager::WindowsAPIsManager()
         : m_extractorInitialized(false)
         , m_locationInitialized(false)
+        , m_lastActiveAppContent(std::make_unique<BrowserContentInfo>())  // ? NEW: Initialize unique_ptr
     {
         m_lastAppStartTime = std::chrono::system_clock::now();
         m_lastLocationUpdate = std::chrono::steady_clock::now();
@@ -91,6 +92,10 @@ namespace WindowsAPIs {
             // Initialize monitor if not already created
             if (!m_eventMonitor) {
                 m_eventMonitor = std::make_unique<WindowEventMonitor>();
+            }
+            //Store in unique_ptr
+            if (!m_lastActiveAppContent) {
+                m_lastActiveAppContent = std::make_unique<BrowserContentInfo>();
             }
 
             // Register callback for window events (using lambda to capture 'this')
@@ -162,25 +167,23 @@ namespace WindowsAPIs {
 
     // Internal window event handler
     void WindowsAPIsManager::OnWindowEventInternal(const WindowInfo& info) {
-        // ? Debug logs
-        std::cout << "[DEBUG] OnWindowEventInternal called!" << std::endl;
-        std::cout << "  App: " << pe_base::WindowsHelper::ConvertToChar(info.processName.c_str()).ToString() << std::endl;
-        std::cout << "  Window: " << pe_base::WindowsHelper::ConvertToChar(info.windowTitle.c_str()).ToString() << std::endl;
+        //std::cout << "  App: " << pe_base::WindowsHelper::ConvertToChar(info.processName.c_str()).ToString() << std::endl;
+        //std::cout << "  Window: " << pe_base::WindowsHelper::ConvertToChar(info.windowTitle.c_str()).ToString() << std::endl;
 
         try {
             std::string appName = GetAppNameFromWindowInfo(info);
             std::string windowTitle = pe_base::WindowsHelper::ConvertToChar(info.windowTitle.c_str()).ToString();
 
-            std::cout << "  Processed App: " << appName << std::endl;
-            std::cout << "  Processed Window: " << windowTitle << std::endl;
-
-            // Skip empty, invalid, or system app names
-            if (appName.empty() || appName == "Unknown" || appName == "Desktop" || appName == "csc_ui") {
-                std::cout << "  -> Skipped (invalid app)" << std::endl;
+            // ? NEW: Use ConfigManager to check blacklist instead of hardcoded list
+            auto& config = pe_base::ConfigManager::GetInstance();
+            if (appName.empty() || config.IsBlacklisted(appName)) {
+                //std::cout << "  -> Skipped (invalid app or blacklisted)" << std::endl;
                 return;
             }
 
-            std::lock_guard<std::mutex> lock(m_historyMutex);
+            std::cout << "[DEBUG] OnWindowEventInternal called!" << std::endl;
+            std::cout << "  Processed App: " << appName << std::endl;
+            std::cout << "  Processed Window: " << windowTitle << std::endl;
 
             auto now = std::chrono::system_clock::now();
 
@@ -201,8 +204,8 @@ namespace WindowsAPIs {
 
                 std::cout << "  -> Duration: " << duration.count() << " seconds" << std::endl;
 
-                // Only record if the app was active for more than 2 seconds
-                if (duration.count() > 2) {
+                // ? UPDATED: Check if textContent is not empty (using unique_ptr)
+                if (duration.count() > 2 && m_lastActiveAppContent && !m_lastActiveAppContent->textContent.empty()) {
                     int durationSecs = static_cast<int>(duration.count());
 
                     // Generate unique key from appName + windowTitle
@@ -214,12 +217,19 @@ namespace WindowsAPIs {
                     record.windowTitle = m_lastActiveAppWindowTitle;
                     record.timestamp = m_lastAppStartTime;
                     record.durationSeconds = durationSecs;
-                    record.appContent = m_lastActiveAppContent;
+                    // ? UPDATED: Convert BrowserContentInfo to string for ActiveAppRecord
+                    record.appContent = pe_base::WindowsHelper::ConvertToChar(m_lastActiveAppContent->textContent.c_str()).ToString();
+                    //  Extract and store URL from BrowserContentInfo
+                    if (!m_lastActiveAppContent->url.empty()) {
+                        record.url = pe_base::WindowsHelper::ConvertToChar(m_lastActiveAppContent->url.c_str()).ToString();
+                    } else {
+                        record.url = "";  // Empty string for non-browser apps
+                    }
                     m_activeAppHistory[key] = record;
 
-                    std::cout << "  -> ? RECORDED: " << m_lastActiveApp << " (" << durationSecs << "s)" << std::endl;
+                    std::cout << "  -> RECORDED: " << m_lastActiveApp << " (" << durationSecs << "s)" << std::endl;
 
-                    // ? NEW: Post callback to async task queue (non-blocking)
+                    // Post callback to async task queue (non-blocking)
                     ProcessWindowSwitchAsync(record);
                 }
                 else {
@@ -227,11 +237,12 @@ namespace WindowsAPIs {
                 }
             }
 
+            BrowserContentInfo newAppContent = GetCurrentActiveAppContent();
             // Update current active app and window title
             m_lastActiveApp = appName;
-            m_lastActiveAppWindowTitle = windowTitle;
+            m_lastActiveAppWindowTitle = pe_base::WindowsHelper::ConvertToChar(newAppContent.title.c_str()).ToString();
             m_lastAppStartTime = now;
-            m_lastActiveAppContent = GetCurrentActiveAppContent();
+            *m_lastActiveAppContent = newAppContent;
 
             std::cout << "  -> Updated current app: " << m_lastActiveApp << std::endl;
 
@@ -384,8 +395,21 @@ namespace WindowsAPIs {
         }
     }
 
-    // Get current active app content
-    std::string WindowsAPIsManager::GetCurrentActiveAppContent() {
+    //  Get current active app content - now returns BrowserContentInfo
+    BrowserContentInfo WindowsAPIsManager::GetCurrentActiveAppContent() {
+        // Reentrancy guard - if we're already extracting content, return empty
+        // This prevents deadlock when COM calls during UI Automation trigger recursive window events
+        if (m_isExtractingContent.exchange(true)) {
+            std::cout << "[GetCurrentActiveAppContent] Skipping - already extracting (reentrancy guard)" << std::endl;
+            return BrowserContentInfo();  // ? UPDATED: Return empty BrowserContentInfo
+        }
+        
+        // RAII guard to reset the flag when we exit
+        struct ReentrancyGuard {
+            std::atomic<bool>& flag;
+            ~ReentrancyGuard() { flag.store(false); }
+        } guard{m_isExtractingContent};
+        
         try {
             std::lock_guard<std::mutex> lock(m_extractorMutex);
 
@@ -396,20 +420,20 @@ namespace WindowsAPIs {
 
             HWND hwnd = GetForegroundWindow();
             if (!hwnd) {
-                return "";
+                return BrowserContentInfo();  // ? UPDATED: Return empty BrowserContentInfo
             }
 
             BrowserContentInfo info;
             bool success = m_contentExtractor->GetBrowserContentByHWND(hwnd, info);
 
             if (!success || info.textContent.empty()) {
-                return "";
+                return BrowserContentInfo();  // ? UPDATED: Return empty BrowserContentInfo
             }
 
-            return pe_base::WindowsHelper::ConvertToChar(info.textContent.c_str()).ToString();
+            return info;  // ? UPDATED: Return full BrowserContentInfo object
         }
         catch (...) {
-            return "";
+            return BrowserContentInfo();  // ? UPDATED: Return empty BrowserContentInfo
         }
     }
 
@@ -501,8 +525,14 @@ namespace WindowsAPIs {
         return WindowsAPIsManager::GetInstance().GetRecentPeriodActiveAppList();
     }
 
+    // ? UPDATED: Backward compatibility - converts BrowserContentInfo to string
     std::string GetCurrentActiveAppContent() {
-        return WindowsAPIsManager::GetInstance().GetCurrentActiveAppContent();
+        BrowserContentInfo info = WindowsAPIsManager::GetInstance().GetCurrentActiveAppContent();
+        // Convert textContent to UTF-8 string
+        if (!info.textContent.empty()) {
+            return pe_base::WindowsHelper::ConvertToChar(info.textContent.c_str()).ToString();
+        }
+        return "";
     }
 
     int GetBatteryPercentage() {
@@ -918,11 +948,13 @@ namespace WindowsAPIs {
                 loc.description = display_name;
             }
             catch (...) {
-                loc.description = nullptr;
+                // ? FIX: Use empty string instead of nullptr
+                loc.description = "";
             }
         }
         else {
-            loc.description = nullptr;
+            // ? FIX: Use empty string instead of nullptr
+            loc.description = "";
         }
         return loc;
     }

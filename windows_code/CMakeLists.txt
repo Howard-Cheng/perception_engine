@@ -5,17 +5,19 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ============================================================================
+
 # Global Build Options
 # ============================================================================
+
 option(BUILD_ALL_TESTS "Build all test programs (global switch)" OFF)
 option(BUILD_ALL_EXAMPLES "Build all example programs (global switch)" OFF)
-option(BUILD_TEST_ASR "Build TestASR program" ON)
 
 # Note: We use the default MSVC runtime library (/MD - Dynamic CRT)
 # This matches vcpkg defaults and most dependencies
 # SentencePiece should be built with /MD to match
 
 # ============================================================================
+
 # Set individual project options BEFORE add_subdirectory()
 # ============================================================================
 
@@ -59,10 +61,12 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # ============================================================================
+
 # Subdirectories - Pass global options to subprojects
 # ============================================================================
 
 # ============================================================================
+
 # Database Client DLL (subdirectory)
 # ============================================================================
 
@@ -103,24 +107,19 @@ add_subdirectory(vectordb_client)
 
 # ============================================================================
 
+# Voice Module (Speech Recognition) (subdirectory)
+# ============================================================================
+
+# Add voice_module as a subdirectory for Microsoft Speech SDK based speech recognition
+add_subdirectory(voice_module)
+
+# ============================================================================
+
 # Tools
 # ============================================================================
 
 # Add revise_database tool
 add_subdirectory(tools/revise_database)
-
-# ============================================================================
-
-# Test Programs
-# ============================================================================
-
-# Add TestASR if enabled
-if(BUILD_TEST_ASR)
-    add_subdirectory(test_asr)
-    message(STATUS "TestASR enabled")
-else()
-    message(STATUS "TestASR disabled (set BUILD_TEST_ASR=ON to enable)")
-endif()
 
 # ============================================================================
 
@@ -416,6 +415,7 @@ target_include_directories(PerceptionEngine PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/embeddingmodel/include
     ${CMAKE_CURRENT_SOURCE_DIR}/pe_base/include
     ${CMAKE_CURRENT_SOURCE_DIR}/vectordb_client/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/voice_module
     # ${WHISPER_INCLUDE_DIR}
     # ${CMAKE_CURRENT_SOURCE_DIR}/third-party/whisper.cpp/ggml/include
     ${JSON_INCLUDE_DIR}
@@ -494,6 +494,9 @@ target_link_libraries(PerceptionEngine PRIVATE
     
     # Vector DB library (Qdrant)
     vectordb_client
+    
+    # Voice/Speech Recognition Module
+    SpeechRecognitionModule
 )
 
 # Link E5 Embedding library
@@ -614,6 +617,12 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
         $<TARGET_FILE:vectordb_client>
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/vectordb_client.dll
 
+    # Copy SpeechRecognitionModule DLL to bin/
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying SpeechRecognitionModule DLL..."
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:SpeechRecognitionModule>
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/SpeechRecognitionModule.dll
+
     # Copy DataProcessServer.exe to bin/ (same directory as PerceptionEngine.exe)
     COMMAND ${CMAKE_COMMAND} -E echo "Copying DataProcessServer.exe to output directory..."
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -658,6 +667,11 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:vectordb_client>
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/vectordb_client.dll
+    
+    # Copy SpeechRecognitionModule to bin/$<CONFIG>/}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:SpeechRecognitionModule>
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/SpeechRecognitionModule.dll
 
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/models

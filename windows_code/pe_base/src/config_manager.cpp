@@ -94,6 +94,50 @@ static std::string trim(const std::string& str) {
     return str.substr(first, (last - first + 1));
 }
 
+// Helper function to check if a string is a valid integer
+static bool isInteger(const std::string& str) {
+    if (str.empty()) return false;
+    size_t start = 0;
+    if (str[0] == '-' || str[0] == '+') {
+        if (str.length() == 1) return false;
+        start = 1;
+    }
+    for (size_t i = start; i < str.length(); ++i) {
+        if (!std::isdigit(static_cast<unsigned char>(str[i]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Helper function to check if a string is a valid float
+static bool isFloat(const std::string& str) {
+    if (str.empty()) return false;
+    size_t start = 0;
+    bool hasDot = false;
+    bool hasDigit = false;
+    
+    if (str[0] == '-' || str[0] == '+') {
+        if (str.length() == 1) return false;
+        start = 1;
+    }
+    
+    for (size_t i = start; i < str.length(); ++i) {
+        char c = str[i];
+        if (c == '.') {
+            if (hasDot) return false; // Multiple dots
+            hasDot = true;
+        } else if (std::isdigit(static_cast<unsigned char>(c))) {
+            hasDigit = true;
+        } else {
+            return false; // Invalid character
+        }
+    }
+    
+    // Must have at least one digit and exactly one dot to be a float (not an integer)
+    return hasDigit && hasDot;
+}
+
 bool ConfigManager::LoadConfig(const std::string& configPath) {
     std::lock_guard<std::mutex> lock(mutex_);
     
@@ -152,18 +196,20 @@ bool ConfigManager::LoadConfig(const std::string& configPath) {
                         config_[currentSection][key] = true;
                     } else if (value == "false" || value == "FALSE") {
                         config_[currentSection][key] = false;
-                    } else if (value.find('.') != std::string::npos) {
+                    } else if (isFloat(value)) {
                         try {
                             config_[currentSection][key] = std::stof(value);
                         } catch (...) {
                             config_[currentSection][key] = value;
                         }
-                    } else {
+                    } else if (isInteger(value)) {
                         try {
                             config_[currentSection][key] = std::stoi(value);
                         } catch (...) {
                             config_[currentSection][key] = value;
                         }
+                    } else {
+                        config_[currentSection][key] = value;
                     }
                 } else {
                     // Top-level key without section
@@ -563,6 +609,72 @@ std::string ConfigManager::GetOnlineLocationEmail() const {
 std::string ConfigManager::GetOnlineLocationAcceptLanguage() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return config_.value("onlinelocation", nlohmann::json::object()).value("accept-language", "en");
+}
+
+// === VoiceContext Configuration ===
+bool ConfigManager::GetVoiceContextUseEmbeddedModel() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.value("voicecontext", nlohmann::json::object()).value("use_embedded_model", true);
+}
+
+bool ConfigManager::GetVoiceContextAutoStart() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.value("voicecontext", nlohmann::json::object()).value("auto_start", true);
+}
+
+std::string ConfigManager::GetVoiceContextSubscriptionKey() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.value("voicecontext", nlohmann::json::object()).value("subscription_key", "");
+}
+
+std::string ConfigManager::GetVoiceContextServiceRegion() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.value("voicecontext", nlohmann::json::object()).value("service_region", "eastasia");
+}
+
+std::string ConfigManager::GetVoiceContextLanguage() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.value("voicecontext", nlohmann::json::object()).value("language", "zh-CN");
+}
+
+std::string ConfigManager::GetVoiceContextEmbeddedModelPath() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.value("voicecontext", nlohmann::json::object()).value("embedded_model_path", "C:\\Program Files\\Lenovo\\Lenovo Qira\\Preloaded");
+}
+
+std::string ConfigManager::GetVoiceContextEmbeddedModelName() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.value("voicecontext", nlohmann::json::object()).value("embedded_model_name", "");
+}
+
+std::string ConfigManager::GetVoiceContextEmbeddedModelLicense() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    static const std::string defaultLicense = "This model and the software may not be used or distributed in any manner except as authorized under a valid written agreement, using the reference number 5192510683. The model and software are licensed and not sold, and the agreement provides limited rights to use the model and the software and Microsoft reserves all other rights. You may not work around any technical limitations in the model or the software, reverse engineer, decompile, or disassemble the model or the software; remove, minimize, block or modify any notices of Microsoft or its suppliers in the model or the software; or, share, publish, rent, or lease the model or software, or provide the model or software as a standalone solution for others to use.";
+    return config_.value("voicecontext", nlohmann::json::object()).value("embedded_model_license", defaultLicense);
+}
+
+int ConfigManager::GetVoiceContextSilenceTimeoutMs() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.value("voicecontext", nlohmann::json::object()).value("silence_timeout_ms", 1500);
+}
+
+int ConfigManager::GetVoiceContextEndSilenceTimeoutMs() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.value("voicecontext", nlohmann::json::object()).value("end_silence_timeout_ms", 3000);
+}
+
+bool ConfigManager::GetVoiceContextEnableKeyword() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return config_.value("voicecontext", nlohmann::json::object()).value("enable_keyword", false);
+}
+
+std::string ConfigManager::GetVoiceContextKeywordModelPath() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::string path = config_.value("voicecontext", nlohmann::json::object()).value("keyword_model_path", "");
+    if (path.empty()) {
+        return "";
+    }
+    return ResolvePath(path);
 }
 
 std::string ConfigManager::GetTempDirectory() const {

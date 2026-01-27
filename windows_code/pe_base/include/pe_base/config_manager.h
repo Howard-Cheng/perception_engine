@@ -89,7 +89,19 @@ public:
 	std::string GetOnlineLocationEmail() const;
 	std::string GetOnlineLocationAcceptLanguage() const;
 
-	
+    // === VoiceContext Configuration ===
+    bool GetVoiceContextUseEmbeddedModel() const;
+    bool GetVoiceContextAutoStart() const;
+    std::string GetVoiceContextSubscriptionKey() const;
+    std::string GetVoiceContextServiceRegion() const;
+    std::string GetVoiceContextLanguage() const;
+    std::string GetVoiceContextEmbeddedModelPath() const;
+    std::string GetVoiceContextEmbeddedModelName() const;
+    std::string GetVoiceContextEmbeddedModelLicense() const;
+    int GetVoiceContextSilenceTimeoutMs() const;
+    int GetVoiceContextEndSilenceTimeoutMs() const;
+    bool GetVoiceContextEnableKeyword() const;
+    std::string GetVoiceContextKeywordModelPath() const;
 
     // === Runtime Paths ===
     std::string GetTempDirectory() const;

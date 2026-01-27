@@ -32,6 +32,70 @@ static std::string escapeJsonString(const std::string& input) {
     return oss.str();
 }
 
+// Helper function to safely get a string value from JSON (handles null and missing keys)
+static std::string safeGetString(const nlohmann::json& j, const std::string& key, const std::string& defaultValue = "") {
+    if (!j.contains(key)) {
+        return defaultValue;
+    }
+    const auto& val = j[key];
+    if (val.is_null()) {
+        return defaultValue;
+    }
+    if (val.is_string()) {
+        return val.get<std::string>();
+    }
+    // For non-string types, convert to string if possible
+    return defaultValue;
+}
+
+// Helper function to safely get an int value from JSON (handles null and missing keys)
+static int safeGetInt(const nlohmann::json& j, const std::string& key, int defaultValue = 0) {
+    if (!j.contains(key)) {
+        return defaultValue;
+    }
+    const auto& val = j[key];
+    if (val.is_null()) {
+        return defaultValue;
+    }
+    if (val.is_number_integer()) {
+        return val.get<int>();
+    }
+    if (val.is_number()) {
+        return static_cast<int>(val.get<double>());
+    }
+    return defaultValue;
+}
+
+// Helper function to safely get a bool value from JSON (handles null and missing keys)
+static bool safeGetBool(const nlohmann::json& j, const std::string& key, bool defaultValue = false) {
+    if (!j.contains(key)) {
+        return defaultValue;
+    }
+    const auto& val = j[key];
+    if (val.is_null()) {
+        return defaultValue;
+    }
+    if (val.is_boolean()) {
+        return val.get<bool>();
+    }
+    return defaultValue;
+}
+
+// Helper function to safely get a double value from JSON (handles null and missing keys)
+static double safeGetDouble(const nlohmann::json& j, const std::string& key, double defaultValue = 0.0) {
+    if (!j.contains(key)) {
+        return defaultValue;
+    }
+    const auto& val = j[key];
+    if (val.is_null()) {
+        return defaultValue;
+    }
+    if (val.is_number()) {
+        return val.get<double>();
+    }
+    return defaultValue;
+}
+
 ContextCollector::ContextCollector() {
     // Generate unique device ID
     std::random_device rd;
@@ -321,26 +385,32 @@ database::RawEvent ContextCollector::jsonContextToRawEvent(const nlohmann::json&
     event.createdAt = timestampMs / 1000;
     event.deviceId = deviceId_;
 
-    // Extract app context using nlohmann::json
-    event.appName = context.value("activeApp", "Unknown");
-    event.windowTitle = context.value("windowTitle", "");
+    // Extract app context using safe helper functions (handles null values)
+    event.appName = safeGetString(context, "activeApp", "Unknown");
+    event.windowTitle = safeGetString(context, "windowTitle", "");
+    
+    // Extract URL from context and store in database
+    std::string url = safeGetString(context, "url", "");
+    if (!url.empty()) {
+        event.url = url;
+    }
 
     // Extract content
-    std::string screenContent = context.value("activeAppContent", "");
-    if (!screenContent.empty() && screenContent != "null") {
+    std::string screenContent = safeGetString(context, "activeAppContent", "");
+    if (!screenContent.empty()) {
         event.screenContent = screenContent;
         std::hash<std::string> hasher;
         event.screenContentHash = std::to_string(hasher(screenContent));
     }
 
     // Multimodal data
-    std::string voiceText = context.value("voiceTranscription", "");
-    if (!voiceText.empty() && voiceText != "null") {
+    std::string voiceText = safeGetString(context, "voiceTranscription", "");
+    if (!voiceText.empty()) {
         event.voiceTranscription = voiceText;
     }
 
-    std::string cameraDesc = context.value("cameraDescription", "");
-    if (!cameraDesc.empty() && cameraDesc != "null") {
+    std::string cameraDesc = safeGetString(context, "cameraDescription", "");
+    if (!cameraDesc.empty()) {
         event.cameraDescription = cameraDesc;
     }
 
@@ -352,43 +422,36 @@ database::RawEvent ContextCollector::jsonContextToRawEvent(const nlohmann::json&
         event.interactionCount = (count > INT_MAX) ? INT_MAX : static_cast<int>(count);
     }
 
-    event.dwellTimeSeconds = context.value("duration", 0);
+    event.dwellTimeSeconds = safeGetInt(context, "duration", 0);
 
     // System info
-    int battery = context.value("battery", 0);
+    int battery = safeGetInt(context, "battery", 0);
     if (battery >= 0 && battery <= 100) {
         event.systemInfo.batteryPercent = battery;
     }
 
-    event.systemInfo.isCharging = context.value("isCharging", false);
-    event.systemInfo.networkType = context.value("networkType", "Unknown");
+    event.systemInfo.isCharging = safeGetBool(context, "isCharging", false);
+    event.systemInfo.networkType = safeGetString(context, "networkType", "Unknown");
 
-    if (context.contains("cpuUsage") && !context["cpuUsage"].is_null()) {
-        double cpuUsage = context["cpuUsage"].get<double>();
-        if (cpuUsage >= 0.0) {
-            event.systemInfo.cpuUsage = cpuUsage;
-        }
+    double cpuUsage = safeGetDouble(context, "cpuUsage", -1.0);
+    if (cpuUsage >= 0.0) {
+        event.systemInfo.cpuUsage = cpuUsage;
     }
 
-    if (context.contains("memoryUsage") && !context["memoryUsage"].is_null()) {
-        double memoryUsage = context["memoryUsage"].get<double>();
-        if (memoryUsage >= 0.0) {
-            event.systemInfo.memoryUsage = memoryUsage;
-        }
+    double memoryUsage = safeGetDouble(context, "memoryUsage", -1.0);
+    if (memoryUsage >= 0.0) {
+        event.systemInfo.memoryUsage = memoryUsage;
     }
 
-    bool locationValid = context.value("locationValid", false);
+    bool locationValid = safeGetBool(context, "locationValid", false);
     if (locationValid) {
-        if (context.contains("locationLat") && !context["locationLat"].is_null() &&
-            context.contains("locationLon") && !context["locationLon"].is_null()) {
-            double lat = context["locationLat"].get<double>();
-            double lon = context["locationLon"].get<double>();
-            std::string description = context["locationDescription"].get<std::string>();
-            if (lat != 0.0 || lon != 0.0) {
-                event.systemInfo.locationLat = lat;
-                event.systemInfo.locationLon = lon;
-                event.systemInfo.locationDescription = description;
-            }
+        double lat = safeGetDouble(context, "locationLat", 0.0);
+        double lon = safeGetDouble(context, "locationLon", 0.0);
+        std::string description = safeGetString(context, "locationDescription", "");
+        if (lat != 0.0 || lon != 0.0) {
+            event.systemInfo.locationLat = lat;
+            event.systemInfo.locationLon = lon;
+            event.systemInfo.locationDescription = description;
         }
     }
 

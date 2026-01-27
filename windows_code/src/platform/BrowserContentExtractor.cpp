@@ -389,33 +389,49 @@ std::wstring BrowserContentExtractor::GetElementProperty(IUIAutomationElement* p
 }
 
 std::wstring BrowserContentExtractor::GetChromeEdgeURL(IUIAutomationElement* pRootElement) {
-    if (!pRootElement) return L"" ;
+    if (!pRootElement) {
+        PE_ERROR("GetChromeEdgeURL: pRootElement is null");
+        return L"";
+    }
     
+    // Strategy 1: Look for Edit controls with Omnibox/Address bar pattern
     CComPtr<IUIAutomationCondition> pCondition;
     VARIANT varProp;
     varProp.vt = VT_I4;
     varProp.lVal = UIA_EditControlTypeId;
     
-    pAutomation->CreatePropertyCondition(UIA_ControlTypePropertyId, varProp, &pCondition);
+    HRESULT hr = pAutomation->CreatePropertyCondition(UIA_ControlTypePropertyId, varProp, &pCondition);
+    
+    if (FAILED(hr) || !pCondition) {
+        PE_ERROR_THIS("GetChromeEdgeURL: Failed to create property condition, HRESULT=" << std::hex << hr);
+        return L"";
+    }
+    
     
     if (pCondition) {
+        // First try: FindFirst with specific AutomationId/Name pattern
         CComPtr<IUIAutomationElement> pFound;
-        HRESULT hr = pRootElement->FindFirst(TreeScope_Descendants, pCondition, &pFound);
+        hr = pRootElement->FindFirst(TreeScope_Descendants, pCondition, &pFound);
         
         if (SUCCEEDED(hr) && pFound) {
             std::wstring automationId = GetElementProperty(pFound, UIA_AutomationIdPropertyId);
             std::wstring name = GetElementProperty(pFound, UIA_NamePropertyId);
             
             if (automationId.find(L"Omnibox") != std::wstring::npos ||
-                name.find(L"Address") != std::wstring::npos) {
+                automationId.find(L"addressbar") != std::wstring::npos ||
+                name.find(L"Address") != std::wstring::npos) {  // Chinese "Address"
                 
                 std::wstring url = GetElementProperty(pFound, UIA_ValueValuePropertyId);
                 if (!url.empty()) {
+                    PE_INFO_THIS("GetChromeEdgeURL: Found URL via specific Edit: " << WStringToString(url).c_str());
                     return url;
                 }
             }
+        } else {
+            PE_WARN_THIS("GetChromeEdgeURL: FindFirst failed, HRESULT=" << std::hex << hr);
         }
         
+        // Second try: FindAll and iterate through all Edit controls
         CComPtr<IUIAutomationElementArray> pFoundArray;
         hr = pRootElement->FindAll(TreeScope_Descendants, pCondition, &pFoundArray);
         
@@ -423,21 +439,70 @@ std::wstring BrowserContentExtractor::GetChromeEdgeURL(IUIAutomationElement* pRo
             int length = 0;
             pFoundArray->get_Length(&length);
             
-            for (int i = 0; i < length && i < 10; i++) {
+            for (int i = 0; i < length && i < 20; i++) {  // Increased from 10 to 20
                 CComPtr<IUIAutomationElement> pElem;
                 if (SUCCEEDED(pFoundArray->GetElement(i, &pElem)) && pElem) {
+                    std::wstring automationId = GetElementProperty(pElem, UIA_AutomationIdPropertyId);
+                    std::wstring name = GetElementProperty(pElem, UIA_NamePropertyId);
                     std::wstring value = GetElementProperty(pElem, UIA_ValueValuePropertyId);
+                    
                     if (!value.empty() && 
                         (value.find(L"http://") != std::wstring::npos || 
                          value.find(L"https://") != std::wstring::npos)) {
+                        PE_INFO_THIS("GetChromeEdgeURL: Found URL in Edit[" << i << "]: " << WStringToString(value).c_str());
                         return value;
+                    }
+                }
+            }
+            
+            PE_WARN("GetChromeEdgeURL: No Edit control with URL found");
+        } else {
+            PE_ERROR_THIS("GetChromeEdgeURL: FindAll failed, HRESULT=" << std::hex << hr);
+        }
+    }
+    
+    // Strategy 2: Try using ValuePattern on all descendants
+    CComPtr<IUIAutomationCondition> pTrueCondition;
+    hr = pAutomation->CreateTrueCondition(&pTrueCondition);
+    
+    if (SUCCEEDED(hr) && pTrueCondition) {
+        CComPtr<IUIAutomationElementArray> pAllElements;
+        hr = pRootElement->FindAll(TreeScope_Descendants, pTrueCondition, &pAllElements);
+        
+        if (SUCCEEDED(hr) && pAllElements) {
+            int length = 0;
+            pAllElements->get_Length(&length);
+            PE_DEBUG_THIS("GetChromeEdgeURL: Found " << length << " total elements, checking for URL...");
+            
+            for (int i = 0; i < length && i < 100; i++) {
+                CComPtr<IUIAutomationElement> pElem;
+                if (SUCCEEDED(pAllElements->GetElement(i, &pElem)) && pElem) {
+                    // Check if element supports ValuePattern
+                    CComPtr<IUIAutomationValuePattern> pValuePattern;
+                    hr = pElem->GetCurrentPatternAs(UIA_ValuePatternId, 
+                                                     __uuidof(IUIAutomationValuePattern), 
+                                                     (void**)&pValuePattern);
+                    if (SUCCEEDED(hr) && pValuePattern) {
+                        BSTR value = NULL;
+                        if (SUCCEEDED(pValuePattern->get_CurrentValue(&value)) && value) {
+                            std::wstring valueStr(value);
+                            SysFreeString(value);
+                            
+                            if ((valueStr.find(L"http://") != std::wstring::npos || 
+                                 valueStr.find(L"https://") != std::wstring::npos) &&
+                                valueStr.length() > 10) {
+                                PE_INFO_THIS("GetChromeEdgeURL: Found URL via ValuePattern: " << WStringToString(valueStr).c_str());
+                                return valueStr;
+                            }
+                        }
                     }
                 }
             }
         }
     }
     
-    return L"" ;
+    PE_WARN("GetChromeEdgeURL: URL not found, returning empty string");
+    return L"";
 }
 
 std::wstring BrowserContentExtractor::GetFirefoxURL(IUIAutomationElement* pRootElement) {

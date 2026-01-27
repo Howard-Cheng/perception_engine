@@ -52,4 +52,4 @@ DataBuffer WindowsHelper::ConvertToChar(const wchar_t* str) {
                       nullptr, nullptr);
   return output;
 }
-}  // namespace ps_base
+}  // namespace pe_base

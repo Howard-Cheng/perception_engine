@@ -163,22 +163,23 @@ namespace WindowsAPIs {
     // Internal window event handler
     void WindowsAPIsManager::OnWindowEventInternal(const WindowInfo& info) {
         // ? Debug logs
-        std::cout << "[DEBUG] OnWindowEventInternal called!" << std::endl;
-        std::cout << "  App: " << pe_base::WindowsHelper::ConvertToChar(info.processName.c_str()).ToString() << std::endl;
-        std::cout << "  Window: " << pe_base::WindowsHelper::ConvertToChar(info.windowTitle.c_str()).ToString() << std::endl;
+        //std::cout << "  App: " << pe_base::WindowsHelper::ConvertToChar(info.processName.c_str()).ToString() << std::endl;
+        //std::cout << "  Window: " << pe_base::WindowsHelper::ConvertToChar(info.windowTitle.c_str()).ToString() << std::endl;
 
         try {
             std::string appName = GetAppNameFromWindowInfo(info);
             std::string windowTitle = pe_base::WindowsHelper::ConvertToChar(info.windowTitle.c_str()).ToString();
 
-            std::cout << "  Processed App: " << appName << std::endl;
-            std::cout << "  Processed Window: " << windowTitle << std::endl;
-
-            // Skip empty, invalid, or system app names
-            if (appName.empty() || appName == "Unknown" || appName == "Desktop" || appName == "csc_ui") {
-                std::cout << "  -> Skipped (invalid app)" << std::endl;
+            // ? NEW: Use ConfigManager to check blacklist instead of hardcoded list
+            auto& config = pe_base::ConfigManager::GetInstance();
+            if (appName.empty() || config.IsBlacklisted(appName)) {
+                //std::cout << "  -> Skipped (invalid app or blacklisted)" << std::endl;
                 return;
             }
+
+            std::cout << "[DEBUG] OnWindowEventInternal called!" << std::endl;
+            std::cout << "  Processed App: " << appName << std::endl;
+            std::cout << "  Processed Window: " << windowTitle << std::endl;
 
             auto now = std::chrono::system_clock::now();
 

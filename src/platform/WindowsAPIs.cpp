@@ -4,6 +4,7 @@
 #include "utils/AsyncTaskQueue.h"  // ? NEW: Include async task queue
 #include "pe_base/windows_helper.h" // For WideStringToUtf8
 #include "pe_base/config_manager.h"
+#include "pe_base/logger.h"  // NEW: Use logger instead of iostream
 #define WIN32_LEAN_AND_MEAN
 #define _WINSOCKAPI_    // Prevent inclusion of winsock.h
 #include <windows.h>
@@ -69,7 +70,7 @@ namespace WindowsAPIs {
         // ? NEW: Create and start async task queue for callbacks
         m_callbackTaskQueue = std::make_unique<AsyncTaskQueue>("WindowSwitchCallbackQueue");
         m_callbackTaskQueue->Start();
-        std::cout << "[WindowsAPIsManager] Async task queue started" << std::endl;
+        PE_INFO("[WindowsAPIsManager] Async task queue started");
     }
 
     // Destructor
@@ -80,7 +81,7 @@ namespace WindowsAPIs {
         if (m_callbackTaskQueue) {
             m_callbackTaskQueue->Stop();
             m_callbackTaskQueue.reset();
-            std::cout << "[WindowsAPIsManager] Async task queue stopped" << std::endl;
+            PE_INFO("[WindowsAPIsManager] Async task queue stopped");
         }
     }
 
@@ -181,9 +182,9 @@ namespace WindowsAPIs {
                 return;
             }
 
-            std::cout << "[DEBUG] OnWindowEventInternal called!" << std::endl;
-            std::cout << "  Processed App: " << appName << std::endl;
-            std::cout << "  Processed Window: " << windowTitle << std::endl;
+            PE_DEBUG("[DEBUG] OnWindowEventInternal called!");
+            PE_DEBUG("  Processed App: " << appName);
+            PE_DEBUG("  Processed Window: " << windowTitle);
 
             auto now = std::chrono::system_clock::now();
 
@@ -192,17 +193,17 @@ namespace WindowsAPIs {
             if (!m_lastActiveApp.empty() &&
                 (m_lastActiveApp != appName || m_lastActiveAppWindowTitle != windowTitle)) {
                 shouldRecord = true;
-                std::cout << "  -> Should record: YES (different app/window)" << std::endl;
+                PE_DEBUG("  -> Should record: YES (different app/window)");
             }
             else {
-                std::cout << "  -> Should record: NO (same app/window or first time)" << std::endl;
+                PE_DEBUG("  -> Should record: NO (same app/window or first time)");
             }
 
             // Record the previous app's duration if it's different
             if (shouldRecord) {
                 auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - m_lastAppStartTime);
 
-                std::cout << "  -> Duration: " << duration.count() << " seconds" << std::endl;
+                PE_DEBUG("  -> Duration: " << duration.count() << " seconds");
 
                 // ? UPDATED: Check if textContent is not empty (using unique_ptr)
                 if (duration.count() > 2 && m_lastActiveAppContent && !m_lastActiveAppContent->textContent.empty()) {
@@ -227,13 +228,13 @@ namespace WindowsAPIs {
                     }
                     m_activeAppHistory[key] = record;
 
-                    std::cout << "  -> RECORDED: " << m_lastActiveApp << " (" << durationSecs << "s)" << std::endl;
+                    PE_DEBUG("  -> RECORDED: " << m_lastActiveApp << " (" << durationSecs << "s)");
 
                     // Post callback to async task queue (non-blocking)
                     ProcessWindowSwitchAsync(record);
                 }
                 else {
-                    std::cout << "  -> Skipped (duration too short: " << duration.count() << "s)" << std::endl;
+                    PE_DEBUG("  -> Skipped (duration too short: " << duration.count() << "s)");
                 }
             }
 
@@ -244,7 +245,7 @@ namespace WindowsAPIs {
             m_lastAppStartTime = now;
             *m_lastActiveAppContent = newAppContent;
 
-            std::cout << "  -> Updated current app: " << m_lastActiveApp << std::endl;
+            PE_DEBUG("  -> Updated current app: " << m_lastActiveApp);
 
             // Clean up old records periodically
             static auto lastCleanup = std::chrono::system_clock::now();
@@ -254,17 +255,17 @@ namespace WindowsAPIs {
             }
         }
         catch (const std::exception& e) {
-            std::cerr << "[ERROR] OnWindowEventInternal exception: " << e.what() << std::endl;
+            PE_ERROR("[ERROR] OnWindowEventInternal exception: " << e.what());
         }
         catch (...) {
-            std::cerr << "[ERROR] OnWindowEventInternal unknown exception" << std::endl;
+            PE_ERROR("[ERROR] OnWindowEventInternal unknown exception");
         }
     }
 
     // ? NEW: Process window switch callback asynchronously
     void WindowsAPIsManager::ProcessWindowSwitchAsync(const ActiveAppRecord& record) {
         if (!m_callbackTaskQueue || !m_callbackTaskQueue->IsRunning()) {
-            std::cerr << "[WindowsAPIsManager] Callback task queue not running!" << std::endl;
+            PE_ERROR("[WindowsAPIsManager] Callback task queue not running!");
             return;
         }
         
@@ -273,24 +274,23 @@ namespace WindowsAPIs {
             try {
                 std::lock_guard<std::mutex> callbackLock(m_callbackMutex);
                 if (m_windowSwitchCallback) {
-                    std::cout << "  -> ? ASYNC CALLBACK triggered!" << std::endl;
+                    PE_DEBUG("  -> ? ASYNC CALLBACK triggered!");
                     
                     // Execute callback in background thread
                     m_windowSwitchCallback(record);
                     
-                    std::cout << "  -> ? ASYNC CALLBACK completed!" << std::endl;
+                    PE_DEBUG("  -> ? ASYNC CALLBACK completed!");
                 } else {
-                    std::cout << "  -> ? No callback registered" << std::endl;
+                    PE_DEBUG("  -> ? No callback registered");
                 }
             } catch (const std::exception& e) {
-                std::cerr << "[WindowSwitchCallback] Exception: " << e.what() << std::endl;
+                PE_ERROR("[WindowSwitchCallback] Exception: " << e.what());
             } catch (...) {
-                std::cerr << "[WindowSwitchCallback] Unknown exception" << std::endl;
+                PE_ERROR("[WindowSwitchCallback] Unknown exception");
             }
         });
         
-        std::cout << "  -> Task posted to async queue (pending: " 
-                  << m_callbackTaskQueue->GetPendingTaskCount() << ")" << std::endl;
+        PE_DEBUG("  -> Task posted to async queue (pending: " << m_callbackTaskQueue->GetPendingTaskCount() << ")");
     }
 
     // Helper function: Generate unique key
@@ -400,7 +400,7 @@ namespace WindowsAPIs {
         // Reentrancy guard - if we're already extracting content, return empty
         // This prevents deadlock when COM calls during UI Automation trigger recursive window events
         if (m_isExtractingContent.exchange(true)) {
-            std::cout << "[GetCurrentActiveAppContent] Skipping - already extracting (reentrancy guard)" << std::endl;
+            PE_DEBUG("[GetCurrentActiveAppContent] Skipping - already extracting (reentrancy guard)");
             return BrowserContentInfo();  // ? UPDATED: Return empty BrowserContentInfo
         }
         
@@ -420,7 +420,7 @@ namespace WindowsAPIs {
 
             HWND hwnd = GetForegroundWindow();
             if (!hwnd || !IsWindow(hwnd) || !IsWindowVisible(hwnd)) {
-                std::cout << "[GetCurrentActiveAppContent] Invalid or invisible window, returning empty" << std::endl;
+                PE_DEBUG("[GetCurrentActiveAppContent] Invalid or invisible window, returning empty");
                 return BrowserContentInfo();  // ? UPDATED: Return empty BrowserContentInfo
             }
 
@@ -432,11 +432,11 @@ namespace WindowsAPIs {
                 success = m_contentExtractor->GetBrowserContentByHWND(hwnd, info);
             }
             catch (const std::exception& e) {
-                std::cerr << "[GetCurrentActiveAppContent] Exception during content extraction: " << e.what() << std::endl;
+                PE_ERROR("[GetCurrentActiveAppContent] Exception during content extraction: " << e.what());
                 return BrowserContentInfo();
             }
             catch (...) {
-                std::cerr << "[GetCurrentActiveAppContent] Unknown exception during content extraction" << std::endl;
+                PE_ERROR("[GetCurrentActiveAppContent] Unknown exception during content extraction");
                 return BrowserContentInfo();
             }
 
@@ -447,11 +447,11 @@ namespace WindowsAPIs {
             return info;  // ? UPDATED: Return full BrowserContentInfo object
         }
         catch (const std::exception& e) {
-            std::cerr << "[GetCurrentActiveAppContent] Outer exception: " << e.what() << std::endl;
+            PE_ERROR("[GetCurrentActiveAppContent] Outer exception: " << e.what());
             return BrowserContentInfo();  // ? UPDATED: Return empty BrowserContentInfo
         }
         catch (...) {
-            std::cerr << "[GetCurrentActiveAppContent] Unknown outer exception" << std::endl;
+            PE_ERROR("[GetCurrentActiveAppContent] Unknown outer exception");
             return BrowserContentInfo();  // ? UPDATED: Return empty BrowserContentInfo
         }
     }
@@ -901,7 +901,7 @@ namespace WindowsAPIs {
         Geolocator locator;
         locator.DesiredAccuracy(PositionAccuracy::High);
         locator.ReportInterval(1000);
-        fwprintf(stdout, L"Getting high-precision latitude and longitude... (Please ensure location services are enabled and authorized)\n");
+        PE_INFO("Getting high-precision latitude and longitude... (Please ensure location services are enabled and authorized)");
 
         std::optional<Geoposition> pos_opt;
         bool location_success = false;
@@ -912,7 +912,7 @@ namespace WindowsAPIs {
                 break;
             }
             catch (const hresult_error&) {
-                fwprintf(stderr, L"Location attempt %d failed, retrying...\n", retry + 1);
+                PE_WARN("Location attempt " << (retry + 1) << " failed, retrying...");
                 return loc;
             }
         }
@@ -927,8 +927,8 @@ namespace WindowsAPIs {
         double lon = pos.Coordinate().Point().Position().Longitude;
 
         loc.latitude = lat;
-		loc.longitude = lon;
-		loc.valid = true;
+        loc.longitude = lon;
+        loc.valid = true;
 
         // Get configuration from ConfigManager
         auto& config = pe_base::ConfigManager::GetInstance();

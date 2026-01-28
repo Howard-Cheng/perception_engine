@@ -182,6 +182,18 @@ bool BrowserContentExtractor::GetBrowserContentByHWND(HWND hwnd, BrowserContentI
         return false;
     }
     
+    // Validate window handle before processing
+    if (!hwnd || !IsWindow(hwnd)) {
+        PE_ERROR("Invalid window handle!");
+        return false;
+    }
+    
+    // Check if window is still visible
+    if (!IsWindowVisible(hwnd)) {
+        PE_WARN("Window is not visible, skipping content extraction");
+        return false;
+    }
+    
     browserType = DetectBrowserType(hwnd);
     
     wchar_t windowTitle[512] = { 0 };
@@ -246,27 +258,46 @@ bool BrowserContentExtractor::GetBrowserContentByHWND(HWND hwnd, BrowserContentI
 void BrowserContentExtractor::TraverseElementTree(IUIAutomationElement* pElement, 
                                                    BrowserContentInfo& info, 
                                                    int depth) {
+    // Strict depth and validity checks
     if (!pElement || depth > 15) {
         return;
     }
     
-    ExtractElementInfo(pElement, info);
-    info.elementCount++;
-    
-    CComPtr<IUIAutomationTreeWalker> pWalker;
-    HRESULT hr = pAutomation->get_RawViewWalker(&pWalker);
-    
-    if (SUCCEEDED(hr) && pWalker) {
-        CComPtr<IUIAutomationElement> pChild;
-        hr = pWalker->GetFirstChildElement(pElement, &pChild);
+    // Exception protection for element operations
+    try {
+        ExtractElementInfo(pElement, info);
+        info.elementCount++;
         
-        while (SUCCEEDED(hr) && pChild) {
-            TraverseElementTree(pChild, info, depth + 1);
+        CComPtr<IUIAutomationTreeWalker> pWalker;
+        HRESULT hr = pAutomation->get_RawViewWalker(&pWalker);
+        
+        if (SUCCEEDED(hr) && pWalker) {
+            CComPtr<IUIAutomationElement> pChild;
+            hr = pWalker->GetFirstChildElement(pElement, &pChild);
             
-            CComPtr<IUIAutomationElement> pNext;
-            hr = pWalker->GetNextSiblingElement(pChild, &pNext);
-            pChild = pNext;
+            // Child count limit to prevent infinite loops
+            int childCount = 0;
+            while (SUCCEEDED(hr) && pChild && childCount < 1000) {
+                TraverseElementTree(pChild, info, depth + 1);
+                
+                CComPtr<IUIAutomationElement> pNext;
+                hr = pWalker->GetNextSiblingElement(pChild, &pNext);
+                pChild = pNext;
+                childCount++;
+            }
         }
+    }
+    catch (const _com_error&) {
+        PE_WARN("COM error during element traversal - element may have been destroyed");
+        return;
+    }
+    catch (const std::exception&) {
+        PE_WARN("Exception during element traversal - continuing with partial results");
+        return;
+    }
+    catch (...) {
+        PE_WARN("Unknown exception during element traversal");
+        return;
     }
 }
 

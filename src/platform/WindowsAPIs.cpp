@@ -419,12 +419,26 @@ namespace WindowsAPIs {
             }
 
             HWND hwnd = GetForegroundWindow();
-            if (!hwnd) {
+            if (!hwnd || !IsWindow(hwnd) || !IsWindowVisible(hwnd)) {
+                std::cout << "[GetCurrentActiveAppContent] Invalid or invisible window, returning empty" << std::endl;
                 return BrowserContentInfo();  // ? UPDATED: Return empty BrowserContentInfo
             }
 
             BrowserContentInfo info;
-            bool success = m_contentExtractor->GetBrowserContentByHWND(hwnd, info);
+            bool success = false;
+            
+            // Add exception handling around the call
+            try {
+                success = m_contentExtractor->GetBrowserContentByHWND(hwnd, info);
+            }
+            catch (const std::exception& e) {
+                std::cerr << "[GetCurrentActiveAppContent] Exception during content extraction: " << e.what() << std::endl;
+                return BrowserContentInfo();
+            }
+            catch (...) {
+                std::cerr << "[GetCurrentActiveAppContent] Unknown exception during content extraction" << std::endl;
+                return BrowserContentInfo();
+            }
 
             if (!success || info.textContent.empty()) {
                 return BrowserContentInfo();  // ? UPDATED: Return empty BrowserContentInfo
@@ -432,7 +446,12 @@ namespace WindowsAPIs {
 
             return info;  // ? UPDATED: Return full BrowserContentInfo object
         }
+        catch (const std::exception& e) {
+            std::cerr << "[GetCurrentActiveAppContent] Outer exception: " << e.what() << std::endl;
+            return BrowserContentInfo();  // ? UPDATED: Return empty BrowserContentInfo
+        }
         catch (...) {
+            std::cerr << "[GetCurrentActiveAppContent] Unknown outer exception" << std::endl;
             return BrowserContentInfo();  // ? UPDATED: Return empty BrowserContentInfo
         }
     }

@@ -574,61 +574,6 @@ endif()
 
 # Post-build commands for PerceptionEngine
 add_custom_command(TARGET PerceptionEngine POST_BUILD
-    # Copy config files to bin/
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/config.ini
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/config.ini
-
-    # Copy models folder from windows_code to bin/
-    COMMAND ${CMAKE_COMMAND} -E echo "Copying models folder to output directory..."
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/models
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models
-
-    # Copy scripts folder from windows_code to bin/
-    COMMAND ${CMAKE_COMMAND} -E echo "Copying scripts folder to output directory..."
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/scripts
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/scripts
-
-    # Copy tokenizer.model if it exists (for C++ tokenizer)
-    COMMAND ${CMAKE_COMMAND} -E echo "Checking for tokenizer.model..."
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/embedding/tokenizer
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/models/embedding/tokenizer/tokenizer.model
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/models/embedding/tokenizer/tokenizer.model
-        || ${CMAKE_COMMAND} -E echo "tokenizer.model not found (Python fallback will be used)"
-
-    # Copy ONNX Runtime DLL to bin/
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/onnxruntime.dll
-
-    # Copy our E5EmbeddingDLL to bin/
-    COMMAND ${CMAKE_COMMAND} -E echo "Copying E5EmbeddingDLL..."
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:E5EmbeddingDLL>
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/E5EmbeddingDLL.dll
-
-    # Copy vectordb_client DLL to bin/
-    COMMAND ${CMAKE_COMMAND} -E echo "Copying vectordb_client DLL..."
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:vectordb_client>
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/vectordb_client.dll
-
-    # Copy SpeechRecognitionModule DLL to bin/
-    COMMAND ${CMAKE_COMMAND} -E echo "Copying SpeechRecognitionModule DLL..."
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:SpeechRecognitionModule>
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/SpeechRecognitionModule.dll
-
-    # Copy DataProcessServer.exe to bin/ (same directory as PerceptionEngine.exe)
-    COMMAND ${CMAKE_COMMAND} -E echo "Copying DataProcessServer.exe to output directory..."
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:DataProcessServer>
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/DataProcessServer.exe
-
     # For MSVC multi-config: also copy to bin/$<CONFIG>/}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/config.ini
@@ -639,12 +584,6 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/models
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models
-    
-    # Copy scripts folder to bin/$<CONFIG>/}
-    COMMAND ${CMAKE_COMMAND} -E echo "Copying scripts folder to $<CONFIG> directory..."
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/scripts
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/scripts
 
     # Copy tokenizer.model to bin/$<CONFIG>/ if it exists
     COMMAND ${CMAKE_COMMAND} -E echo "Checking for tokenizer.model in $<CONFIG>..."
@@ -676,10 +615,6 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/models
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models
-
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/scripts
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/scripts
 
     COMMENT "Copying models, scripts, tokenizer.model, and DLLs for PerceptionEngine"
 )

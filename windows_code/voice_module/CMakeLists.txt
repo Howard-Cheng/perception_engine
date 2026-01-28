@@ -9,33 +9,26 @@ project(SpeechRecognitionModule VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Set Microsoft Speech SDK path
-# SDK installed via NuGet to source directory
-set(SPEECH_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Microsoft.CognitiveServices.Speech.1.47.0")
+# Set Microsoft Speech SDK path - using third-party directory
+set(SPEECH_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../third-party/microsoft_speech_sdk")
 
 # Check SDK path
 if(NOT EXISTS "${SPEECH_SDK_DIR}")
     message(FATAL_ERROR "Microsoft Speech SDK not found at ${SPEECH_SDK_DIR}!\n"
-        "Please install it using NuGet:\n"
-        "   nuget install Microsoft.CognitiveServices.Speech -Version 1.47.0 -OutputDirectory .\n")
+        "Please ensure the SDK is properly installed in the third-party directory.\n")
 endif()
 
 message(STATUS "Using Speech SDK at: ${SPEECH_SDK_DIR}")
 
-# Set header file paths - NuGet package structure
+# Set header file paths - third-party structure
 set(SPEECH_SDK_INCLUDE 
-    "${SPEECH_SDK_DIR}/build/native/include/cxx_api"
-    "${SPEECH_SDK_DIR}/build/native/include/c_api"
+    "${SPEECH_SDK_DIR}/include/cxx_api"
+    "${SPEECH_SDK_DIR}/include/c_api"
 )
 
-# Set library and binary file paths (select by architecture)
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(SPEECH_SDK_LIB_DIR "${SPEECH_SDK_DIR}/build/native/x64/Release")
-    set(SPEECH_SDK_BIN_DIR "${SPEECH_SDK_DIR}/runtimes/win-x64/native")
-else()
-    set(SPEECH_SDK_LIB_DIR "${SPEECH_SDK_DIR}/build/native/Win32/Release")
-    set(SPEECH_SDK_BIN_DIR "${SPEECH_SDK_DIR}/runtimes/win-x86/native")
-endif()
+# Set library and binary file paths
+set(SPEECH_SDK_LIB_DIR "${SPEECH_SDK_DIR}/lib")
+set(SPEECH_SDK_BIN_DIR "${SPEECH_SDK_DIR}/dlls")
 
 # Verify DLL files exist
 set(CORE_DLL "${SPEECH_SDK_BIN_DIR}/Microsoft.CognitiveServices.Speech.core.dll")
@@ -134,26 +127,32 @@ set_target_properties(SpeechRecognitionTest PROPERTIES
 # Windows specific settings - Copy DLLs
 # =============================================
 if(WIN32)
-    # Copy DLL to output directory for DLL target
-    if(EXISTS "${CORE_DLL}")
-        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${CORE_DLL}"
-                $<TARGET_FILE_DIR:${PROJECT_NAME}>
-            COMMENT "Copying Speech SDK core DLL..."
-        )
-    endif()
+    # Copy all required DLLs to output directory
+    set(REQUIRED_DLLS
+        "${SPEECH_SDK_BIN_DIR}/Microsoft.CognitiveServices.Speech.core.dll"
+        "${SPEECH_SDK_BIN_DIR}/Microsoft.CognitiveServices.Speech.extension.audio.sys.dll"
+        "${SPEECH_SDK_BIN_DIR}/Microsoft.CognitiveServices.Speech.extension.codec.dll"
+        "${SPEECH_SDK_BIN_DIR}/Microsoft.CognitiveServices.Speech.extension.embedded.sr.dll"
+        "${SPEECH_SDK_BIN_DIR}/Microsoft.CognitiveServices.Speech.extension.embedded.sr.runtime.dll"
+        "${SPEECH_SDK_BIN_DIR}/Microsoft.CognitiveServices.Speech.extension.embedded.tts.dll"
+        "${SPEECH_SDK_BIN_DIR}/Microsoft.CognitiveServices.Speech.extension.kws.dll"
+        "${SPEECH_SDK_BIN_DIR}/Microsoft.CognitiveServices.Speech.extension.kws.ort.dll"
+        "${SPEECH_SDK_BIN_DIR}/Microsoft.CognitiveServices.Speech.extension.onnxruntime.dll"
+        "${SPEECH_SDK_BIN_DIR}/Microsoft.CognitiveServices.Speech.extension.telemetry.dll"
+    )
     
-    if(EXISTS "${AUDIO_DLL}")
-        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${AUDIO_DLL}"
-                $<TARGET_FILE_DIR:${PROJECT_NAME}>
-            COMMENT "Copying Speech SDK audio extension DLL..."
-        )
-    else()
-        message(STATUS "Audio extension DLL not found - TTS features will be disabled")
-    endif()
+    foreach(DLL_FILE ${REQUIRED_DLLS})
+        if(EXISTS "${DLL_FILE}")
+            add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${DLL_FILE}"
+                    $<TARGET_FILE_DIR:${PROJECT_NAME}>
+                COMMENT "Copying ${DLL_FILE}..."
+            )
+        else()
+            message(WARNING "DLL not found: ${DLL_FILE}")
+        endif()
+    endforeach()
 endif()
 
 # Print configuration information

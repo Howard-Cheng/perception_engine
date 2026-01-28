@@ -96,9 +96,6 @@ configure_file(
 add_custom_command(TARGET database_client POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/db_structure.ini"
-        ${CMAKE_BINARY_DIR}/bin/db_structure.ini
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/db_structure.ini"
         ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/db_structure.ini
     COMMENT "Copying db_structure.ini to output directory"
 )
@@ -111,9 +108,6 @@ if(WIN32)
         add_custom_command(TARGET database_client POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${VCPKG_INSTALLED_DIR}/bin/libcurl.dll"
-                ${CMAKE_BINARY_DIR}/bin/libcurl.dll
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${VCPKG_INSTALLED_DIR}/bin/libcurl.dll"
                 ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/libcurl.dll
             COMMENT "Copying libcurl.dll to output directory"
         )
@@ -121,9 +115,6 @@ if(WIN32)
     
     if(EXISTS "${VCPKG_INSTALLED_DIR}/bin/zlib1.dll")
         add_custom_command(TARGET database_client POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${VCPKG_INSTALLED_DIR}/bin/zlib1.dll"
-                ${CMAKE_BINARY_DIR}/bin/zlib1.dll
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${VCPKG_INSTALLED_DIR}/bin/zlib1.dll"
                 ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/zlib1.dll
@@ -135,9 +126,6 @@ if(WIN32)
         add_custom_command(TARGET database_client POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${VCPKG_INSTALLED_DIR}/bin/libcrypto-3-x64.dll"
-                ${CMAKE_BINARY_DIR}/bin/libcrypto-3-x64.dll
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${VCPKG_INSTALLED_DIR}/bin/libcrypto-3-x64.dll"
                 ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/libcrypto-3-x64.dll
             COMMENT "Copying libcrypto-3-x64.dll to output directory"
         )
@@ -145,9 +133,6 @@ if(WIN32)
     
     if(EXISTS "${VCPKG_INSTALLED_DIR}/bin/libssl-3-x64.dll")
         add_custom_command(TARGET database_client POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${VCPKG_INSTALLED_DIR}/bin/libssl-3-x64.dll"
-                ${CMAKE_BINARY_DIR}/bin/libssl-3-x64.dll
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${VCPKG_INSTALLED_DIR}/bin/libssl-3-x64.dll"
                 ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/libssl-3-x64.dll
@@ -160,9 +145,6 @@ if(WIN32)
         add_custom_command(TARGET database_client POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${VCPKG_INSTALLED_DIR}/bin/libpq.dll"
-                ${CMAKE_BINARY_DIR}/bin/libpq.dll
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${VCPKG_INSTALLED_DIR}/bin/libpq.dll"
                 ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/libpq.dll
             COMMENT "Copying libpq.dll to output directory"
         )
@@ -173,9 +155,6 @@ if(WIN32)
         add_custom_command(TARGET database_client POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${VCPKG_INSTALLED_DIR}/bin/libiconv-2.dll"
-                ${CMAKE_BINARY_DIR}/bin/libiconv-2.dll
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${VCPKG_INSTALLED_DIR}/bin/libiconv-2.dll"
                 ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/libiconv-2.dll
             COMMENT "Copying libiconv-2.dll to output directory"
         )
@@ -184,9 +163,6 @@ if(WIN32)
     # Copy libintl (dependency of libpq)
     if(EXISTS "${VCPKG_INSTALLED_DIR}/bin/libintl-8.dll")
         add_custom_command(TARGET database_client POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${VCPKG_INSTALLED_DIR}/bin/libintl-8.dll"
-                ${CMAKE_BINARY_DIR}/bin/libintl-8.dll
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${VCPKG_INSTALLED_DIR}/bin/libintl-8.dll"
                 ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/libintl-8.dll

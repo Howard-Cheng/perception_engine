@@ -412,6 +412,15 @@ private:
     }
 };
 
+std::string GetExePath() {
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    std::string exePathStr(exePath);
+    size_t lastSlash = exePathStr.find_last_of("\\/");
+    std::string exe_dir = exePathStr.substr(0, lastSlash);
+    return exe_dir;
+}
+
 int main(int argc, char* argv[]) {
     // =========================================
     // Initialize Logger FIRST (before anything)
@@ -432,7 +441,8 @@ int main(int argc, char* argv[]) {
     // Load Configuration
     // =========================================
     PE_INFO("Loading configuration from config.ini...");
-    if (!pe_base::ConfigManager::GetInstance().LoadConfig("config.ini")) {
+    std::string config_path = GetExePath() + "\\config.ini";
+    if (!pe_base::ConfigManager::GetInstance().LoadConfig(config_path)) {
         PE_WARN("Failed to load config.ini, using default values");
         PE_WARN(std::string("Error: ") + pe_base::ConfigManager::GetInstance().GetLastError());
     }

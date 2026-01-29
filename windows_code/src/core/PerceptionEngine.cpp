@@ -422,16 +422,46 @@ std::string GetExePath() {
 }
 
 int main(int argc, char* argv[]) {
+    bool enablelocallog = false;
+
     // =========================================
-    // Initialize Logger FIRST (before anything)
+    // Read Log setting from Registry
     // =========================================
-    std::filesystem::path log_path = "";
-    if (auto* p_appdata = getenv("APPDATA")) {
-        log_path =
-            std::filesystem::path(p_appdata) / "Lenovo" / "PerceptionEngine" / "logs";
+    {
+        HKEY hKey;
+        LONG result = RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+            "SOFTWARE\\Lenovo\\Perception",
+            0, KEY_READ, &hKey);
+        
+        if (result == ERROR_SUCCESS) {
+            DWORD logValue = 0;
+            DWORD dataSize = sizeof(DWORD);
+            DWORD dataType = 0;
+            
+            result = RegQueryValueExA(hKey, "Log", nullptr, &dataType,
+                reinterpret_cast<LPBYTE>(&logValue), &dataSize);
+            
+            if (result == ERROR_SUCCESS && dataType == REG_DWORD) {
+                enablelocallog = (logValue == 1);
+            }
+            
+            RegCloseKey(hKey);
+        }
     }
-    pe_base::LogWriter::SetLogFilePrefix(
-        (log_path / "PerceptionEngine").generic_string());
+
+// =========================================
+// Initialize Logger FIRST (before anything)
+// =========================================
+    if(enablelocallog)
+    {
+        std::filesystem::path log_path = "";
+        if (auto* p_appdata = getenv("APPDATA")) {
+            log_path =
+                std::filesystem::path(p_appdata) / "Lenovo" / "PerceptionEngine" / "logs";
+        }
+        pe_base::LogWriter::SetLogFilePrefix(
+            (log_path / "PerceptionEngine").generic_string());
+    }
 
     PE_INFO("=====================================");
     PE_INFO("Perception Engine v1.0");

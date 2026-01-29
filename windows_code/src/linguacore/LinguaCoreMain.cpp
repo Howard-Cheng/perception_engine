@@ -42,9 +42,37 @@ void printVersion() {
 }
 
 int main(int argc, char* argv[]) {
-    // =========================================
-    // Initialize Logger FIRST (before anything)
-    // =========================================
+bool enablelocallog = false;
+
+// =========================================
+// Read Log setting from Registry
+// =========================================
+{
+    HKEY hKey;
+    LONG result = RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+        "SOFTWARE\\Lenovo\\Perception",
+        0, KEY_READ, &hKey);
+        
+    if (result == ERROR_SUCCESS) {
+        DWORD logValue = 0;
+        DWORD dataSize = sizeof(DWORD);
+        DWORD dataType = 0;
+            
+        result = RegQueryValueExA(hKey, "Log", nullptr, &dataType,
+            reinterpret_cast<LPBYTE>(&logValue), &dataSize);
+            
+        if (result == ERROR_SUCCESS && dataType == REG_DWORD) {
+            enablelocallog = (logValue == 1);
+        }
+            
+        RegCloseKey(hKey);
+    }
+}
+
+// =========================================
+// Initialize Logger FIRST (before anything)
+// =========================================
+if (enablelocallog) {
     std::filesystem::path log_path = "";
     if (auto* p_appdata = getenv("APPDATA")) {
         log_path =
@@ -52,6 +80,7 @@ int main(int argc, char* argv[]) {
     }
     pe_base::LogWriter::SetLogFilePrefix(
         (log_path / "LinguaCore").generic_string());
+}
 
     PE_INFO("========================================");
     PE_INFO("    LinguaCore Service");

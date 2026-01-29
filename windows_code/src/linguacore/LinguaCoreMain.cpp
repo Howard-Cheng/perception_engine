@@ -3,6 +3,8 @@
  * @brief Main entry point for LinguaCore service
  */
 
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>  // For GetConsoleWindow, ShowWindow
 #include "pe_base/logger.h"  // Add logger first
 #include "pe_base/config_manager.h"  // Add ConfigManager
 #include "linguacore/LinguaCore.h"
@@ -29,6 +31,7 @@ void printUsage(const char* program_name) {
     PE_INFO("Usage: " << program_name << " [options]");
     PE_INFO("Options:");
     PE_INFO("  -c, --config <path>    Path to config.ini file (default: config.ini)");
+    PE_INFO("  --background           Run in background mode (hide console window)");
     PE_INFO("  -h, --help             Show this help message");
     PE_INFO("  -v, --version          Show version information");
 }
@@ -57,6 +60,7 @@ int main(int argc, char* argv[]) {
     
     // Parse command line arguments
     std::string config_path = "config.ini";
+    bool background_mode = false;
     
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -67,6 +71,8 @@ int main(int argc, char* argv[]) {
         } else if (arg == "-v" || arg == "--version") {
             printVersion();
             return 0;
+        } else if (arg == "--background") {
+            background_mode = true;
         } else if (arg == "-c" || arg == "--config") {
             if (i + 1 < argc) {
                 config_path = argv[++i];
@@ -78,6 +84,15 @@ int main(int argc, char* argv[]) {
             PE_ERROR("Error: Unknown option: " << arg);
             printUsage(argv[0]);
             return 1;
+        }
+    }
+    
+    // Hide console window if running in background mode
+    if (background_mode) {
+        PE_INFO("Running in background mode (hiding console window)...");
+        HWND consoleWindow = GetConsoleWindow();
+        if (consoleWindow) {
+            ShowWindow(consoleWindow, SW_HIDE);
         }
     }
     

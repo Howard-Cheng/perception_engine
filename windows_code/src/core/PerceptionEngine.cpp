@@ -523,6 +523,148 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
         }
+        else if (primaryCommand == "--background") {
+            // Run as background application (not as service, but hidden)
+            // This mode runs in user session and can capture window events
+            PE_INFO("Running Perception Engine as background application...");
+            PE_INFO("This mode runs in user session and can capture window events.");
+            if (screenOnlyMode) {
+                PE_INFO("Mode: Screen-Only (lightweight - audio/camera disabled)");
+            }
+            else {
+                PE_INFO("Mode: Full (screen + audio + camera)");
+            }
+            PE_INFO("-----------------------------------------------------");
+
+            // Hide console window if running from console
+            HWND consoleWindow = GetConsoleWindow();
+            if (consoleWindow) {
+                ShowWindow(consoleWindow, SW_HIDE);
+            }
+
+            try {
+                // Create separate instances for background mode
+                HttpServer server(8777);
+
+                PE_INFO("Starting context collector...");
+
+                // UPDATED: Use ContextCollector directly
+                ContextCollector collector;
+
+                // NEW: Initialize PostgreSQL (optional feature)
+                if (collector.InitializeDatabase("host=127.0.0.1 port=5432 dbname=perception_engine user=postgres", "perception_context")) {
+                    PE_INFO("PostgreSQL initialized - auto storage every 5 seconds");
+                }
+                else {
+                    PE_WARN("PostgreSQL not available - running without database storage");
+                }
+
+                PE_INFO("Setting up request handler...");
+                server.SetRequestHandler([&collector](const HttpRequest& request, HttpResponse& response) {
+                    PE_DEBUG("Received request:" << request.method.c_str() << request.path.c_str())
+
+                    if (request.path == "/context" && request.method == "GET") {
+                        nlohmann::json context = collector.CollectCurrentContext();
+                        response.SetHeader("Content-Type", "application/json");
+                        response.SetBody(context.dump());
+                        response.status = 200;
+                        PE_DEBUG("Sent context response");
+                    }
+                    else if (request.path == "/dashboard" || request.path == "/" && request.method == "GET") {
+                        std::ifstream file("dashboard.html");
+                        if (file.is_open()) {
+                            std::string html((std::istreambuf_iterator<char>(file)),
+                                std::istreambuf_iterator<char>());
+                            response.SetHeader("Content-Type", "text/html; charset=utf-8");
+                            response.SetBody(html);
+                            response.status = 200;
+                        }
+                        else {
+                            response.SetBody("<html><body><h1>Error: dashboard.html not found</h1></body></html>");
+                            response.SetHeader("Content-Type", "text/html");
+                            response.status = 500;
+                        }
+                    }
+                    else {
+                        response.SetBody("{\"error\":\"Not found\"}");
+                        response.status = 404;
+                    }
+                    });
+
+                PE_INFO("Starting HTTP server on port 8777...");
+                if (!server.Start()) {
+                    PE_ERROR("Failed to start HTTP server!");
+                    return 1;
+                }
+
+                PE_INFO("HTTP server started successfully!");
+                PE_INFO("Server is now listening on: http://localhost:8777");
+                PE_INFO("Running in background mode (window events enabled)");
+                PE_INFO("-----------------------------------------------------");
+
+                server.Run(); // Blocking call
+
+                PE_INFO("Server loop ended, cleaning up...");
+                collector.StopPeriodicUpdate();
+            }
+            catch (const std::exception& e) {
+                PE_ERROR("Exception:" << e.what())
+                return 1;
+            }
+
+            PE_INFO("Background mode shutting down normally");
+            return 0;
+        }
+        else if (primaryCommand == "--register-startup") {
+            // Register to run at user login
+            PE_INFO("Registering Perception Engine to start at user login...");
+            
+            char exePath[MAX_PATH];
+            GetModuleFileNameA(NULL, exePath, MAX_PATH);
+            std::string command = std::string(exePath) + " --background";
+            
+            HKEY hKey;
+            LONG result = RegOpenKeyExA(HKEY_CURRENT_USER, 
+                "Software\\Microsoft\\Windows\\CurrentVersion\\Run", 
+                0, KEY_SET_VALUE, &hKey);
+            
+            if (result == ERROR_SUCCESS) {
+                result = RegSetValueExA(hKey, "PerceptionEngine", 0, REG_SZ,
+                    (const BYTE*)command.c_str(), (DWORD)(command.length() + 1));
+                RegCloseKey(hKey);
+                
+                if (result == ERROR_SUCCESS) {
+                    PE_INFO("Successfully registered to start at user login.");
+                    PE_INFO("Command: " << command);
+                    return 0;
+                }
+            }
+            
+            PE_ERROR("Failed to register startup. Error code: " << result);
+            return 1;
+        }
+        else if (primaryCommand == "--unregister-startup") {
+            // Unregister from user login
+            PE_INFO("Unregistering Perception Engine from user login startup...");
+            
+            HKEY hKey;
+            LONG result = RegOpenKeyExA(HKEY_CURRENT_USER, 
+                "Software\\Microsoft\\Windows\\CurrentVersion\\Run", 
+                0, KEY_SET_VALUE, &hKey);
+            
+            if (result == ERROR_SUCCESS) {
+                result = RegDeleteValueA(hKey, "PerceptionEngine");
+                RegCloseKey(hKey);
+                
+                if (result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND) {
+                    PE_INFO("Successfully unregistered from user login startup.");
+                    return 0;
+                }
+            }
+            
+            PE_ERROR("Failed to unregister. Error code: " << result);
+            return 1;
+        }
         else if (primaryCommand == "--console") {
             // Run as console application for testing
             PE_INFO("Running Perception Engine as console application...");
@@ -825,11 +967,29 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         else {
-            PE_ERROR("Unknown argument: %s" << primaryCommand.c_str());
-            PE_INFO("Usage: PerceptionEngine.exe [--install|--uninstall|--start|--stop|--console] [--screen-only]");
-            PE_INFO("  --console              Run as console application");
-            PE_INFO("  --screen-only          Enable screen-only mode (disable audio/camera)");
-            PE_INFO("  Example: PerceptionEngine.exe --console --screen-only");
+            PE_ERROR("Unknown argument: " << primaryCommand.c_str());
+            PE_INFO("Usage: PerceptionEngine.exe [command] [options]");
+            PE_INFO("");
+            PE_INFO("Commands:");
+            PE_INFO("  --console              Run as console application (for testing)");
+            PE_INFO("  --background           Run as hidden background app (recommended)");
+            PE_INFO("  --register-startup     Register to auto-start at user login");
+            PE_INFO("  --unregister-startup   Remove from auto-start");
+            PE_INFO("  --install              Install as Windows service");
+            PE_INFO("  --uninstall            Uninstall Windows service");
+            PE_INFO("  --start                Start Windows service");
+            PE_INFO("  --stop                 Stop Windows service");
+            PE_INFO("");
+            PE_INFO("Options:");
+            PE_INFO("  --screen-only          Disable audio/camera (lightweight mode)");
+            PE_INFO("");
+            PE_INFO("Examples:");
+            PE_INFO("  PerceptionEngine.exe --background");
+            PE_INFO("  PerceptionEngine.exe --register-startup --screen-only");
+            PE_INFO("  PerceptionEngine.exe --console --screen-only");
+            PE_INFO("");
+            PE_INFO("NOTE: Windows Service mode cannot capture window events due to");
+            PE_INFO("      Session 0 isolation. Use --background mode instead.");
             return 1;
         }
     }

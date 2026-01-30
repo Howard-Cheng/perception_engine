@@ -14,19 +14,20 @@ static std::string escapeJsonString(const std::string& input) {
     std::ostringstream oss;
     for (char c : input) {
         switch (c) {
-            case '\"': oss << "\\\""; break;
-            case '\\': oss << "\\\\"; break;
-            case '\b': oss << "\\b"; break;
-            case '\f': oss << "\\f"; break;
-            case '\n': oss << "\\n"; break;
-            case '\r': oss << "\\r"; break;
-            case '\t': oss << "\\t"; break;
-            default:
-                if ('\x00' <= c && c <= '\x1f') {
-                    oss << "\\u" << std::hex << std::setw(4) << std::setfill('0') << static_cast<int>(c);
-                } else {
-                    oss << c;
-                }
+        case '\"': oss << "\\\""; break;
+        case '\\': oss << "\\\\"; break;
+        case '\b': oss << "\\b"; break;
+        case '\f': oss << "\\f"; break;
+        case '\n': oss << "\\n"; break;
+        case '\r': oss << "\\r"; break;
+        case '\t': oss << "\\t"; break;
+        default:
+            if ('\x00' <= c && c <= '\x1f') {
+                oss << "\\u" << std::hex << std::setw(4) << std::setfill('0') << static_cast<int>(c);
+            }
+            else {
+                oss << c;
+            }
         }
     }
     return oss.str();
@@ -388,7 +389,7 @@ database::RawEvent ContextCollector::jsonContextToRawEvent(const nlohmann::json&
     // Extract app context using safe helper functions (handles null values)
     event.appName = safeGetString(context, "activeApp", "Unknown");
     event.windowTitle = safeGetString(context, "windowTitle", "");
-    
+
     // Extract URL from context and store in database
     std::string url = safeGetString(context, "url", "");
     if (!url.empty()) {
@@ -524,7 +525,7 @@ nlohmann::json ContextCollector::GetESDBData(const std::string& keyword,
             }
 
             // Add location information
-            if (event.systemInfo.locationLat.has_value() && event.systemInfo.locationLon.has_value()) {
+            if (event.systemInfo.locationLat.has_value() && event.systemInfo.locationLon.has_value() && event.systemInfo.locationDescription.has_value()) {
                 eventJson["location"] = {
                     {"lat", event.systemInfo.locationLat.value()},
                     {"lon", event.systemInfo.locationLon.value()},
@@ -616,7 +617,7 @@ nlohmann::json ContextCollector::GetVectorDBData(const std::string& keyword,
 
         PE_INFO("[GetVectorDBData] Vector search completed in " << vectorSearchTimeMs << " ms");
         PE_INFO("[GetVectorDBData] Search returned: " << searchResults.size() << " results");
-        
+
         // Convert to nlohmann::json
         nlohmann::json resultsArray = nlohmann::json::array();
 

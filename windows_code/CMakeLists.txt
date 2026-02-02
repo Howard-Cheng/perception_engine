@@ -244,10 +244,12 @@ set(DATAPROCESS_SERVER_HEADERS
 set(LINGUACORE_SOURCES
     src/linguacore/LinguaCoreMain.cpp
     src/linguacore/LinguaCore.cpp
+    src/linguacore/QtCoreManager.cpp
 )
 
 set(LINGUACORE_HEADERS
     include/linguacore/LinguaCore.h
+    include/linguacore/QtCoreManager.h
 )
 
 # ============================================================================
@@ -312,10 +314,10 @@ source_group("Source Files\\platform" FILES
 
 source_group("Source Files\\providers" FILES
     src/providers/SystemContextProvider.cpp
-    src/providers/VoiceContextProvider.cpp
+    src.providers/VoiceContextProvider.cpp
     src/providers/CameraContextProvider.cpp
     src/providers/AppActivityContextProvider.cpp
-    src/providers/CompositeContextManager.cpp
+    src.providers/CompositeContextManager.cpp
 )
 
 source_group("Source Files\\dataprocess" FILES
@@ -397,11 +399,13 @@ source_group("Header Files\\dataprocess" FILES
 source_group("Source Files\\linguacore" FILES
     src/linguacore/LinguaCoreMain.cpp
     src/linguacore/LinguaCore.cpp
+    src/linguacore/QtCoreManager.cpp
 )
 
 # Header files for LinguaCore
 source_group("Header Files\\linguacore" FILES
     include/linguacore/LinguaCore.h
+    include/linguacore/QtCoreManager.h
 )
 
 # ============================================================================
@@ -440,6 +444,7 @@ target_include_directories(LinguaCore PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/pe_base/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/windows_code/include
     ${CMAKE_CURRENT_SOURCE_DIR}/database_client/include
     ${CMAKE_CURRENT_SOURCE_DIR}/llm_summary
     ${CMAKE_CURRENT_SOURCE_DIR}/vectordb_client/include

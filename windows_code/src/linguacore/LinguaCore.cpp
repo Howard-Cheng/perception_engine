@@ -5,6 +5,7 @@
 
 #include "pe_base/logger.h"  // Add logger first
 #include "linguacore/LinguaCore.h"
+#include "linguacore/QtCoreManager.h"  // Add QtCoreManager header
 #include "DatabaseClientFactory.h"
 #include "IDatabaseClient.h"
 #include "DatabaseTypes.h"
@@ -20,6 +21,7 @@
 #include <map>
 #include <nlohmann/json.hpp>
 #include <filesystem>
+#include <iomanip>  // For std::put_time
 
 using json = nlohmann::json;
 
@@ -144,6 +146,37 @@ bool LinguaCore::initialize() {
         return false;
     }
     
+    // Initialize QtCore Manager (optional)
+    if (config_.qtcore_enabled) {
+        try {
+            PE_INFO("Initializing QtCore Manager...");
+            
+            qtcore_manager_ = std::make_unique<QtCoreManager>();
+            
+            if (!qtcore_manager_->Initialize(config_.qtcore_dll_path)) {
+                PE_ERROR("Failed to initialize QtCore Manager DLL");
+                // Don't return false - QtCore is optional
+                qtcore_manager_.reset();
+                PE_WARN("Continuing without QtCore memory sync");
+            } else {
+                if (!qtcore_manager_->Start()) {
+                    PE_ERROR("Failed to start QtCore Manager");
+                    qtcore_manager_.reset();
+                    PE_WARN("Continuing without QtCore memory sync");
+                } else {
+                    PE_INFO("QtCore Manager initialized successfully");
+                }
+            }
+            
+        } catch (const std::exception& e) {
+            PE_ERROR("Exception initializing QtCore Manager: " << e.what());
+            qtcore_manager_.reset();
+            PE_WARN("Continuing without QtCore memory sync");
+        }
+    } else {
+        PE_INFO("QtCore memory sync disabled");
+    }
+    
     initialized_ = true;
     PE_INFO("LinguaCore initialization complete");
     return true;
@@ -180,6 +213,13 @@ void LinguaCore::stop() {
     
     if (worker_thread_.joinable()) {
         worker_thread_.join();
+    }
+    
+    // Stop QtCore Manager if initialized
+    if (qtcore_manager_) {
+        PE_INFO("Stopping QtCore Manager...");
+        qtcore_manager_->Stop();
+        qtcore_manager_.reset();
     }
     
     PE_INFO("LinguaCore service stopped");
@@ -372,6 +412,36 @@ bool LinguaCore::processSingleEvent(const database::RawEvent& event) {
     
     PE_INFO("Generated screen content summary (" << summary.length() << " chars)");
     
+    // Sync to QtCore if enabled
+    if (qtcore_manager_) {
+        try {
+            // Format date as ISO 8601 string
+            std::time_t now = event.createdAt;
+            std::tm tm_info;
+            localtime_s(&tm_info, &now);
+            
+            std::ostringstream date_stream;
+            date_stream << std::put_time(&tm_info, "%Y-%m-%d %H:%M:%S");
+            std::string date_str = date_stream.str();
+            
+            PE_INFO("Syncing summary to QtCore memory...");
+            bool sync_success = qtcore_manager_->AddMemory(
+                config_.qtcore_model,
+                summary,
+                date_str
+            );
+            
+            if (sync_success) {
+                PE_INFO("Successfully synced summary to QtCore");
+            } else {
+                PE_WARN("Failed to sync summary to QtCore (continuing anyway)");
+            }
+        } catch (const std::exception& e) {
+            PE_ERROR("Exception syncing to QtCore: " << e.what());
+            // Don't fail the whole operation if QtCore sync fails
+        }
+    }
+    
     // Generate summary for voice transcription if available
     std::string audio_summary;
     if (event.voiceTranscription.has_value() && !event.voiceTranscription->empty()) {
@@ -383,6 +453,34 @@ bool LinguaCore::processSingleEvent(const database::RawEvent& event) {
             PE_WARN("Failed to generate audio summary, continuing without it");
         } else {
             PE_INFO("Generated audio summary (" << audio_summary.length() << " chars)");
+            
+            // Sync audio summary to QtCore if enabled
+            if (qtcore_manager_) {
+                try {
+                    std::time_t now = event.createdAt;
+                    std::tm tm_info;
+                    localtime_s(&tm_info, &now);
+                    
+                    std::ostringstream date_stream;
+                    date_stream << std::put_time(&tm_info, "%Y-%m-%d %H:%M:%S");
+                    std::string date_str = date_stream.str();
+                    
+                    PE_INFO("Syncing audio summary to QtCore memory...");
+                    bool sync_success = qtcore_manager_->AddMemory(
+                        config_.qtcore_model,
+                        audio_summary,
+                        date_str
+                    );
+                    
+                    if (sync_success) {
+                        PE_INFO("Successfully synced audio summary to QtCore");
+                    } else {
+                        PE_WARN("Failed to sync audio summary to QtCore (continuing anyway)");
+                    }
+                } catch (const std::exception& e) {
+                    PE_ERROR("Exception syncing audio summary to QtCore: " << e.what());
+                }
+            }
         }
     } else {
         PE_INFO("No voice transcription available for this event");
@@ -461,6 +559,35 @@ bool LinguaCore::processMultipleEvents(const std::vector<database::RawEvent>& ev
     
     PE_INFO("Generated screen content summary (" << summary.length() << " chars)");
     
+    // Sync to QtCore if enabled
+    if (qtcore_manager_) {
+        try {
+            // Use first event's timestamp
+            std::time_t now = events[0].createdAt;
+            std::tm tm_info;
+            localtime_s(&tm_info, &now);
+            
+            std::ostringstream date_stream;
+            date_stream << std::put_time(&tm_info, "%Y-%m-%d %H:%M:%S");
+            std::string date_str = date_stream.str();
+            
+            PE_INFO("Syncing combined summary to QtCore memory...");
+            bool sync_success = qtcore_manager_->AddMemory(
+                config_.qtcore_model,
+                summary,
+                date_str
+            );
+            
+            if (sync_success) {
+                PE_INFO("Successfully synced combined summary to QtCore");
+            } else {
+                PE_WARN("Failed to sync combined summary to QtCore (continuing anyway)");
+            }
+        } catch (const std::exception& e) {
+            PE_ERROR("Exception syncing combined summary to QtCore: " << e.what());
+        }
+    }
+    
     // Generate summary for combined voice transcriptions
     std::string audio_summary;
     if (has_voice_content) {
@@ -472,6 +599,34 @@ bool LinguaCore::processMultipleEvents(const std::vector<database::RawEvent>& ev
             PE_WARN("Failed to generate audio summary, continuing without it");
         } else {
             PE_INFO("Generated audio summary (" << audio_summary.length() << " chars)");
+            
+            // Sync audio summary to QtCore if enabled
+            if (qtcore_manager_) {
+                try {
+                    std::time_t now = events[0].createdAt;
+                    std::tm tm_info;
+                    localtime_s(&tm_info, &now);
+                    
+                    std::ostringstream date_stream;
+                    date_stream << std::put_time(&tm_info, "%Y-%m-%d %H:%M:%S");
+                    std::string date_str = date_stream.str();
+                    
+                    PE_INFO("Syncing combined audio summary to QtCore memory...");
+                    bool sync_success = qtcore_manager_->AddMemory(
+                        config_.qtcore_model,
+                        audio_summary,
+                        date_str
+                    );
+                    
+                    if (sync_success) {
+                        PE_INFO("Successfully synced combined audio summary to QtCore");
+                    } else {
+                        PE_WARN("Failed to sync combined audio summary to QtCore (continuing anyway)");
+                    }
+                } catch (const std::exception& e) {
+                    PE_ERROR("Exception syncing combined audio summary to QtCore: " << e.what());
+                }
+            }
         }
     } else {
         PE_INFO("No voice transcriptions found in any event");

@@ -4,7 +4,6 @@
 #include <map>
 #include <vector>
 #include <sstream>
-#include <thread>
 #include <type_traits>
 
 // reuse simple json parsing from blobSyncDemo for sessionID extraction
@@ -12,8 +11,8 @@ static std::string trim(const std::string& s) {
     size_t start = 0;
     while (start < s.size() && isspace(static_cast<unsigned char>(s[start]))) ++start;
     size_t end = s.size();
-    while (end > start && isspace(static_cast<unsigned char>(s[end-1]))) --end;
-    return s.substr(start, end-start);
+    while (end > start && isspace(static_cast<unsigned char>(s[end - 1]))) --end;
+    return s.substr(start, end - start);
 }
 
 static std::vector<std::string> split(const std::string& s, char delimiter) {
@@ -21,9 +20,9 @@ static std::vector<std::string> split(const std::string& s, char delimiter) {
     size_t start = 0;
     size_t end = s.find(delimiter);
     while (end != std::string::npos) {
-        std::string sub = trim(s.substr(start, end-start));
+        std::string sub = trim(s.substr(start, end - start));
         if (!sub.empty()) result.push_back(sub);
-        start = end+1;
+        start = end + 1;
         end = s.find(delimiter, start);
     }
     std::string sub = trim(s.substr(start));
@@ -31,21 +30,21 @@ static std::vector<std::string> split(const std::string& s, char delimiter) {
     return result;
 }
 
-static std::map<std::string,std::string> parseJson(const std::string& jsonStr) {
-    std::map<std::string,std::string> m;
+static std::map<std::string, std::string> parseJson(const std::string& jsonStr) {
+    std::map<std::string, std::string> m;
     std::string s = trim(jsonStr);
-    if (s.empty() || s.front()!='{' || s.back()!='}') return m;
-    std::string content = trim(s.substr(1, s.size()-2));
+    if (s.empty() || s.front() != '{' || s.back() != '}') return m;
+    std::string content = trim(s.substr(1, s.size() - 2));
     if (content.empty()) return m;
     auto pairs = split(content, ',');
-    for (auto &p:pairs){
+    for (auto& p : pairs) {
         size_t colon = p.find(':');
-        if (colon==std::string::npos) continue;
+        if (colon == std::string::npos) continue;
         std::string key = trim(p.substr(0, colon));
-        if (key.size()>=2 && key.front()=='"' && key.back()=='"') key = key.substr(1, key.size()-2);
-        std::string val = trim(p.substr(colon+1));
-        if (val.size()>=2 && val.front()=='"' && val.back()=='"') val = val.substr(1, val.size()-2);
-        m[key]=val;
+        if (key.size() >= 2 && key.front() == '"' && key.back() == '"') key = key.substr(1, key.size() - 2);
+        std::string val = trim(p.substr(colon + 1));
+        if (val.size() >= 2 && val.front() == '"' && val.back() == '"') val = val.substr(1, val.size() - 2);
+        m[key] = val;
     }
     return m;
 }
@@ -56,11 +55,15 @@ QtCoreManager* QtCoreManager::s_instance_ = nullptr;
 QtCoreManager::QtCoreManager()
 {
     s_instance_ = this;
+    // Create task queue with single thread for async operations
+    task_queue_ = pe_base::TaskQueue::Create(1, "QtCoreManagerQueue");
 }
 
 QtCoreManager::~QtCoreManager()
 {
     Stop();
+    // Reset task queue (will wait for pending tasks to complete)
+    task_queue_.reset();
     if (s_instance_ == this) s_instance_ = nullptr;
 }
 
@@ -88,7 +91,7 @@ bool QtCoreManager::BindFunctions()
         }
         out = reinterpret_cast<FuncType>(proc);
         return true;
-    };
+        };
 
     if (!load(qc_create_blob_data_, "quantum_create_blob_data")) return false;
     if (!load(qc_create_data_container_, "quantum_create_data_container")) return false;
@@ -108,7 +111,7 @@ bool QtCoreManager::Start()
 {
     if (!qc_get_client_) return false;
     clientHandle_ = qc_get_client_();
-    if (clientHandle_==0) {
+    if (clientHandle_ == 0) {
         std::cerr << "qc_get_client_ returned 0" << std::endl;
         return false;
     }
@@ -124,10 +127,10 @@ bool QtCoreManager::Start()
 
 void QtCoreManager::Stop()
 {
-    if (clientHandle_!=0 && qc_disconnect_) {
+    if (clientHandle_ != 0 && qc_disconnect_) {
         qc_disconnect_(clientHandle_);
     }
-    if (clientHandle_!=0 && qc_release_client_) {
+    if (clientHandle_ != 0 && qc_release_client_) {
         qc_release_client_(clientHandle_);
         clientHandle_ = 0;
     }
@@ -149,8 +152,7 @@ bool QtCoreManager::AddMemory(const std::string& model, const std::string& userT
         std::cerr << "qc_create_data_container_ failed" << std::endl;
         return false;
     }
-    // ensure freed
-    qc_free_ref_(dataContainer);
+    // Note: dataContainer is used below, do NOT free it here
     void* inputData = qc_create_input_data_("fkb_memory", sessionId_.empty() ? nullptr : sessionId_.c_str(), -1LL, dataContainer);
     if (!inputData) {
         std::cerr << "qc_create_input_data_ failed" << std::endl;
@@ -205,7 +207,7 @@ bool QtCoreManager::SendSessionFinalize(const std::string& action)
         qc_free_ref_(dataContainer);
         qc_free_ref_(blob);
         std::cout << "SendSessionFinalize jobId=" << jobId << std::endl;
-        return jobId!=0;
+        return jobId != 0;
     }
     else {
         void* dataContainer = qc_create_data_container_(finalizeText.c_str(), nullptr, 0, nullptr);
@@ -216,7 +218,7 @@ bool QtCoreManager::SendSessionFinalize(const std::string& action)
         qc_free_ref_(inputData);
         qc_free_ref_(dataContainer);
         std::cout << "SendSessionFinalize jobId=" << jobId << std::endl;
-        return jobId!=0;
+        return jobId != 0;
     }
 }
 
@@ -241,23 +243,28 @@ struct ResourceGuard {
     void** ptr;
     void (*freeFunc)(void*);
     ResourceGuard(void** p, void (*f)(void*)) : ptr(p), freeFunc(f) {}
-    ~ResourceGuard(){ if(ptr && *ptr) { freeFunc(*ptr); *ptr=nullptr; } }
+    ~ResourceGuard() { if (ptr && *ptr) { freeFunc(*ptr); *ptr = nullptr; } }
 };
 
 void QtCoreManager::OnConnectionStatus(int status)
 {
     std::cout << "QtCoreManager connection status=" << status << std::endl;
     if (status == 1) {
-        // create session
-        std::string finalizeText = "{\"action\": \"create\"}";
-        void* dataContainer = qc_create_data_container_(finalizeText.c_str(), nullptr, 0, nullptr);
-        if (!dataContainer) { std::cerr << "create data container failed" << std::endl; return; }
-        ResourceGuard g(&dataContainer, qc_free_ref_);
-        void* inputData = qc_create_input_data_("session", nullptr, -1LL, dataContainer);
-        if (!inputData) { std::cerr << "create input failed" << std::endl; return; }
-        ResourceGuard g2(&inputData, qc_free_ref_);
-        int64_t jobId = qc_send_command_(clientHandle_, inputData);
-        std::cout << "session create jobId=" << jobId << std::endl;
+        // Use task queue instead of detached thread for better lifecycle management
+        if (task_queue_) {
+            task_queue_->PostTask([this]() {
+                // create session
+                std::string finalizeText = "{\"action\": \"create\"}";
+                void* dataContainer = qc_create_data_container_(finalizeText.c_str(), nullptr, 0, nullptr);
+                if (!dataContainer) { std::cerr << "create data container failed" << std::endl; return; }
+                ResourceGuard g(&dataContainer, qc_free_ref_);
+                void* inputData = qc_create_input_data_("session", nullptr, -1LL, dataContainer);
+                if (!inputData) { std::cerr << "create input failed" << std::endl; return; }
+                ResourceGuard g2(&inputData, qc_free_ref_);
+                int64_t jobId = qc_send_command_(clientHandle_, inputData);
+                std::cout << "session create jobId=" << jobId << std::endl;
+            });
+        }
     }
 }
 
@@ -296,7 +303,7 @@ void QtCoreManager::OnResult(void* outputDataPtr)
 
     auto kv = parseJson(text);
     auto it = kv.find("sessionID");
-    if (it!=kv.end()) {
+    if (it != kv.end()) {
         sessionId_ = it->second;
         std::cout << "Got sessionID=" << sessionId_ << std::endl;
     }

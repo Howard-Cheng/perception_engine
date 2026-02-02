@@ -3,6 +3,8 @@
  * @brief Main entry point for LinguaCore service
  */
 
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>  // For GetConsoleWindow, ShowWindow
 #include "pe_base/logger.h"  // Add logger first
 #include "pe_base/config_manager.h"  // Add ConfigManager
 #include "linguacore/LinguaCore.h"
@@ -29,6 +31,7 @@ void printUsage(const char* program_name) {
     PE_INFO("Usage: " << program_name << " [options]");
     PE_INFO("Options:");
     PE_INFO("  -c, --config <path>    Path to config.ini file (default: config.ini)");
+    PE_INFO("  --background           Run in background mode (hide console window)");
     PE_INFO("  -h, --help             Show this help message");
     PE_INFO("  -v, --version          Show version information");
 }
@@ -39,9 +42,37 @@ void printVersion() {
 }
 
 int main(int argc, char* argv[]) {
-    // =========================================
-    // Initialize Logger FIRST (before anything)
-    // =========================================
+bool enablelocallog = false;
+
+// =========================================
+// Read Log setting from Registry
+// =========================================
+{
+    HKEY hKey;
+    LONG result = RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+        "SOFTWARE\\Lenovo\\Perception",
+        0, KEY_READ, &hKey);
+        
+    if (result == ERROR_SUCCESS) {
+        DWORD logValue = 0;
+        DWORD dataSize = sizeof(DWORD);
+        DWORD dataType = 0;
+            
+        result = RegQueryValueExA(hKey, "Log", nullptr, &dataType,
+            reinterpret_cast<LPBYTE>(&logValue), &dataSize);
+            
+        if (result == ERROR_SUCCESS && dataType == REG_DWORD) {
+            enablelocallog = (logValue == 1);
+        }
+            
+        RegCloseKey(hKey);
+    }
+}
+
+// =========================================
+// Initialize Logger FIRST (before anything)
+// =========================================
+if (enablelocallog) {
     std::filesystem::path log_path = "";
     if (auto* p_appdata = getenv("APPDATA")) {
         log_path =
@@ -49,6 +80,7 @@ int main(int argc, char* argv[]) {
     }
     pe_base::LogWriter::SetLogFilePrefix(
         (log_path / "LinguaCore").generic_string());
+}
 
     PE_INFO("========================================");
     PE_INFO("    LinguaCore Service");
@@ -57,6 +89,7 @@ int main(int argc, char* argv[]) {
     
     // Parse command line arguments
     std::string config_path = "config.ini";
+    bool background_mode = false;
     
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -67,6 +100,8 @@ int main(int argc, char* argv[]) {
         } else if (arg == "-v" || arg == "--version") {
             printVersion();
             return 0;
+        } else if (arg == "--background") {
+            background_mode = true;
         } else if (arg == "-c" || arg == "--config") {
             if (i + 1 < argc) {
                 config_path = argv[++i];
@@ -78,6 +113,15 @@ int main(int argc, char* argv[]) {
             PE_ERROR("Error: Unknown option: " << arg);
             printUsage(argv[0]);
             return 1;
+        }
+    }
+    
+    // Hide console window if running in background mode
+    if (background_mode) {
+        PE_INFO("Running in background mode (hiding console window)...");
+        HWND consoleWindow = GetConsoleWindow();
+        if (consoleWindow) {
+            ShowWindow(consoleWindow, SW_HIDE);
         }
     }
     

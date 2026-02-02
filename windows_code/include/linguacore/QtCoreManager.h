@@ -4,6 +4,8 @@
 #include <functional>
 #include <windows.h>
 #include <cstdint>
+#include <memory>
+#include "pe_base/task_queue/task_queue.h"
 
 class QtCoreManager
 {
@@ -70,6 +72,9 @@ private:
     QuantumReleaseClientFunc qc_release_client_ = nullptr;
     QuantumFreeStringFunc qc_free_string_ = nullptr;
     QuantumFreeRefFunc qc_free_ref_ = nullptr;
+
+    // Task queue for async operations (replaces detached threads)
+    std::shared_ptr<pe_base::TaskQueue> task_queue_;
 
     // static instance pointer for callbacks (single instance assumption)
     static QtCoreManager* s_instance_;

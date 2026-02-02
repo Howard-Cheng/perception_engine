@@ -185,8 +185,8 @@ if (enablelocallog) {
         config.qdrant_collection = configManager.GetQdrantCollection();
         
         // QtCore settings (optional - can be configured via environment or hardcoded)
-        config.qtcore_enabled = false;  // Disabled by default
-        config.qtcore_dll_path = "quantum-sdk-1.0.10.dll";
+        config.qtcore_enabled = true;  // Disabled by default
+        config.qtcore_dll_path = configManager.ResolvePath("quantum-sdk-1.0.10.dll");
         config.qtcore_model = "default";
         
         // Check if QtCore should be enabled (can be set via environment variable)

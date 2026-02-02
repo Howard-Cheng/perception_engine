@@ -184,6 +184,28 @@ if (enablelocallog) {
         config.qdrant_port = configManager.GetQdrantPort();
         config.qdrant_collection = configManager.GetQdrantCollection();
         
+        // QtCore settings (optional - can be configured via environment or hardcoded)
+        config.qtcore_enabled = false;  // Disabled by default
+        config.qtcore_dll_path = "quantum-sdk-1.0.10.dll";
+        config.qtcore_model = "default";
+        
+        // Check if QtCore should be enabled (can be set via environment variable)
+        if (auto* qtcore_env = std::getenv("QTCORE_ENABLED")) {
+            if (std::string(qtcore_env) == "1" || std::string(qtcore_env) == "true") {
+                config.qtcore_enabled = true;
+            }
+        }
+        
+        // Check if custom DLL path is set
+        if (auto* qtcore_dll = std::getenv("QTCORE_DLL_PATH")) {
+            config.qtcore_dll_path = qtcore_dll;
+        }
+        
+        // Check if custom model is set
+        if (auto* qtcore_model = std::getenv("QTCORE_MODEL")) {
+            config.qtcore_model = qtcore_model;
+        }
+        
         PE_INFO("Configuration summary:");
         PE_INFO("  Embedding model: " << config.embedding_model_path);
         PE_INFO("  LLM model: " << config.llm_model_path);
@@ -191,6 +213,9 @@ if (enablelocallog) {
         PE_INFO("  Batch size: " << config.batch_size);
         PE_INFO("  PostgreSQL: " << config.pg_host << ":" << config.pg_port << "/" << config.pg_dbname);
         PE_INFO("  Qdrant: " << config.qdrant_host << ":" << config.qdrant_port);
+        PE_INFO("  QtCore enabled: " << (config.qtcore_enabled ? "Yes" : "No"));
+        PE_INFO("  QtCore DLL path: " << config.qtcore_dll_path);
+        PE_INFO("  QtCore model: " << config.qtcore_model);
         
         // Verify model files exist
         if (!std::filesystem::exists(config.embedding_model_path)) {

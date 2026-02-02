@@ -30,6 +30,8 @@ namespace vectordb {
     class VectorStore;
 }
 
+class QtCoreManager;  // Forward declaration for QtCoreManager
+
 namespace linguacore {
 
 /**
@@ -65,6 +67,11 @@ struct LinguaCoreConfig {
     // Processing settings
     int batch_size = 10;  // Maximum events to process per batch
     bool verbose = true;
+    
+    // QtCore SDK settings
+    std::string qtcore_dll_path = "quantum-sdk-1.0.10.dll";
+    std::string qtcore_model = "lucene_AAITC-Emb";
+    bool qtcore_enabled = false;  // Enable/disable QtCore memory sync
 };
 
 /**
@@ -197,6 +204,7 @@ private:
     std::unique_ptr<database::IDatabaseClient> pg_client_;
     std::unique_ptr<perception::LLMClient> llm_client_;
     std::unique_ptr<vectordb::VectorStore> vector_store_;
+    std::unique_ptr<QtCoreManager> qtcore_manager_;  // QtCore SDK manager
     
     // Threading
     std::atomic<bool> running_{false};

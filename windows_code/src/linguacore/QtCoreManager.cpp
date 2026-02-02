@@ -1,5 +1,5 @@
 #include "linguacore/QtCoreManager.h"
-#include <iostream>
+#include "pe_base/logger.h"
 #include <mutex>
 #include <map>
 #include <vector>
@@ -72,7 +72,7 @@ bool QtCoreManager::Initialize(const std::string& dllPath)
     if (hDll_) return true;
     hDll_ = LoadLibraryA(dllPath.c_str());
     if (!hDll_) {
-        std::cerr << "LoadLibraryA failed: " << GetLastError() << std::endl;
+        PE_ERROR("LoadLibraryA failed: " << GetLastError());
         return false;
     }
     return BindFunctions();
@@ -86,7 +86,7 @@ bool QtCoreManager::BindFunctions()
         using FuncType = std::decay_t<decltype(out)>;
         void* proc = reinterpret_cast<void*>(GetProcAddress(hDll_, name));
         if (!proc) {
-            std::cerr << "Failed to load function " << name << " error=" << GetLastError() << std::endl;
+            PE_ERROR("Failed to load function " << name << " error=" << GetLastError());
             return false;
         }
         out = reinterpret_cast<FuncType>(proc);
@@ -112,14 +112,14 @@ bool QtCoreManager::Start()
     if (!qc_get_client_) return false;
     clientHandle_ = qc_get_client_();
     if (clientHandle_ == 0) {
-        std::cerr << "qc_get_client_ returned 0" << std::endl;
+        PE_ERROR("qc_get_client_ returned 0");
         return false;
     }
     // connect with callbacks
     if (!qc_connect_) return false;
     int rc = qc_connect_(clientHandle_, &QtCoreManager::OnConnectionStatusStatic, &QtCoreManager::OnResultStatic, nullptr);
     if (rc != 0) {
-        std::cerr << "qc_connect_ returned " << rc << std::endl;
+        PE_ERROR("qc_connect_ returned " << rc);
         return false;
     }
     return true;
@@ -149,20 +149,20 @@ bool QtCoreManager::AddMemory(const std::string& model, const std::string& userT
 
     void* dataContainer = qc_create_data_container_(payload.c_str(), nullptr, 0, nullptr);
     if (!dataContainer) {
-        std::cerr << "qc_create_data_container_ failed" << std::endl;
+        PE_ERROR("qc_create_data_container_ failed");
         return false;
     }
     // Note: dataContainer is used below, do NOT free it here
     void* inputData = qc_create_input_data_("fkb_memory", sessionId_.empty() ? nullptr : sessionId_.c_str(), -1LL, dataContainer);
     if (!inputData) {
-        std::cerr << "qc_create_input_data_ failed" << std::endl;
+        PE_ERROR("qc_create_input_data_ failed");
         qc_free_ref_(dataContainer);
         return false;
     }
     int64_t jobId = qc_send_command_(clientHandle_, inputData);
     qc_free_ref_(inputData);
     qc_free_ref_(dataContainer);
-    std::cout << "AddMemory jobId=" << jobId << std::endl;
+    PE_INFO("AddMemory jobId=" << jobId);
     return jobId != 0;
 }
 
@@ -172,19 +172,19 @@ bool QtCoreManager::GetMemory()
     std::string payload = R"({"action":"get_all_memory","model":"default","fields":["id","content","bucket"]})";
     void* dataContainer = qc_create_data_container_(payload.c_str(), nullptr, 0, nullptr);
     if (!dataContainer) {
-        std::cerr << "qc_create_data_container_ failed" << std::endl;
+        PE_ERROR("qc_create_data_container_ failed");
         return false;
     }
     void* inputData = qc_create_input_data_("fkb_memory", sessionId_.empty() ? nullptr : sessionId_.c_str(), -1LL, dataContainer);
     if (!inputData) {
-        std::cerr << "qc_create_input_data_ failed" << std::endl;
+        PE_ERROR("qc_create_input_data_ failed");
         qc_free_ref_(dataContainer);
         return false;
     }
     int64_t jobId = qc_send_command_(clientHandle_, inputData);
     qc_free_ref_(inputData);
     qc_free_ref_(dataContainer);
-    std::cout << "GetMemory jobId=" << jobId << std::endl;
+    PE_INFO("GetMemory jobId=" << jobId);
     return jobId != 0;
 }
 
@@ -199,25 +199,25 @@ bool QtCoreManager::SendSessionFinalize(const std::string& action)
         std::string uploadContent = "jintiantianqizenmeyang";
         void* blob = qc_create_blob_data_(uploadContent.c_str(), nullptr, static_cast<int>(uploadContent.size()));
         void* dataContainer = qc_create_data_container_(finalizeText.c_str(), &blob, 1, nullptr);
-        if (!dataContainer) { qc_free_ref_(blob); std::cerr << "create data container failed" << std::endl; return false; }
+        if (!dataContainer) { qc_free_ref_(blob); PE_ERROR("create data container failed"); return false; }
         void* inputData = qc_create_input_data_("session", sid.empty() ? nullptr : sid.c_str(), -1LL, dataContainer);
-        if (!inputData) { qc_free_ref_(dataContainer); qc_free_ref_(blob); std::cerr << "create input failed" << std::endl; return false; }
+        if (!inputData) { qc_free_ref_(dataContainer); qc_free_ref_(blob); PE_ERROR("create input failed"); return false; }
         int64_t jobId = qc_send_command_(clientHandle_, inputData);
         qc_free_ref_(inputData);
         qc_free_ref_(dataContainer);
         qc_free_ref_(blob);
-        std::cout << "SendSessionFinalize jobId=" << jobId << std::endl;
+        PE_INFO("SendSessionFinalize jobId=" << jobId);
         return jobId != 0;
     }
     else {
         void* dataContainer = qc_create_data_container_(finalizeText.c_str(), nullptr, 0, nullptr);
-        if (!dataContainer) { std::cerr << "create data container failed" << std::endl; return false; }
+        if (!dataContainer) { PE_ERROR("create data container failed"); return false; }
         void* inputData = qc_create_input_data_("session", sid.empty() ? nullptr : sid.c_str(), -1LL, dataContainer);
-        if (!inputData) { qc_free_ref_(dataContainer); std::cerr << "create input failed" << std::endl; return false; }
+        if (!inputData) { qc_free_ref_(dataContainer); PE_ERROR("create input failed"); return false; }
         int64_t jobId = qc_send_command_(clientHandle_, inputData);
         qc_free_ref_(inputData);
         qc_free_ref_(dataContainer);
-        std::cout << "SendSessionFinalize jobId=" << jobId << std::endl;
+        PE_INFO("SendSessionFinalize jobId=" << jobId);
         return jobId != 0;
     }
 }
@@ -248,7 +248,7 @@ struct ResourceGuard {
 
 void QtCoreManager::OnConnectionStatus(int status)
 {
-    std::cout << "QtCoreManager connection status=" << status << std::endl;
+    PE_INFO("QtCoreManager connection status=" << status);
     if (status == 1) {
         // Use task queue instead of detached thread for better lifecycle management
         if (task_queue_) {
@@ -256,13 +256,13 @@ void QtCoreManager::OnConnectionStatus(int status)
                 // create session
                 std::string finalizeText = "{\"action\": \"create\"}";
                 void* dataContainer = qc_create_data_container_(finalizeText.c_str(), nullptr, 0, nullptr);
-                if (!dataContainer) { std::cerr << "create data container failed" << std::endl; return; }
+                if (!dataContainer) { PE_ERROR("create data container failed"); return; }
                 ResourceGuard g(&dataContainer, qc_free_ref_);
                 void* inputData = qc_create_input_data_("session", nullptr, -1LL, dataContainer);
-                if (!inputData) { std::cerr << "create input failed" << std::endl; return; }
+                if (!inputData) { PE_ERROR("create input failed"); return; }
                 ResourceGuard g2(&inputData, qc_free_ref_);
                 int64_t jobId = qc_send_command_(clientHandle_, inputData);
-                std::cout << "session create jobId=" << jobId << std::endl;
+                PE_INFO("session create jobId=" << jobId);
             });
         }
     }
@@ -288,7 +288,7 @@ void QtCoreManager::OnResult(void* outputDataPtr)
     auto fn_free_ref = reinterpret_cast<QuantumFreeRefFuncLocal>(loadFn("quantum_free_ref"));
 
     if (!fn_jobid || !fn_output_get_data || !fn_data_get_text) {
-        std::cerr << "OnResult: required functions not found" << std::endl;
+        PE_ERROR("OnResult: required functions not found");
         return;
     }
 
@@ -299,12 +299,12 @@ void QtCoreManager::OnResult(void* outputDataPtr)
     void* textPtr = fn_data_get_text(dataPtr);
     ResourceGuard textGuard(&textPtr, fn_free_string);
     std::string text = textPtr ? reinterpret_cast<const char*>(textPtr) : "";
-    std::cout << "OnResult jobId=" << jobId << " text=" << text << std::endl;
+    PE_INFO("OnResult jobId=" << jobId << " text=" << text);
 
     auto kv = parseJson(text);
     auto it = kv.find("sessionID");
     if (it != kv.end()) {
         sessionId_ = it->second;
-        std::cout << "Got sessionID=" << sessionId_ << std::endl;
+        PE_INFO("Got sessionID=" << sessionId_);
     }
 }

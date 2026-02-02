@@ -152,6 +152,7 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         return loaded_; 
     }
+    std::string ResolvePath(const std::string& path) const;
 
 private:
     ConfigManager();
@@ -163,7 +164,6 @@ private:
 
     // Helper functions
     std::string GetExecutableDirectory() const;
-    std::string ResolvePath(const std::string& path) const;
     std::wstring ConvertToWideString(const std::string& str) const;
     std::string ConvertToUtf8(const std::wstring& wstr) const;
     std::string ToLowerCase(const std::string& str) const;

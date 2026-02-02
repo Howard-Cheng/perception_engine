@@ -244,10 +244,12 @@ set(DATAPROCESS_SERVER_HEADERS
 set(LINGUACORE_SOURCES
     src/linguacore/LinguaCoreMain.cpp
     src/linguacore/LinguaCore.cpp
+    src/linguacore/QtCoreManager.cpp
 )
 
 set(LINGUACORE_HEADERS
     include/linguacore/LinguaCore.h
+    include/linguacore/QtCoreManager.h
 )
 
 # ============================================================================
@@ -312,7 +314,7 @@ source_group("Source Files\\platform" FILES
 
 source_group("Source Files\\providers" FILES
     src/providers/SystemContextProvider.cpp
-    src/providers/VoiceContextProvider.cpp
+    src.providers/VoiceContextProvider.cpp
     src/providers/CameraContextProvider.cpp
     src/providers/AppActivityContextProvider.cpp
     src/providers/CompositeContextManager.cpp
@@ -397,11 +399,13 @@ source_group("Header Files\\dataprocess" FILES
 source_group("Source Files\\linguacore" FILES
     src/linguacore/LinguaCoreMain.cpp
     src/linguacore/LinguaCore.cpp
+    src/linguacore/QtCoreManager.cpp
 )
 
 # Header files for LinguaCore
 source_group("Header Files\\linguacore" FILES
     include/linguacore/LinguaCore.h
+    include/linguacore/QtCoreManager.h
 )
 
 # ============================================================================
@@ -440,6 +444,7 @@ target_include_directories(LinguaCore PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/pe_base/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/windows_code/include
     ${CMAKE_CURRENT_SOURCE_DIR}/database_client/include
     ${CMAKE_CURRENT_SOURCE_DIR}/llm_summary
     ${CMAKE_CURRENT_SOURCE_DIR}/vectordb_client/include
@@ -620,3 +625,38 @@ add_custom_command(TARGET PerceptionEngine POST_BUILD
 )
 
 # Note: test_embedding_comparison post-build commands are now in embeddingmodel/CMakeLists.txt
+
+# ============================================================================
+
+# Post-build commands for LinguaCore
+# ============================================================================
+
+# QtCore SDK DLL path
+set(QTCORE_DLL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/third-party/qtcore/dll/quantum-sdk-1.0.10.dll")
+
+# Post-build commands for LinguaCore
+add_custom_command(TARGET LinguaCore POST_BUILD
+    # Copy QtCore SDK DLL to bin/$<CONFIG>/
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying QtCore SDK DLL to $<CONFIG> directory..."
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${QTCORE_DLL_PATH}
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/quantum-sdk-1.0.10.dll
+    
+    # Copy database_client DLL to bin/$<CONFIG>/
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:database_client>
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/database_client.dll
+    
+    # Copy llm_summary_cpp DLL to bin/$<CONFIG>/
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:llm_summary_cpp>
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/llm_summary_cpp.dll
+    
+    # Copy models folder to bin/$<CONFIG>/
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying models folder to $<CONFIG> directory for LinguaCore..."
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/models
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/models
+    
+    COMMENT "Copying QtCore DLL, dependent DLLs, and models for LinguaCore"
+)

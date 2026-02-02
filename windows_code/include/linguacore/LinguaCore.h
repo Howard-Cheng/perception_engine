@@ -30,6 +30,12 @@ namespace vectordb {
     class VectorStore;
 }
 
+namespace pe_base {
+    class TaskQueue;
+}
+
+class QtCoreManager;  // Forward declaration for QtCoreManager
+
 namespace linguacore {
 
 /**
@@ -65,6 +71,11 @@ struct LinguaCoreConfig {
     // Processing settings
     int batch_size = 10;  // Maximum events to process per batch
     bool verbose = true;
+    
+    // QtCore SDK settings
+    std::string qtcore_dll_path = "quantum-sdk-1.0.10.dll";
+    std::string qtcore_model = "lucene_AAITC-Emb";
+    bool qtcore_enabled = true;  // Enable/disable QtCore memory sync
 };
 
 /**
@@ -186,6 +197,16 @@ private:
      * @return true if updated successfully
      */
     bool updateSummarizedFlag(const std::vector<std::string>& event_ids);
+    
+    /**
+     * @brief Async add memory to QtCore (runs in task queue)
+     * @param model Model name
+     * @param summary Summary text
+     * @param date_str Date string
+     */
+    void asyncAddMemoryToQtCore(const std::string& model, 
+                                const std::string& summary, 
+                                const std::string& date_str);
 
 private:
     LinguaCoreConfig config_;
@@ -197,6 +218,8 @@ private:
     std::unique_ptr<database::IDatabaseClient> pg_client_;
     std::unique_ptr<perception::LLMClient> llm_client_;
     std::unique_ptr<vectordb::VectorStore> vector_store_;
+    std::unique_ptr<QtCoreManager> qtcore_manager_;  // QtCore SDK manager
+    std::shared_ptr<pe_base::TaskQueue> qtcore_task_queue_;  // Task queue for async QtCore operations
     
     // Threading
     std::atomic<bool> running_{false};

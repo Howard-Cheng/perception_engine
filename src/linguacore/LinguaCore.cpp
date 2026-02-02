@@ -22,6 +22,7 @@
 #include <nlohmann/json.hpp>
 #include <filesystem>
 #include <iomanip>  // For std::put_time
+#include "pe_base/task_queue/task_queue.h"
 
 using json = nlohmann::json;
 
@@ -164,13 +165,22 @@ bool LinguaCore::initialize() {
                     qtcore_manager_.reset();
                     PE_WARN("Continuing without QtCore memory sync");
                 } else {
-                    PE_INFO("QtCore Manager initialized successfully");
+                    // Create task queue for async QtCore operations (single thread)
+                    qtcore_task_queue_ = pe_base::TaskQueue::Create(1, "QtCoreQueue");
+                    if (!qtcore_task_queue_) {
+                        PE_ERROR("Failed to create QtCore task queue");
+                        qtcore_manager_.reset();
+                        PE_WARN("Continuing without QtCore memory sync");
+                    } else {
+                        PE_INFO("QtCore Manager initialized successfully with async task queue");
+                    }
                 }
             }
             
         } catch (const std::exception& e) {
             PE_ERROR("Exception initializing QtCore Manager: " << e.what());
             qtcore_manager_.reset();
+            qtcore_task_queue_.reset();
             PE_WARN("Continuing without QtCore memory sync");
         }
     } else {
@@ -220,6 +230,12 @@ void LinguaCore::stop() {
         PE_INFO("Stopping QtCore Manager...");
         qtcore_manager_->Stop();
         qtcore_manager_.reset();
+    }
+    
+    // Reset task queue (will wait for pending tasks to complete)
+    if (qtcore_task_queue_) {
+        PE_INFO("Waiting for QtCore task queue to complete...");
+        qtcore_task_queue_.reset();
     }
     
     PE_INFO("LinguaCore service stopped");
@@ -412,8 +428,8 @@ bool LinguaCore::processSingleEvent(const database::RawEvent& event) {
     
     PE_INFO("Generated screen content summary (" << summary.length() << " chars)");
     
-    // Sync to QtCore if enabled
-    if (qtcore_manager_) {
+    // Sync to QtCore if enabled (async)
+    if (qtcore_manager_ && qtcore_task_queue_) {
         try {
             // Format date as ISO 8601 string
             std::time_t now = event.createdAt;
@@ -424,20 +440,11 @@ bool LinguaCore::processSingleEvent(const database::RawEvent& event) {
             date_stream << std::put_time(&tm_info, "%Y-%m-%d %H:%M:%S");
             std::string date_str = date_stream.str();
             
-            PE_INFO("Syncing summary to QtCore memory...");
-            bool sync_success = qtcore_manager_->AddMemory(
-                config_.qtcore_model,
-                summary,
-                date_str
-            );
+            PE_INFO("Posting summary to QtCore async queue...");
+            asyncAddMemoryToQtCore(config_.qtcore_model, summary, date_str);
             
-            if (sync_success) {
-                PE_INFO("Successfully synced summary to QtCore");
-            } else {
-                PE_WARN("Failed to sync summary to QtCore (continuing anyway)");
-            }
         } catch (const std::exception& e) {
-            PE_ERROR("Exception syncing to QtCore: " << e.what());
+            PE_ERROR("Exception posting to QtCore queue: " << e.what());
             // Don't fail the whole operation if QtCore sync fails
         }
     }
@@ -454,8 +461,8 @@ bool LinguaCore::processSingleEvent(const database::RawEvent& event) {
         } else {
             PE_INFO("Generated audio summary (" << audio_summary.length() << " chars)");
             
-            // Sync audio summary to QtCore if enabled
-            if (qtcore_manager_) {
+            // Sync audio summary to QtCore if enabled (async)
+            if (qtcore_manager_ && qtcore_task_queue_) {
                 try {
                     std::time_t now = event.createdAt;
                     std::tm tm_info;
@@ -465,20 +472,11 @@ bool LinguaCore::processSingleEvent(const database::RawEvent& event) {
                     date_stream << std::put_time(&tm_info, "%Y-%m-%d %H:%M:%S");
                     std::string date_str = date_stream.str();
                     
-                    PE_INFO("Syncing audio summary to QtCore memory...");
-                    bool sync_success = qtcore_manager_->AddMemory(
-                        config_.qtcore_model,
-                        audio_summary,
-                        date_str
-                    );
+                    PE_INFO("Posting audio summary to QtCore async queue...");
+                    asyncAddMemoryToQtCore(config_.qtcore_model, audio_summary, date_str);
                     
-                    if (sync_success) {
-                        PE_INFO("Successfully synced audio summary to QtCore");
-                    } else {
-                        PE_WARN("Failed to sync audio summary to QtCore (continuing anyway)");
-                    }
                 } catch (const std::exception& e) {
-                    PE_ERROR("Exception syncing audio summary to QtCore: " << e.what());
+                    PE_ERROR("Exception posting audio summary to QtCore queue: " << e.what());
                 }
             }
         }
@@ -559,8 +557,8 @@ bool LinguaCore::processMultipleEvents(const std::vector<database::RawEvent>& ev
     
     PE_INFO("Generated screen content summary (" << summary.length() << " chars)");
     
-    // Sync to QtCore if enabled
-    if (qtcore_manager_) {
+    // Sync to QtCore if enabled (async)
+    if (qtcore_manager_ && qtcore_task_queue_) {
         try {
             // Use first event's timestamp
             std::time_t now = events[0].createdAt;
@@ -571,20 +569,11 @@ bool LinguaCore::processMultipleEvents(const std::vector<database::RawEvent>& ev
             date_stream << std::put_time(&tm_info, "%Y-%m-%d %H:%M:%S");
             std::string date_str = date_stream.str();
             
-            PE_INFO("Syncing combined summary to QtCore memory...");
-            bool sync_success = qtcore_manager_->AddMemory(
-                config_.qtcore_model,
-                summary,
-                date_str
-            );
+            PE_INFO("Posting combined summary to QtCore async queue...");
+            asyncAddMemoryToQtCore(config_.qtcore_model, summary, date_str);
             
-            if (sync_success) {
-                PE_INFO("Successfully synced combined summary to QtCore");
-            } else {
-                PE_WARN("Failed to sync combined summary to QtCore (continuing anyway)");
-            }
         } catch (const std::exception& e) {
-            PE_ERROR("Exception syncing combined summary to QtCore: " << e.what());
+            PE_ERROR("Exception posting combined summary to QtCore queue: " << e.what());
         }
     }
     
@@ -600,8 +589,8 @@ bool LinguaCore::processMultipleEvents(const std::vector<database::RawEvent>& ev
         } else {
             PE_INFO("Generated audio summary (" << audio_summary.length() << " chars)");
             
-            // Sync audio summary to QtCore if enabled
-            if (qtcore_manager_) {
+            // Sync audio summary to QtCore if enabled (async)
+            if (qtcore_manager_ && qtcore_task_queue_) {
                 try {
                     std::time_t now = events[0].createdAt;
                     std::tm tm_info;
@@ -611,20 +600,11 @@ bool LinguaCore::processMultipleEvents(const std::vector<database::RawEvent>& ev
                     date_stream << std::put_time(&tm_info, "%Y-%m-%d %H:%M:%S");
                     std::string date_str = date_stream.str();
                     
-                    PE_INFO("Syncing combined audio summary to QtCore memory...");
-                    bool sync_success = qtcore_manager_->AddMemory(
-                        config_.qtcore_model,
-                        audio_summary,
-                        date_str
-                    );
+                    PE_INFO("Posting combined audio summary to QtCore async queue...");
+                    asyncAddMemoryToQtCore(config_.qtcore_model, audio_summary, date_str);
                     
-                    if (sync_success) {
-                        PE_INFO("Successfully synced combined audio summary to QtCore");
-                    } else {
-                        PE_WARN("Failed to sync combined audio summary to QtCore (continuing anyway)");
-                    }
                 } catch (const std::exception& e) {
-                    PE_ERROR("Exception syncing combined audio summary to QtCore: " << e.what());
+                    PE_ERROR("Exception posting combined audio summary to QtCore queue: " << e.what());
                 }
             }
         }
@@ -800,6 +780,30 @@ std::string LinguaCore::getStatistics() const {
     };
     
     return stats.dump(2);  // Pretty print with 2 spaces indentation
+}
+
+void LinguaCore::asyncAddMemoryToQtCore(const std::string& model, 
+                                        const std::string& summary, 
+                                        const std::string& date_str) {
+    if (!qtcore_manager_ || !qtcore_task_queue_) {
+        return;
+    }
+    
+    // Post task to queue - capture by value to avoid lifetime issues
+    qtcore_task_queue_->PostTask([this, model, summary, date_str]() {
+        try {
+            PE_INFO("Async syncing to QtCore memory (queue thread)...");
+            bool sync_success = qtcore_manager_->AddMemory(model, summary, date_str);
+            
+            if (sync_success) {
+                PE_INFO("Successfully synced to QtCore (async)");
+            } else {
+                PE_WARN("Failed to sync to QtCore (async, continuing anyway)");
+            }
+        } catch (const std::exception& e) {
+            PE_ERROR("Exception in async QtCore sync: " << e.what());
+        }
+    });
 }
 
 } // namespace linguacore

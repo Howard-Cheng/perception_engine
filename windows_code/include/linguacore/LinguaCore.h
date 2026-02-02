@@ -74,7 +74,7 @@ struct LinguaCoreConfig {
     
     // QtCore SDK settings
     std::string qtcore_dll_path = "quantum-sdk-1.0.10.dll";
-    std::string qtcore_model = "lucene_AAITC-Emb";
+    std::string qtcore_model = "lucene_LATC-Srv";
     bool qtcore_enabled = true;  // Enable/disable QtCore memory sync
 };
 

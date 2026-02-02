@@ -144,7 +144,7 @@ bool QtCoreManager::AddMemory(const std::string& model, const std::string& userT
 {
     if (!qc_create_data_container_ || !qc_create_input_data_ || !qc_send_command_) return false;
     std::ostringstream ss;
-    ss << "{\n  \"action\":\"add_memory\",\n  \"model\":\"" << model << "\",\n  \"userText\":\"" << userText << "\",\n  \"date\":\"" << date << "\"\n}\n";
+    ss << "{\n  \"action\":\"add_memory\",\n \"bucket\":\"PERCEPTION\",\n \"model\":\"" << model << "\",\n  \"userText\":\"" << userText << "\",\n  \"date\":\"" << date << "\"\n}\n";
     std::string payload = ss.str();
 
     void* dataContainer = qc_create_data_container_(payload.c_str(), nullptr, 0, nullptr);

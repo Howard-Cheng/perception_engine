@@ -5,49 +5,8 @@
 #include <vector>
 #include <sstream>
 #include <type_traits>
-
-// reuse simple json parsing from blobSyncDemo for sessionID extraction
-static std::string trim(const std::string& s) {
-    size_t start = 0;
-    while (start < s.size() && isspace(static_cast<unsigned char>(s[start]))) ++start;
-    size_t end = s.size();
-    while (end > start && isspace(static_cast<unsigned char>(s[end - 1]))) --end;
-    return s.substr(start, end - start);
-}
-
-static std::vector<std::string> split(const std::string& s, char delimiter) {
-    std::vector<std::string> result;
-    size_t start = 0;
-    size_t end = s.find(delimiter);
-    while (end != std::string::npos) {
-        std::string sub = trim(s.substr(start, end - start));
-        if (!sub.empty()) result.push_back(sub);
-        start = end + 1;
-        end = s.find(delimiter, start);
-    }
-    std::string sub = trim(s.substr(start));
-    if (!sub.empty()) result.push_back(sub);
-    return result;
-}
-
-static std::map<std::string, std::string> parseJson(const std::string& jsonStr) {
-    std::map<std::string, std::string> m;
-    std::string s = trim(jsonStr);
-    if (s.empty() || s.front() != '{' || s.back() != '}') return m;
-    std::string content = trim(s.substr(1, s.size() - 2));
-    if (content.empty()) return m;
-    auto pairs = split(content, ',');
-    for (auto& p : pairs) {
-        size_t colon = p.find(':');
-        if (colon == std::string::npos) continue;
-        std::string key = trim(p.substr(0, colon));
-        if (key.size() >= 2 && key.front() == '"' && key.back() == '"') key = key.substr(1, key.size() - 2);
-        std::string val = trim(p.substr(colon + 1));
-        if (val.size() >= 2 && val.front() == '"' && val.back() == '"') val = val.substr(1, val.size() - 2);
-        m[key] = val;
-    }
-    return m;
-}
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
 
 // static instance
 QtCoreManager* QtCoreManager::s_instance_ = nullptr;
@@ -143,11 +102,17 @@ void QtCoreManager::Stop()
 bool QtCoreManager::AddMemory(const std::string& model, const std::string& userText, const std::string& date)
 {
     if (!qc_create_data_container_ || !qc_create_input_data_ || !qc_send_command_) return false;
-    std::ostringstream ss;
-    ss << "{\n  \"action\":\"add_memory\",\n \"bucket\":\"PERCEPTION\",\n \"model\":\"" << model << "\",\n  \"userText\":\"" << userText << "\",\n  \"date\":\"" << date << "\"\n}\n";
-    std::string payload = ss.str();
+    
+    json payload;
+    payload["action"] = "add_memory";
+    payload["bucket"] = "PERCEPTION";
+    payload["model"] = model;
+    payload["userText"] = userText;
+    payload["date"] = date;
+    
+    std::string payloadStr = payload.dump();
 
-    void* dataContainer = qc_create_data_container_(payload.c_str(), nullptr, 0, nullptr);
+    void* dataContainer = qc_create_data_container_(payloadStr.c_str(), nullptr, 0, nullptr);
     if (!dataContainer) {
         PE_ERROR("qc_create_data_container_ failed");
         return false;
@@ -169,8 +134,18 @@ bool QtCoreManager::AddMemory(const std::string& model, const std::string& userT
 bool QtCoreManager::GetMemory()
 {
     if (!qc_create_data_container_ || !qc_create_input_data_ || !qc_send_command_) return false;
-    std::string payload = R"({"action":"get_all_memory","model":"default","fields":["id","content","bucket"]})";
-    void* dataContainer = qc_create_data_container_(payload.c_str(), nullptr, 0, nullptr);
+    
+    json payload;
+    payload["action"] = "get_all_memory";
+    payload["model"] = "default";
+    payload["fields"] = json::array();
+    payload["fields"].push_back("id");
+    payload["fields"].push_back("content");
+    payload["fields"].push_back("bucket");
+    
+    std::string payloadStr = payload.dump();
+    
+    void* dataContainer = qc_create_data_container_(payloadStr.c_str(), nullptr, 0, nullptr);
     if (!dataContainer) {
         PE_ERROR("qc_create_data_container_ failed");
         return false;
@@ -193,7 +168,11 @@ bool QtCoreManager::SendSessionFinalize(const std::string& action)
     if (!qc_create_data_container_ || !qc_create_input_data_ || !qc_send_command_) return false;
     std::string sid = sessionId_;
     if (sid.empty()) sid = "";
-    std::string finalizeText = "{\"action\":\"" + action + "\", \"sessionID\":\"" + sid + "\"}";
+    
+    json finalizeJson;
+    finalizeJson["action"] = action;
+    finalizeJson["sessionID"] = sid;
+    std::string finalizeText = finalizeJson.dump();
 
     if (action == "finalize") {
         std::string uploadContent = "jintiantianqizenmeyang";
@@ -253,8 +232,10 @@ void QtCoreManager::OnConnectionStatus(int status)
         // Use task queue instead of detached thread for better lifecycle management
         if (task_queue_) {
             task_queue_->PostTask([this]() {
-                // create session
-                std::string finalizeText = "{\"action\": \"create\"}";
+                json createJson;
+                createJson["action"] = "create";
+                std::string finalizeText = createJson.dump();
+                
                 void* dataContainer = qc_create_data_container_(finalizeText.c_str(), nullptr, 0, nullptr);
                 if (!dataContainer) { PE_ERROR("create data container failed"); return; }
                 ResourceGuard g(&dataContainer, qc_free_ref_);
@@ -301,10 +282,14 @@ void QtCoreManager::OnResult(void* outputDataPtr)
     std::string text = textPtr ? reinterpret_cast<const char*>(textPtr) : "";
     PE_INFO("OnResult jobId=" << jobId << " text=" << text);
 
-    auto kv = parseJson(text);
-    auto it = kv.find("sessionID");
-    if (it != kv.end()) {
-        sessionId_ = it->second;
-        PE_INFO("Got sessionID=" << sessionId_);
+    try {
+        json responseJson = json::parse(text);
+        if (responseJson.contains("sessionID")) {
+            sessionId_ = responseJson["sessionID"].get<std::string>();
+            PE_INFO("Got sessionID=" << sessionId_);
+        }
+    }
+    catch (const json::exception& e) {
+        PE_ERROR("JSON parsing failed: " << e.what() << " text=" << text);
     }
 }

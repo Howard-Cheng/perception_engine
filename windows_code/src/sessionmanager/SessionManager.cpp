@@ -4,7 +4,6 @@
 #include "pe_base/config_manager.h"
 #include "ElasticsearchClient.h"
 #include "PostgreSQLClient.h"
-#include <iostream>
 #include <sstream>
 #include <iomanip>
 #include <random>
@@ -103,12 +102,10 @@ namespace sessionmanager {
         std::wstring modelPath = pe_base::ConfigManager::GetInstance().GetEmbeddingModelPath();
         int result = E5_Initialize(modelPath.c_str());
         if (result != 0) {
-            std::cerr << "[SessionManager] E5 initialization failed: " << E5_GetLastError() << std::endl;
-            PE_ERROR(std::string("E5 initialization failed: ") + E5_GetLastError());
+            PE_ERROR("[SessionManager] E5 initialization failed: " << E5_GetLastError());
         }
         else {
-            std::cout << "[SessionManager] E5 model loaded successfully" << std::endl;
-            PE_INFO("E5 model loaded successfully");
+            PE_INFO("[SessionManager] E5 model loaded successfully");
         }
 
         if (pe_base::ConfigManager::GetInstance().IsLoaded()) {
@@ -121,12 +118,12 @@ namespace sessionmanager {
             config_.retryDelayMs = 1000;
             config_.useExponentialBackoff = true;
         }
-        std::cout << "[SessionManager] Created with device ID: " << deviceId_ << std::endl;
-        std::cout << "[SessionManager] Config: threshold=" << config_.compressionThreshold
+        PE_INFO("[SessionManager] Created with device ID: " << deviceId_);
+        PE_INFO("[SessionManager] Config: threshold=" << config_.compressionThreshold
             << ", similarity=" << config_.similarityThreshold
             << ", batchSize=" << config_.batchSize
             << ", maxRetries=" << config_.maxRetries
-            << ", retryDelay=" << config_.retryDelayMs << "ms" << std::endl;
+            << ", retryDelay=" << config_.retryDelayMs << "ms");
     }
 
     SessionManager::~SessionManager() {
@@ -136,13 +133,13 @@ namespace sessionmanager {
 
     void SessionManager::Start() {
         if (running_.load()) {
-            std::cout << "[SessionManager] Already running" << std::endl;
+            PE_INFO("[SessionManager] Already running");
             return;
         }
 
         running_.store(true);
         workerThread_ = std::thread(&SessionManager::WorkerThread, this);
-        std::cout << "[SessionManager] Worker thread started" << std::endl;
+        PE_INFO("[SessionManager] Worker thread started");
     }
 
     void SessionManager::Stop() {
@@ -161,7 +158,7 @@ namespace sessionmanager {
 
         if (workerThread_.joinable()) {
             workerThread_.join();
-            std::cout << "[SessionManager] Worker thread stopped" << std::endl;
+            PE_INFO("[SessionManager] Worker thread stopped");
         }
     }
 
@@ -175,8 +172,8 @@ namespace sessionmanager {
                 stats_.currentUncompressedCount = uncompressedCount;
             }
 
-            std::cout << "[SessionManager] Uncompressed count: " << uncompressedCount
-                << " (threshold: " << config_.compressionThreshold << ")" << std::endl;
+            PE_INFO("[SessionManager] Uncompressed count: " << uncompressedCount
+                << " (threshold: " << config_.compressionThreshold << ")");
 
             if (uncompressedCount > config_.compressionThreshold) {
                 PostCompressionTask();
@@ -186,8 +183,7 @@ namespace sessionmanager {
             return false;
         }
         catch (const std::exception& e) {
-            std::cerr << "[SessionManager] CheckAndTriggerCompression exception: "
-                << e.what() << std::endl;
+            PE_ERROR("[SessionManager] CheckAndTriggerCompression exception: " << e.what());
             return false;
         }
     }
@@ -204,8 +200,7 @@ namespace sessionmanager {
             return dbClient_->getUncompressedCount(indexName_);
         }
         catch (const std::exception& e) {
-            std::cerr << "[SessionManager] GetUncompressedCount exception: "
-                << e.what() << std::endl;
+            PE_ERROR("[SessionManager] GetUncompressedCount exception: " << e.what());
             return 0;
         }
     }
@@ -216,12 +211,12 @@ namespace sessionmanager {
         if (!taskPending_.load()) {
             taskPending_.store(true);
             taskCV_.notify_one();
-            std::cout << "[SessionManager] Compression task posted" << std::endl;
+            PE_INFO("[SessionManager] Compression task posted");
         }
     }
 
     void SessionManager::WorkerThread() {
-        std::cout << "[SessionManager] Worker thread running" << std::endl;
+        PE_INFO("[SessionManager] Worker thread running");
 
         while (running_.load()) {
             // Wait for compression task
@@ -242,24 +237,23 @@ namespace sessionmanager {
                 ProcessCompressionBatch();
             }
             catch (const std::exception& e) {
-                std::cerr << "[SessionManager] Worker thread exception: "
-                    << e.what() << std::endl;
+                PE_ERROR("[SessionManager] Worker thread exception: " << e.what());
             }
         }
 
-        std::cout << "[SessionManager] Worker thread exiting" << std::endl;
+        PE_INFO("[SessionManager] Worker thread exiting");
     }
 
     void SessionManager::ProcessCompressionBatch() {
         std::lock_guard<std::mutex> lock(dbMutex_);
 
         if (!dbClient_) {
-            std::cerr << "[SessionManager] Database client not available" << std::endl;
+            PE_ERROR("[SessionManager] Database client not available");
             return;
         }
 
         try {
-            std::cout << "[SessionManager] Starting batch processing..." << std::endl;
+            PE_INFO("[SessionManager] Starting batch processing...");
             auto startTime = std::chrono::steady_clock::now();
 
             // Use getUncompressedEvents() which is database-agnostic
@@ -267,7 +261,7 @@ namespace sessionmanager {
             std::vector<database::RawEvent> result = dbClient_->getUncompressedEvents(indexName_);
 
             if (result.empty()) {
-                std::cout << "[SessionManager] No uncompressed records found" << std::endl;
+                PE_INFO("[SessionManager] No uncompressed records found");
                 return;
             }
 
@@ -276,8 +270,7 @@ namespace sessionmanager {
                 result.resize(config_.batchSize);
             }
 
-            std::cout << "[SessionManager] Found " << result.size()
-                << " uncompressed records" << std::endl;
+            PE_INFO("[SessionManager] Found " << result.size() << " uncompressed records");
 
             // Process records into sessions
             std::vector<SessionContent> currentSession;
@@ -391,15 +384,14 @@ namespace sessionmanager {
                 stats_.lastCompressionTime = endTime;
             }
 
-            std::cout << "[SessionManager] Batch processing completed" << std::endl;
-            std::cout << "[SessionManager] Created " << sessionsCreated << " sessions, "
+            PE_INFO("[SessionManager] Batch processing completed");
+            PE_INFO("[SessionManager] Created " << sessionsCreated << " sessions, "
                 << "processed " << recordsProcessed << " records in "
-                << duration.count() << " ms" << std::endl;
+                << duration.count() << " ms");
 
         }
         catch (const std::exception& e) {
-            std::cerr << "[SessionManager] ProcessCompressionBatch exception: "
-                << e.what() << std::endl;
+            PE_ERROR("[SessionManager] ProcessCompressionBatch exception: " << e.what());
         }
     }
 
@@ -441,7 +433,7 @@ namespace sessionmanager {
 
     int SessionManager::CompareContentMLBased(const nlohmann::json& record1, const nlohmann::json& record2) {
 
-        std::cout << "=== ML-Based Similarity Comparison ===" << std::endl;
+        PE_INFO("=== ML-Based Similarity Comparison ===");
 
         std::string content1 = record1.value("screen_content", "");
         std::string content2 = record2.value("screen_content", "");
@@ -459,8 +451,7 @@ namespace sessionmanager {
         auto result = E5_CompareDocumentsSimple(content1.c_str(), content2.c_str(), &similarity);
 
         if (result != 0) {
-            std::cerr << "Comparison failed: " << E5_GetLastError() << std::endl;
-            PE_ERROR(std::string("E5 comparison failed: ") + E5_GetLastError());
+            PE_ERROR("Comparison failed: " << E5_GetLastError());
             return 0;
         }
 
@@ -831,10 +822,10 @@ namespace sessionmanager {
 
     void SessionManager::UpdateConfig(const Config& config) {
         config_ = config;
-        std::cout << "[SessionManager] Config updated: threshold="
+        PE_INFO("[SessionManager] Config updated: threshold="
             << config_.compressionThreshold
             << ", similarity=" << config_.similarityThreshold
-            << ", batchSize=" << config_.batchSize << std::endl;
+            << ", batchSize=" << config_.batchSize);
     }
 
     SessionManager::Statistics SessionManager::GetStatistics() const {
@@ -844,8 +835,8 @@ namespace sessionmanager {
 
     void SessionManager::SetSimilarityAlgorithm(SimilarityAlgorithm algorithm) {
         algorithm_ = algorithm;
-        std::cout << "[SessionManager] Similarity algorithm changed to: "
-            << static_cast<int>(algorithm) << std::endl;
+        PE_INFO("[SessionManager] Similarity algorithm changed to: "
+            << static_cast<int>(algorithm));
     }
 
 } // namespace sessionmanager

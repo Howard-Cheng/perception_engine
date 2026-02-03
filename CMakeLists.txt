@@ -314,7 +314,7 @@ source_group("Source Files\\platform" FILES
 
 source_group("Source Files\\providers" FILES
     src/providers/SystemContextProvider.cpp
-    src.providers/VoiceContextProvider.cpp
+    src/providers/VoiceContextProvider.cpp
     src/providers/CameraContextProvider.cpp
     src/providers/AppActivityContextProvider.cpp
     src/providers/CompositeContextManager.cpp

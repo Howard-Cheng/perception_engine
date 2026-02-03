@@ -35,13 +35,13 @@ using Timestamp = std::time_t;
 // Mouse event structure
 struct DB_CLIENT_API MouseEvent {
     std::time_t timestamp;
-    std::string eventType;      // "LeftClick", "Copy", "TextSelection", etc.
+    //std::string eventType;      // "LeftClick", "Copy", "TextSelection", etc.
     std::string content;         // Selected/copied text
-    int posX;
+    /*int posX;
     int posY;
-    std::string elementType;
+    std::string elementType;*/
     
-    MouseEvent() : timestamp(0), posX(0), posY(0) {}
+    MouseEvent() : timestamp(0)/*, posX(0), posY(0)*/ {}
 };
 
 // System information structure

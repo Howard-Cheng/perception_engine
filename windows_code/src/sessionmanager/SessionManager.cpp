@@ -406,8 +406,8 @@ namespace sessionmanager {
         nlohmann::json mouseEventsArray = nlohmann::json::array();
         for (const auto& me : event.mouseEvents) {
             nlohmann::json mouseEvent;
-            mouseEvent["x"] = me.posX;
-            mouseEvent["y"] = me.posY;
+            //mouseEvent["x"] = me.posX;
+            //mouseEvent["y"] = me.posY;
             mouseEvent["timestamp"] = me.timestamp;
             mouseEventsArray.push_back(mouseEvent);
         }

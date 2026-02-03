@@ -80,7 +80,7 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
 //void RecordMouseOperation(MouseEventType eventType, POINT position, HWND pointWindow);
 //void ProcessRecordQueue();  // Worker thread to process record queue
 
-void ProcessClipboardChange();
+    void ProcessClipboardChange();
     void MessageLoopThread();
     
     // Return element content and type

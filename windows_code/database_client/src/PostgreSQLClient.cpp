@@ -315,7 +315,7 @@ public:
                     /*if (meJson.contains("event_type")) {
                         me.eventType = meJson["event_type"].get<std::string>();
                     }*/
-                    if (meJson.contains("content")) {
+                    if (meJson.contains("slectedcontent")) {
                         me.content = meJson["content"].get<std::string>();
                     }
                     /*if (meJson.contains("pos_x")) {

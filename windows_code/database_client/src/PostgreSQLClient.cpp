@@ -312,13 +312,13 @@ public:
                     if (meJson.contains("timestamp")) {
                         me.timestamp = postgresqlToTimestamp(meJson["timestamp"].get<std::string>());
                     }
-                    if (meJson.contains("event_type")) {
+                    /*if (meJson.contains("event_type")) {
                         me.eventType = meJson["event_type"].get<std::string>();
-                    }
+                    }*/
                     if (meJson.contains("content")) {
                         me.content = meJson["content"].get<std::string>();
                     }
-                    if (meJson.contains("pos_x")) {
+                    /*if (meJson.contains("pos_x")) {
                         me.posX = meJson["pos_x"].get<int>();
                     }
                     if (meJson.contains("pos_y")) {
@@ -326,7 +326,7 @@ public:
                     }
                     if (meJson.contains("element_type")) {
                         me.elementType = meJson["element_type"].get<std::string>();
-                    }
+                    }*/
                     event.mouseEvents.push_back(me);
                 }
             } catch (...) {
@@ -897,11 +897,11 @@ query << "INSERT INTO " << tableName << " ("
         for (const auto& me : event.mouseEvents) {
             mouseArray.push_back({
                 {"timestamp", timestampToPostgreSQL(me.timestamp)},
-                {"event_type", me.eventType},
-                {"content", me.content},
+                //{"event_type", me.eventType},
+                {"content", me.content}/*,
                 {"pos_x", me.posX},
                 {"pos_y", me.posY},
-                {"element_type", me.elementType}
+                {"element_type", me.elementType}*/
             });
         }
         query << escapeString(pImpl_->conn_, mouseArray.dump()) << ", ";

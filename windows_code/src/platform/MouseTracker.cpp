@@ -394,9 +394,9 @@ void MouseTracker::RecordMouseOperation(MouseEventType eventType, POINT position
         if (eventType == MouseEventType::TEXT_SELECTION) {
             // For text selection, use special method to get selected text
             dbMouseEvent.timestamp = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-            dbMouseEvent.eventType = "TextSelection";
+            /*dbMouseEvent.eventType = "TextSelection";
             dbMouseEvent.posX = position.x;
-            dbMouseEvent.posY = position.y;
+            dbMouseEvent.posY = position.y;*/
             dbMouseEvent.content = pe_base::WindowsHelper::ConvertToChar(GetSelectedText(pointWindow).c_str()).ToString();
             m_mouseEvents.push_back(dbMouseEvent);
         }

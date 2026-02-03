@@ -154,11 +154,11 @@ public:
             for (const auto& me : event.mouseEvents) {
                 mouseEventsArray.push_back({
                     {"timestamp", me.timestamp},
-                    {"event_type", me.eventType},
-                    {"content", me.content},
+                    //{"event_type", me.eventType},
+                    {"content", me.content}/*,
                     {"pos_x", me.posX},
                     {"pos_y", me.posY},
-                    {"element_type", me.elementType}
+                    {"element_type", me.elementType}*/
                 });
             }
             j["mouse_events"] = mouseEventsArray;

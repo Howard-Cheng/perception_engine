@@ -26,35 +26,26 @@
 
 #pragma comment(lib, "oleacc.lib")
 
-// Mouse event types
-enum class MouseEventType {
-    LEFT_CLICK,
-    LEFT_DOUBLE_CLICK,
-    RIGHT_CLICK,
-    TEXT_SELECTION,
-    UNKNOWN
-};
-
 // Mouse operation record structure
-struct MouseOperationRecord {
-    std::chrono::system_clock::time_point timestamp;
-    MouseEventType eventType;
-    POINT position;
-    std::wstring content;           // Interaction content (link, button name, text, etc.)
-    std::wstring applicationName;   // Application name
-    std::wstring windowTitle;       // Window title
-    std::wstring elementType;       // Element type (button, link, textbox, etc.)
-
-    std::wstring toJson() const;
-};
+//struct MouseOperationRecord {
+//    std::chrono::system_clock::time_point timestamp;
+//    MouseEventType eventType;
+//    POINT position;
+//    std::wstring content;           // Interaction content (link, button name, text, etc.)
+//    std::wstring applicationName;   // Application name
+//    std::wstring windowTitle;       // Window title
+//    std::wstring elementType;       // Element type (button, link, textbox, etc.)
+//
+//    std::wstring toJson() const;
+//};
 
 // Pending mouse event
-struct PendingMouseEvent {
-    MouseEventType eventType;
-    POINT position;
-    HWND pointWindow;           // Window at coordinate position (for UI Automation)
-    std::chrono::system_clock::time_point timestamp;
-};
+//struct PendingMouseEvent {
+//    MouseEventType eventType;
+//    POINT position;
+//    HWND pointWindow;           // Window at coordinate position (for UI Automation)
+//    std::chrono::system_clock::time_point timestamp;
+//};
 
 class MouseTracker {
 public:
@@ -64,8 +55,8 @@ public:
     bool Initialize();
     void Start();
     void Stop();
-    void SaveToFile(const std::wstring& filename);
-    std::wstring GetAllRecordsAsJson();
+    //void SaveToFile(const std::wstring& filename);
+    //std::wstring GetAllRecordsAsJson();
     inline void ResetMouseRecords() {
         m_clickedCount = 0;
         m_mouseEvents.clear();
@@ -79,12 +70,18 @@ public:
     }
 
 private:
-    static LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam);
-    static MouseTracker* s_instance;
+static constexpr const wchar_t* CLASS_NAME = L"MouseTrackerClipboardWindow";
 
-    void ProcessMouseEvent(WPARAM wParam, const MSLLHOOKSTRUCT* mouseInfo);
-    void RecordMouseOperation(MouseEventType eventType, POINT position, HWND pointWindow);
-    void ProcessRecordQueue();  // Worker thread to process record queue
+//static LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam);
+static MouseTracker* s_instance;
+static LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+
+//void ProcessMouseEvent(WPARAM wParam, const MSLLHOOKSTRUCT* mouseInfo);
+//void RecordMouseOperation(MouseEventType eventType, POINT position, HWND pointWindow);
+//void ProcessRecordQueue();  // Worker thread to process record queue
+
+void ProcessClipboardChange();
+    void MessageLoopThread();
     
     // Return element content and type
     struct ElementInfo {
@@ -93,9 +90,9 @@ private:
     };
     ElementInfo GetElementContentAtPoint(POINT pt, HWND targetWindow);
     
-    std::wstring GetSelectedText(HWND targetWindow);
-    std::wstring GetApplicationName(HWND hwnd);
-    std::wstring GetWindowTitle(HWND hwnd);
+    //std::wstring GetSelectedText(HWND targetWindow);
+    //std::wstring GetApplicationName(HWND hwnd);
+    //std::wstring GetWindowTitle(HWND hwnd);
     std::wstring GetElementTypeString(CONTROLTYPEID controlType);
     HWND GetRootOwnerWindow(HWND hwnd);  // Get top-level window
     
@@ -111,37 +108,34 @@ private:
     // Find content area (similar to BrowserContentExtractor::FindDocumentElement)
     IUIAutomationElement* FindContentArea(IUIAutomationElement* rootElement);
     
-    void CleanupOldRecords();  // Clean up records older than 1 hour
+    //void CleanupOldRecords();  // Clean up records older than 1 hour
     
     HHOOK m_mouseHook;
     IUIAutomation* m_pAutomation;
     
-    std::vector<MouseOperationRecord> m_records;
-    std::mutex m_recordsMutex;
+    /*std::vector<MouseOperationRecord> m_records;
+    std::mutex m_recordsMutex;*/
     
     // Async processing queue
-    std::queue<PendingMouseEvent> m_eventQueue;
-    std::mutex m_queueMutex;
+    //std::queue<PendingMouseEvent> m_eventQueue;
+    //std::mutex m_queueMutex;
     std::condition_variable m_queueCondition;
-    std::thread m_processingThread;
+    //std::thread m_processingThread;
     std::thread m_messageLoopThread;  // Message loop thread (required for hook)
     std::atomic<bool> m_isRunning;
     
-    DWORD m_lastClickTime;
-    POINT m_lastClickPos;
-    
     // Text selection tracking
-    bool m_isDragging;
-    POINT m_dragStartPos;
-    HWND m_dragWindow;
+    //bool m_isDragging;
+    //POINT m_dragStartPos;
+    //HWND m_dragWindow;
 
     std::ofstream m_logFile;
 
     UINT64 m_clickedCount;
     std::vector<database::MouseEvent> m_mouseEvents;
+    std::wstring g_lastContent;
 };
 
 // Helper functions
-std::wstring MouseEventTypeToString(MouseEventType type);
 std::string GetCurrentTimeString();
 std::wstring TrimWhitespace(const std::wstring& str);  // Trim leading and trailing whitespace

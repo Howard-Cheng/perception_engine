@@ -19,14 +19,8 @@ MouseTracker::MouseTracker()
     : m_mouseHook(nullptr)
     , m_pAutomation(nullptr)
     , m_isRunning(false)
-    , m_lastClickTime(0)
-    , m_isDragging(false)
-    , m_dragWindow(nullptr)
+    //, m_dragWindow(nullptr)
 {
-    m_lastClickPos.x = 0;
-    m_lastClickPos.y = 0;
-    m_dragStartPos.x = 0;
-    m_dragStartPos.y = 0;
     s_instance = this;
 }
 
@@ -80,48 +74,11 @@ void MouseTracker::Start() {
     m_isRunning = true;
 
     // Start processing thread
-    m_processingThread = std::thread(&MouseTracker::ProcessRecordQueue, this);
+    //m_processingThread = std::thread(&MouseTracker::ProcessRecordQueue, this);
 
     // Critical fix: Hook must be installed in message loop thread
     // Start message loop thread and install hook in that thread
-    m_messageLoopThread = std::thread([this]() {
-        std::wcout << L"[MouseTracker] Message loop thread starting...\n" << std::flush;
-        m_logFile << "Message loop thread starting.\n" << std::flush;
-
-        // Install hook in message loop thread (critical!)
-        m_mouseHook = SetWindowsHookEx(WH_MOUSE_LL, MouseHookProc, GetModuleHandle(nullptr), 0);
-
-        if (m_mouseHook) {
-            std::wcout << L"[MouseTracker] Mouse hook installed successfully in message loop thread.\n" << std::flush;
-            m_logFile << "Mouse hook installed successfully in message loop thread.\n" << std::flush;
-
-            // Start message loop
-            MSG msg;
-            std::wcout << L"[MouseTracker] Starting message loop...\n" << std::flush;
-
-            while (m_isRunning && GetMessage(&msg, nullptr, 0, 0)) {
-                TranslateMessage(&msg);
-                DispatchMessage(&msg);
-            }
-
-            std::wcout << L"[MouseTracker] Message loop ended.\n" << std::flush;
-            m_logFile << "Message loop ended.\n" << std::flush;
-
-            // Clean up hook
-            if (m_mouseHook) {
-                UnhookWindowsHookEx(m_mouseHook);
-                m_mouseHook = nullptr;
-                std::wcout << L"[MouseTracker] Mouse hook uninstalled.\n" << std::flush;
-            }
-        }
-        else {
-            // Hook installation failed
-            DWORD error = GetLastError();
-            std::wcerr << L"[MouseTracker] Mouse hook installation FAILED! Error code: " << error << L"\n" << std::flush;
-            m_logFile << "Mouse hook installation FAILED! Error code: " << error << L"\n" << std::flush;
-            m_isRunning = false;
-        }
-    });
+    m_messageLoopThread = std::thread(&MouseTracker::MessageLoopThread, this);
 
     // Give message loop some time to start
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -149,9 +106,6 @@ void MouseTracker::Stop() {
 
     // Wake up processing thread and wait for it to finish
     m_queueCondition.notify_all();
-    if (m_processingThread.joinable()) {
-        m_processingThread.join();
-    }
 
     // Note: Hook has already been cleaned up in message loop thread
 
@@ -160,260 +114,217 @@ void MouseTracker::Stop() {
     }
 }
 
-LRESULT CALLBACK MouseTracker::MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
-    static int callCount = 0;
-    if (callCount < 5) {  // Only output first 5 times to avoid flooding
-        std::wcout << L"[HOOK] MouseHookProc called! nCode=" << nCode
-            << L", wParam=" << wParam << L"\n" << std::flush;
-        callCount++;
-    }
-
-    if (nCode >= 0 && s_instance && s_instance->m_isRunning) {
-        const MSLLHOOKSTRUCT* mouseInfo = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
-
-        // Ignore window dragging (by detecting if in non-client area)
-        HWND hwnd = WindowFromPoint(mouseInfo->pt);
-        if (hwnd) {
-            LRESULT hitTest = SendMessage(hwnd, WM_NCHITTEST, 0,
-                MAKELPARAM(mouseInfo->pt.x, mouseInfo->pt.y));
-            // If in title bar or border, ignore
-            if (hitTest == HTCAPTION || hitTest == HTBORDER || hitTest == HTLEFT ||
-                hitTest == HTRIGHT || hitTest == HTTOP || hitTest == HTBOTTOM) {
-                return CallNextHookEx(nullptr, nCode, wParam, lParam);
-            }
-        }
-
-        s_instance->ProcessMouseEvent(wParam, mouseInfo);
-    }
-    return CallNextHookEx(nullptr, nCode, wParam, lParam);
-}
-
-void MouseTracker::ProcessMouseEvent(WPARAM wParam, const MSLLHOOKSTRUCT* mouseInfo) {
-    MouseEventType eventType = MouseEventType::UNKNOWN;
-    DWORD currentTime = GetTickCount();
-
-    switch (wParam) {
-    case WM_LBUTTONDOWN: {
-        // Record drag start
-        m_isDragging = true;
-        m_dragStartPos = mouseInfo->pt;
-        m_dragWindow = WindowFromPoint(mouseInfo->pt);
-
-        // Detect double click
-        if (currentTime - m_lastClickTime < GetDoubleClickTime() &&
-            abs(mouseInfo->pt.x - m_lastClickPos.x) < 5 &&
-            abs(mouseInfo->pt.y - m_lastClickPos.y) < 5) {
-            eventType = MouseEventType::LEFT_DOUBLE_CLICK;
-            m_lastClickTime = 0; // Reset to avoid triple click being detected as double click
-            m_isDragging = false; // Double click doesn't count as drag
-        }
-        else {
-            // Don't immediately trigger LEFT_CLICK, wait for LBUTTONUP to determine if it's text selection
-            m_lastClickTime = currentTime;
-            m_lastClickPos = mouseInfo->pt;
-            return; // Temporarily don't process, wait for LBUTTONUP
-        }
-        break;
-    }
-    case WM_LBUTTONUP: {
-        // Check if it's text selection (drag distance exceeds threshold)
-        if (m_isDragging) {
-            int dragDistance = abs(mouseInfo->pt.x - m_dragStartPos.x) +
-                abs(mouseInfo->pt.y - m_dragStartPos.y);
-
-            // If drag distance exceeds 10 pixels, consider it text selection
-            if (dragDistance > 10) {
-                eventType = MouseEventType::TEXT_SELECTION;
-
-                // Quickly enqueue text selection event
-                PendingMouseEvent event;
-                event.eventType = eventType;
-                event.position = mouseInfo->pt;
-                event.pointWindow = m_dragWindow;
-                event.timestamp = std::chrono::system_clock::now();
-
-                {
-                    std::lock_guard<std::mutex> lock(s_instance->m_queueMutex);
-                    s_instance->m_eventQueue.push(event);
-                }
-                s_instance->m_queueCondition.notify_one();
-
-                m_isDragging = false;
-                return; // Text selection event processed, don't process as click
-            }
-            else {
-                // Small drag distance, regular click
-                eventType = MouseEventType::LEFT_CLICK;
-            }
-
-            m_isDragging = false;
-        }
-        else {
-            // No LBUTTONDOWN recorded, could be other situation
-            return;
-        }
-        break;
-    }
-    case WM_RBUTTONDOWN:
-        eventType = MouseEventType::RIGHT_CLICK;
-        m_isDragging = false; // Right click doesn't count as drag
-        break;
-    default:
+void MouseTracker::ProcessClipboardChange()
+{
+    if (!OpenClipboard(nullptr)) {
         return;
     }
 
-    if (eventType != MouseEventType::UNKNOWN && eventType != MouseEventType::TEXT_SELECTION) {
-        // Quickly enqueue, don't block hook
-        PendingMouseEvent event;
-        event.eventType = eventType;
-        event.position = mouseInfo->pt;
-
-        // Critical fix: In multi-monitor environment, WindowFromPoint may return child window with incorrect coordinate system
-        // Should get top-level window instead of child window
-        HWND pointWindow = WindowFromPoint(mouseInfo->pt);
-        HWND foregroundWindow = GetForegroundWindow();
-
-        // Get top-level parent window of pointWindow
-        HWND topLevelWindow = pointWindow;
-        if (pointWindow) {
-            HWND parent = pointWindow;
-            while (parent) {
-                HWND nextParent = GetParent(parent);
-                if (!nextParent) {
-                    topLevelWindow = parent;
-                    break;
-                }
-                parent = nextParent;
-            }
-        }
-
-        // Verify if top-level window matches foreground window
-        bool useForeground = (topLevelWindow != foregroundWindow);
-
-        // Prefer foreground window (more reliable), unless topLevelWindow actually contains click coordinates
-        if (topLevelWindow && IsWindow(topLevelWindow)) {
-            RECT rect;
-            if (GetWindowRect(topLevelWindow, &rect)) {
-                POINT pt = mouseInfo->pt;
-                if (pt.x >= rect.left && pt.x < rect.right &&
-                    pt.y >= rect.top && pt.y < rect.bottom) {
-                    useForeground = false;  // Coordinates within range, use topLevelWindow
-                }
-            }
-        }
-
-        event.pointWindow = useForeground ? foregroundWindow : topLevelWindow;
-
-        // Debug: Output click information
-#ifdef _DEBUG
-        wchar_t className[256] = { 0 };
-        wchar_t topClassName[256] = { 0 };
-        wchar_t fgClassName[256] = { 0 };
-        if (pointWindow && IsWindow(pointWindow)) {
-            GetClassNameW(pointWindow, className, 256);
-        }
-        if (topLevelWindow && IsWindow(topLevelWindow)) {
-            GetClassNameW(topLevelWindow, topClassName, 256);
-        }
-        if (foregroundWindow && IsWindow(foregroundWindow)) {
-            GetClassNameW(foregroundWindow, fgClassName, 256);
-        }
-        std::wcout << L"[HOOK] Click at (" << mouseInfo->pt.x << L", " << mouseInfo->pt.y << L")\n"
-            << L"  PointWindow: " << pointWindow << L" Class: " << className << L"\n"
-            << L"  TopLevelWindow: " << topLevelWindow << L" Class: " << topClassName << L"\n"
-            << L"  ForegroundWindow: " << foregroundWindow << L" Class: " << fgClassName << L"\n"
-            << L"  Using: " << (useForeground ? L"ForegroundWindow" : L"TopLevelWindow") << L"\n";
-
-        // Output display information
-        RECT topRect = { 0 };
-        if (event.pointWindow && IsWindow(event.pointWindow)) {
-            GetWindowRect(event.pointWindow, &topRect);
-            std::wcout << L"  TargetWindow Rect: (" << topRect.left << L", " << topRect.top
-                << L") - (" << topRect.right << L", " << topRect.bottom << L")\n";
-
-            bool isInside = (mouseInfo->pt.x >= topRect.left && mouseInfo->pt.x < topRect.right &&
-                mouseInfo->pt.y >= topRect.top && mouseInfo->pt.y < topRect.bottom);
-            std::wcout << L"  Click is " << (isInside ? L"INSIDE" : L"OUTSIDE")
-                << L" target window bounds\n";
-        }
-#endif
-
-        event.timestamp = std::chrono::system_clock::now();
-
-        {
-            std::lock_guard<std::mutex> lock(s_instance->m_queueMutex);
-            s_instance->m_eventQueue.push(event);
-        }
-        s_instance->m_queueCondition.notify_one();
-    }
-}
-
-void MouseTracker::ProcessRecordQueue() {
-    // Initialize COM in worker thread (each thread needs separate initialization)
-    auto result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-
-    while (m_isRunning) {
-        PendingMouseEvent event;
-
-        {
-            std::unique_lock<std::mutex> lock(m_queueMutex);
-            // Wait for queue to have data or stop signal
-            m_queueCondition.wait(lock, [this] {
-                return !m_eventQueue.empty() || !m_isRunning;
-                });
-
-            if (!m_isRunning && m_eventQueue.empty()) {
-                break;
-            }
-
-            if (!m_eventQueue.empty()) {
-                event = m_eventQueue.front();
-                m_eventQueue.pop();
-            }
-            else {
-                continue;
-            }
-        }
-
-        // Process time-consuming operations in worker thread
-        RecordMouseOperation(event.eventType, event.position, event.pointWindow);
+    // 检查是否有文本格式（仅处理文本，忽略文件等其他格式）
+    if (!IsClipboardFormatAvailable(CF_UNICODETEXT)) {
+        CloseClipboard();
+        return;
     }
 
-    CoUninitialize();
-}
-
-void MouseTracker::RecordMouseOperation(MouseEventType eventType, POINT position, HWND pointWindow) {
-    MouseOperationRecord record;
-    record.timestamp = std::chrono::system_clock::now();
-    record.eventType = eventType;
-    record.position = position;
-
-    // Critical improvement: First immediately get element content (before UI state changes)
-    database::MouseEvent dbMouseEvent;  // Use database namespace
-    try {
-        if (eventType == MouseEventType::TEXT_SELECTION) {
-            // For text selection, use special method to get selected text
-            dbMouseEvent.timestamp = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-            /*dbMouseEvent.eventType = "TextSelection";
-            dbMouseEvent.posX = position.x;
-            dbMouseEvent.posY = position.y;*/
-            dbMouseEvent.content = pe_base::WindowsHelper::ConvertToChar(GetSelectedText(pointWindow).c_str()).ToString();
-            m_mouseEvents.push_back(dbMouseEvent);
-        }
-        else {
-            // For click events, get element content
-            m_clickedCount++;
-        }
-    }
-    catch (...) {
-        std::wcout << L"[Error getting content]" << std::endl;
+    // 获取剪贴板文本
+    HANDLE hData = GetClipboardData(CF_UNICODETEXT);
+    if (hData == nullptr) {
+        CloseClipboard();
+        return;
     }
 
-    // Write to log file (asynchronously)
+    wchar_t* pText = (wchar_t*)GlobalLock(hData);
+    if (pText == nullptr) {
+        CloseClipboard();
+        return;
+    }
+
+    std::wstring content(pText);
+    GlobalUnlock(hData);
+    CloseClipboard();
+
+    // 检查内容是否与上次相同（避免重复记录）
+    if (content == g_lastContent || content.empty()) {
+        return;
+    }
+    g_lastContent = content;
+
+    // 创建记录并保存
+	database::MouseEvent dbMouseEvent;
+    dbMouseEvent.timestamp = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    dbMouseEvent.content = pe_base::WindowsHelper::ConvertToChar(content.c_str()).ToString();
+    m_mouseEvents.push_back(dbMouseEvent);
+    m_clickedCount++;
+    // 写入日志文件
     if (m_logFile.is_open()) {
-        m_logFile << dbMouseEvent.content << "\n" << std::flush;
+        m_logFile << "[Clipboard Copy] " << pe_base::WindowsHelper::ConvertToChar(content.c_str()).ToString() << "\n" << std::flush;
+	}
+}
+
+LRESULT CALLBACK MouseTracker::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+    switch (uMsg) {
+    case WM_CREATE:
+        // 注册为剪贴板格式监听器
+        if (!AddClipboardFormatListener(hwnd)) {
+            MessageBoxW(hwnd, L"Failed to register clipboard listener", L"Error", MB_ICONERROR);
+            return -1;
+        }
+        return 0;
+
+    case WM_CLIPBOARDUPDATE:
+        // 剪贴板内容已更新
+        if (s_instance) {
+            s_instance->ProcessClipboardChange();
+        }
+        return 0;
+
+    case WM_DESTROY:
+        // 移除剪贴板监听器
+        RemoveClipboardFormatListener(hwnd);
+        PostQuitMessage(0);
+        return 0;
+    }
+
+    return DefWindowProc(hwnd, uMsg, wParam, lParam);
+}
+
+void MouseTracker::MessageLoopThread()
+{
+    std::wcout << L"[MouseTracker] Message loop thread starting...\n" << std::flush;
+    m_logFile << "Message loop thread starting.\n" << std::flush;
+
+    // 注册窗口类
+    WNDCLASSW wc = {};
+    wc.lpfnWndProc = WindowProc;
+    wc.hInstance = GetModuleHandle(nullptr);
+    wc.lpszClassName = CLASS_NAME;
+
+    if (!RegisterClassW(&wc)) {
+        std::wcerr << L"Failed to register window class" << std::endl;
+        return;
+    }
+
+    // 创建隐藏窗口用于接收剪贴板消息
+    HWND hwnd = CreateWindowExW(
+        0,
+        CLASS_NAME,
+        L"Clipboard Monitor",
+        0,
+        0, 0, 0, 0,
+        HWND_MESSAGE,  // 消息窗口，不可见
+        nullptr,
+        GetModuleHandle(nullptr),
+        nullptr
+    );
+
+    if (hwnd == nullptr) {
+        std::wcerr << L"Failed to create window" << std::endl;
+        return;
+    }
+
+    // 消息循环
+    MSG msg;
+    while (GetMessage(&msg, nullptr, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
     }
 }
+
+//LRESULT CALLBACK MouseTracker::MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
+//    static int callCount = 0;
+//    if (callCount < 5) {  // Only output first 5 times to avoid flooding
+//        std::wcout << L"[HOOK] MouseHookProc called! nCode=" << nCode
+//            << L", wParam=" << wParam << L"\n" << std::flush;
+//        callCount++;
+//    }
+//
+//    if (nCode >= 0 && s_instance && s_instance->m_isRunning) {
+//        const MSLLHOOKSTRUCT* mouseInfo = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
+//
+//        // Ignore window dragging (by detecting if in non-client area)
+//        HWND hwnd = WindowFromPoint(mouseInfo->pt);
+//        if (hwnd) {
+//            LRESULT hitTest = SendMessage(hwnd, WM_NCHITTEST, 0,
+//                MAKELPARAM(mouseInfo->pt.x, mouseInfo->pt.y));
+//            // If in title bar or border, ignore
+//            if (hitTest == HTCAPTION || hitTest == HTBORDER || hitTest == HTLEFT ||
+//                hitTest == HTRIGHT || hitTest == HTTOP || hitTest == HTBOTTOM) {
+//                return CallNextHookEx(nullptr, nCode, wParam, lParam);
+//            }
+//        }
+//
+//        //s_instance->ProcessMouseEvent(wParam, mouseInfo);
+//    }
+//    return CallNextHookEx(nullptr, nCode, wParam, lParam);
+//}
+
+//void MouseTracker::ProcessRecordQueue() {
+//    // Initialize COM in worker thread (each thread needs separate initialization)
+//    auto result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+//
+//    while (m_isRunning) {
+//        PendingMouseEvent event;
+//
+//        {
+//            std::unique_lock<std::mutex> lock(m_queueMutex);
+//            // Wait for queue to have data or stop signal
+//            m_queueCondition.wait(lock, [this] {
+//                return !m_eventQueue.empty() || !m_isRunning;
+//                });
+//
+//            if (!m_isRunning && m_eventQueue.empty()) {
+//                break;
+//            }
+//
+//            if (!m_eventQueue.empty()) {
+//                event = m_eventQueue.front();
+//                m_eventQueue.pop();
+//            }
+//            else {
+//                continue;
+//            }
+//        }
+//
+//        // Process time-consuming operations in worker thread
+//        RecordMouseOperation(event.eventType, event.position, event.pointWindow);
+//    }
+//
+//    CoUninitialize();
+//}
+
+//void MouseTracker::RecordMouseOperation(MouseEventType eventType, POINT position, HWND pointWindow) {
+//    MouseOperationRecord record;
+//    record.timestamp = std::chrono::system_clock::now();
+//    record.eventType = eventType;
+//    record.position = position;
+//
+//    // Critical improvement: First immediately get element content (before UI state changes)
+//    database::MouseEvent dbMouseEvent;  // Use database namespace
+//    try {
+//        if (eventType == MouseEventType::TEXT_SELECTION) {
+//            // For text selection, use special method to get selected text
+//            dbMouseEvent.timestamp = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+//            /*dbMouseEvent.eventType = "TextSelection";
+//            dbMouseEvent.posX = position.x;
+//            dbMouseEvent.posY = position.y;*/
+//            dbMouseEvent.content = pe_base::WindowsHelper::ConvertToChar(GetSelectedText(pointWindow).c_str()).ToString();
+//            m_mouseEvents.push_back(dbMouseEvent);
+//        }
+//        else {
+//            // For click events, get element content
+//            m_clickedCount++;
+//        }
+//    }
+//    catch (...) {
+//        std::wcout << L"[Error getting content]" << std::endl;
+//    }
+//
+//    // Write to log file (asynchronously)
+//    if (m_logFile.is_open()) {
+//        m_logFile << dbMouseEvent.content << "\n" << std::flush;
+//    }
+//}
 
 MouseTracker::ElementInfo MouseTracker::GetElementContentAtPoint(POINT pt, HWND targetWindow) {
     ElementInfo result;
@@ -905,240 +816,221 @@ HWND MouseTracker::GetRootOwnerWindow(HWND hwnd) {
     return rootWindow;
 }
 
-std::wstring MouseTracker::GetApplicationName(HWND hwnd) {
-    if (!hwnd || !IsWindow(hwnd)) {
-        return L"Unknown";
-    }
+//std::wstring MouseTracker::GetApplicationName(HWND hwnd) {
+//    if (!hwnd || !IsWindow(hwnd)) {
+//        return L"Unknown";
+//    }
+//
+//    DWORD processId = 0;
+//    GetWindowThreadProcessId(hwnd, &processId);
+//
+//    if (processId == 0) {
+//        return L"Unknown";
+//    }
+//
+//    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processId);
+//    if (!hProcess) {
+//        return L"Unknown";
+//    }
+//
+//    wchar_t processName[MAX_PATH] = L"";
+//    DWORD size = MAX_PATH;
+//
+//    if (QueryFullProcessImageNameW(hProcess, 0, processName, &size)) {
+//        std::wstring fullPath(processName);
+//        size_t lastSlash = fullPath.find_last_of(L"\\/");
+//        if (lastSlash != std::wstring::npos) {
+//            CloseHandle(hProcess);
+//            return fullPath.substr(lastSlash + 1);
+//        }
+//    }
+//
+//    CloseHandle(hProcess);
+//    return L"Unknown";
+//}
+//
+//std::wstring MouseTracker::GetWindowTitle(HWND hwnd) {
+//    if (!hwnd || !IsWindow(hwnd)) {
+//        return L"";
+//    }
+//
+//    wchar_t title[512] = L"";
+//    int length = GetWindowTextW(hwnd, title, 512);
+//
+//    if (length > 0) {
+//        return std::wstring(title);
+//    }
+//
+//    // If window title is empty, try to get class name
+//    wchar_t className[256] = L"";
+//    if (GetClassNameW(hwnd, className, 256) > 0) {
+//        return std::wstring(L"[") + className + L"]";
+//    }
+//
+//    return L"";
+//}
 
-    DWORD processId = 0;
-    GetWindowThreadProcessId(hwnd, &processId);
+//void MouseTracker::CleanupOldRecords() {
+//    auto now = std::chrono::system_clock::now();
+//    auto oneHourAgo = now - std::chrono::hours(1);
+//
+//    m_records.erase(
+//        std::remove_if(m_records.begin(), m_records.end(),
+//            [oneHourAgo](const MouseOperationRecord& record) {
+//                return record.timestamp < oneHourAgo;
+//            }),
+//        m_records.end()
+//    );
+//}
 
-    if (processId == 0) {
-        return L"Unknown";
-    }
+//void MouseTracker::SaveToFile(const std::wstring& filename) {
+//    std::wofstream file(filename);
+//    if (!file.is_open()) return;
+//
+//    file << L"{\n  \"records\": [\n";
+//
+//    std::lock_guard<std::mutex> lock(m_recordsMutex);
+//    for (size_t i = 0; i < m_records.size(); ++i) {
+//        file << L"    " << m_records[i].toJson();
+//        if (i < m_records.size() - 1) {
+//            file << L",";
+//        }
+//        file << L"\n";
+//    }
+//
+//    file << L"  ]\n}\n";
+//    file.close();
+//}
 
-    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processId);
-    if (!hProcess) {
-        return L"Unknown";
-    }
+//std::wstring MouseTracker::GetAllRecordsAsJson() {
+//    std::wstringstream ss;
+//    ss << L"{\n  \"records\": [\n";
+//
+//    std::lock_guard<std::mutex> lock(m_recordsMutex);
+//
+//    if (m_records.empty()) {
+//        ss << L"  ]\n}";
+//        return ss.str();
+//    }
+//
+//    // New logic: Merge adjacent records with same applicationName
+//    std::vector<std::pair<std::wstring, std::vector<MouseOperationRecord>>> groupedRecords;
+//
+//    std::wstring currentApp;
+//    std::vector<MouseOperationRecord> currentTracks;
+//
+//    for (const auto& record : m_records) {
+//        if (record.applicationName != currentApp) {
+//            // Application switched, save previous group
+//            if (!currentTracks.empty()) {
+//                groupedRecords.push_back({ currentApp, currentTracks });
+//            }
+//            // Start new group
+//            currentApp = record.applicationName;
+//            currentTracks.clear();
+//        }
+//        // Add to current group
+//        currentTracks.push_back(record);
+//    }
+//
+//    // Add last group
+//    if (!currentTracks.empty()) {
+//        groupedRecords.push_back({ currentApp, currentTracks });
+//    }
+//
+//    // Generate JSON
+//    for (size_t i = 0; i < groupedRecords.size(); ++i) {
+//        const auto& [appName, tracks] = groupedRecords[i];
+//
+//        // JSON escape function
+//        auto escapeJson = [](const std::wstring& str) -> std::wstring {
+//            std::wstring escaped;
+//            for (wchar_t c : str) {
+//                switch (c) {
+//                case L'\\': escaped += L"\\\\"; break;
+//                case L'\"': escaped += L"\\\""; break;
+//                case L'\n': escaped += L"\\n"; break;
+//                case L'\r': escaped += L"\\r"; break;
+//                case L'\t': escaped += L"\\t"; break;
+//                default: escaped += c; break;
+//                }
+//            }
+//            return escaped;
+//            };
+//
+//        ss << L"    {\n";
+//        ss << L"      \"applicationName\": \"" << escapeJson(appName) << L"\",\n";
+//        ss << L"      \"tracks\": [\n";
+//
+//        // Output all records for this application
+//        for (size_t j = 0; j < tracks.size(); ++j) {
+//            const auto& record = tracks[j];
+//
+//            // Convert timestamp
+//            auto time_t_val = std::chrono::system_clock::to_time_t(record.timestamp);
+//            std::tm tm_val;
+//            localtime_s(&tm_val, &time_t_val);
+//            wchar_t timeStr[100];
+//            wcsftime(timeStr, 100, L"%Y-%m-%d %H:%M:%S", &tm_val);
+//
+//            ss << L"        {\n";
+//            ss << L"          \"timestamp\": \"" << timeStr << L"\",\n";
+//            ss << L"          \"content\": \"" << escapeJson(record.content) << L"\",\n";
+//            ss << L"        }";
+//
+//            if (j < tracks.size() - 1) {
+//                ss << L",";
+//            }
+//            ss << L"\n";
+//        }
+//
+//        ss << L"      ]\n";
+//        ss << L"    }";
+//
+//        if (i < groupedRecords.size() - 1) {
+//            ss << L",";
+//        }
+//        ss << L"\n";
+//    }
+//
+//    ss << L"  ]\n}";
+//    return ss.str();
+//}
 
-    wchar_t processName[MAX_PATH] = L"";
-    DWORD size = MAX_PATH;
-
-    if (QueryFullProcessImageNameW(hProcess, 0, processName, &size)) {
-        std::wstring fullPath(processName);
-        size_t lastSlash = fullPath.find_last_of(L"\\/");
-        if (lastSlash != std::wstring::npos) {
-            CloseHandle(hProcess);
-            return fullPath.substr(lastSlash + 1);
-        }
-    }
-
-    CloseHandle(hProcess);
-    return L"Unknown";
-}
-
-std::wstring MouseTracker::GetWindowTitle(HWND hwnd) {
-    if (!hwnd || !IsWindow(hwnd)) {
-        return L"";
-    }
-
-    wchar_t title[512] = L"";
-    int length = GetWindowTextW(hwnd, title, 512);
-
-    if (length > 0) {
-        return std::wstring(title);
-    }
-
-    // If window title is empty, try to get class name
-    wchar_t className[256] = L"";
-    if (GetClassNameW(hwnd, className, 256) > 0) {
-        return std::wstring(L"[") + className + L"]";
-    }
-
-    return L"";
-}
-
-void MouseTracker::CleanupOldRecords() {
-    auto now = std::chrono::system_clock::now();
-    auto oneHourAgo = now - std::chrono::hours(1);
-
-    m_records.erase(
-        std::remove_if(m_records.begin(), m_records.end(),
-            [oneHourAgo](const MouseOperationRecord& record) {
-                return record.timestamp < oneHourAgo;
-            }),
-        m_records.end()
-    );
-}
-
-void MouseTracker::SaveToFile(const std::wstring& filename) {
-    std::wofstream file(filename);
-    if (!file.is_open()) return;
-
-    file << L"{\n  \"records\": [\n";
-
-    std::lock_guard<std::mutex> lock(m_recordsMutex);
-    for (size_t i = 0; i < m_records.size(); ++i) {
-        file << L"    " << m_records[i].toJson();
-        if (i < m_records.size() - 1) {
-            file << L",";
-        }
-        file << L"\n";
-    }
-
-    file << L"  ]\n}\n";
-    file.close();
-}
-
-std::wstring MouseTracker::GetAllRecordsAsJson() {
-    std::wstringstream ss;
-    ss << L"{\n  \"records\": [\n";
-
-    std::lock_guard<std::mutex> lock(m_recordsMutex);
-
-    if (m_records.empty()) {
-        ss << L"  ]\n}";
-        return ss.str();
-    }
-
-    // New logic: Merge adjacent records with same applicationName
-    std::vector<std::pair<std::wstring, std::vector<MouseOperationRecord>>> groupedRecords;
-
-    std::wstring currentApp;
-    std::vector<MouseOperationRecord> currentTracks;
-
-    for (const auto& record : m_records) {
-        if (record.applicationName != currentApp) {
-            // Application switched, save previous group
-            if (!currentTracks.empty()) {
-                groupedRecords.push_back({ currentApp, currentTracks });
-            }
-            // Start new group
-            currentApp = record.applicationName;
-            currentTracks.clear();
-        }
-        // Add to current group
-        currentTracks.push_back(record);
-    }
-
-    // Add last group
-    if (!currentTracks.empty()) {
-        groupedRecords.push_back({ currentApp, currentTracks });
-    }
-
-    // Generate JSON
-    for (size_t i = 0; i < groupedRecords.size(); ++i) {
-        const auto& [appName, tracks] = groupedRecords[i];
-
-        // JSON escape function
-        auto escapeJson = [](const std::wstring& str) -> std::wstring {
-            std::wstring escaped;
-            for (wchar_t c : str) {
-                switch (c) {
-                case L'\\': escaped += L"\\\\"; break;
-                case L'\"': escaped += L"\\\""; break;
-                case L'\n': escaped += L"\\n"; break;
-                case L'\r': escaped += L"\\r"; break;
-                case L'\t': escaped += L"\\t"; break;
-                default: escaped += c; break;
-                }
-            }
-            return escaped;
-            };
-
-        ss << L"    {\n";
-        ss << L"      \"applicationName\": \"" << escapeJson(appName) << L"\",\n";
-        ss << L"      \"tracks\": [\n";
-
-        // Output all records for this application
-        for (size_t j = 0; j < tracks.size(); ++j) {
-            const auto& record = tracks[j];
-
-            // Convert timestamp
-            auto time_t_val = std::chrono::system_clock::to_time_t(record.timestamp);
-            std::tm tm_val;
-            localtime_s(&tm_val, &time_t_val);
-            wchar_t timeStr[100];
-            wcsftime(timeStr, 100, L"%Y-%m-%d %H:%M:%S", &tm_val);
-
-            ss << L"        {\n";
-            ss << L"          \"timestamp\": \"" << timeStr << L"\",\n";
-            ss << L"          \"eventType\": \"" << MouseEventTypeToString(record.eventType) << L"\",\n";
-            ss << L"          \"position\": {\"x\": " << record.position.x << L", \"y\": " << record.position.y << L"},\n";
-            ss << L"          \"content\": \"" << escapeJson(record.content) << L"\",\n";
-            ss << L"          \"windowTitle\": \"" << escapeJson(record.windowTitle) << L"\",\n";
-            ss << L"          \"elementType\": \"" << escapeJson(record.elementType) << L"\"\n";
-            ss << L"        }";
-
-            if (j < tracks.size() - 1) {
-                ss << L",";
-            }
-            ss << L"\n";
-        }
-
-        ss << L"      ]\n";
-        ss << L"    }";
-
-        if (i < groupedRecords.size() - 1) {
-            ss << L",";
-        }
-        ss << L"\n";
-    }
-
-    ss << L"  ]\n}";
-    return ss.str();
-}
-
-std::wstring MouseOperationRecord::toJson() const {
-    std::wstringstream ss;
-
-    // Convert timestamp to string
-    auto time_t_val = std::chrono::system_clock::to_time_t(timestamp);
-    std::tm tm_val;
-    localtime_s(&tm_val, &time_t_val);
-
-    wchar_t timeStr[100];
-    wcsftime(timeStr, 100, L"%Y-%m-%d %H:%M:%S", &tm_val);
-
-    // JSON escape function
-    auto escapeJson = [](const std::wstring& str) -> std::wstring {
-        std::wstring escaped;
-        for (wchar_t c : str) {
-            switch (c) {
-            case L'\\': escaped += L"\\\\"; break;
-            case L'\"': escaped += L"\\\""; break;
-            case L'\n': escaped += L"\\n"; break;
-            case L'\r': escaped += L"\\r"; break;
-            case L'\t': escaped += L"\\t"; break;
-            default: escaped += c; break;
-            }
-        }
-        return escaped;
-        };
-
-    ss << L"{\n"
-        << L"      \"timestamp\": \"" << timeStr << L"\",\n"
-        << L"      \"eventType\": \"" << MouseEventTypeToString(eventType) << L"\",\n"
-        << L"      \"position\": {\"x\": " << position.x << L", \"y\": " << position.y << L"},\n"
-        << L"      \"content\": \"" << escapeJson(content) << L"\",\n"
-        << L"      \"applicationName\": \"" << escapeJson(applicationName) << L"\",\n"
-        << L"      \"windowTitle\": \"" << escapeJson(windowTitle) << L"\",\n"
-        << L"      \"elementType\": \"" << escapeJson(elementType) << L"\"\n"
-        << L"    }";
-
-    return ss.str();
-}
-
-std::wstring MouseEventTypeToString(MouseEventType type) {
-    switch (type) {
-    case MouseEventType::LEFT_CLICK: return L"LeftClick";
-    case MouseEventType::LEFT_DOUBLE_CLICK: return L"DoubleClick";
-    case MouseEventType::RIGHT_CLICK: return L"RightClick";
-    case MouseEventType::TEXT_SELECTION: return L"TextSelection";
-    default: return L"Unknown";
-    }
-}
+//std::wstring MouseOperationRecord::toJson() const {
+//    std::wstringstream ss;
+//
+//    // Convert timestamp to string
+//    auto time_t_val = std::chrono::system_clock::to_time_t(timestamp);
+//    std::tm tm_val;
+//    localtime_s(&tm_val, &time_t_val);
+//
+//    wchar_t timeStr[100];
+//    wcsftime(timeStr, 100, L"%Y-%m-%d %H:%M:%S", &tm_val);
+//
+//    // JSON escape function
+//    auto escapeJson = [](const std::wstring& str) -> std::wstring {
+//        std::wstring escaped;
+//        for (wchar_t c : str) {
+//            switch (c) {
+//            case L'\\': escaped += L"\\\\"; break;
+//            case L'\"': escaped += L"\\\""; break;
+//            case L'\n': escaped += L"\\n"; break;
+//            case L'\r': escaped += L"\\r"; break;
+//            case L'\t': escaped += L"\\t"; break;
+//            default: escaped += c; break;
+//            }
+//        }
+//        return escaped;
+//        };
+//
+//    ss << L"{\n"
+//        << L"      \"timestamp\": \"" << timeStr << L"\",\n"
+//        << L"      \"content\": \"" << escapeJson(content) << L"\",\n"
+//        << L"    }";
+//
+//    return ss.str();
+//}
 
 std::string GetCurrentTimeString() {
     auto now = std::chrono::system_clock::now();
@@ -1177,123 +1069,123 @@ std::wstring TrimWhitespace(const std::wstring& str) {
 }
 
 // New: Get selected text
-std::wstring MouseTracker::GetSelectedText(HWND targetWindow) {
-    if (!m_pAutomation) return L"";
-
-    HWND hwnd = targetWindow;
-    if (!hwnd || !IsWindow(hwnd)) {
-        hwnd = GetForegroundWindow();
-    }
-
-    if (!hwnd || !IsWindow(hwnd)) {
-        return L"";
-    }
-
-    // Get focus element (Focus Element)
-    IUIAutomationElement* focusElement = nullptr;
-    HRESULT hr = m_pAutomation->GetFocusedElement(&focusElement);
-
-    if (SUCCEEDED(hr) && focusElement) {
-        // Try to use TextPattern to get selected text
-        IUIAutomationTextPattern* textPattern = nullptr;
-        hr = focusElement->GetCurrentPatternAs(UIA_TextPatternId,
-            __uuidof(IUIAutomationTextPattern), (void**)&textPattern);
-
-        if (SUCCEEDED(hr) && textPattern) {
-            // Get selected text range
-            IUIAutomationTextRangeArray* selectionArray = nullptr;
-            hr = textPattern->GetSelection(&selectionArray);
-
-            if (SUCCEEDED(hr) && selectionArray) {
-                int length = 0;
-                selectionArray->get_Length(&length);
-
-                std::wstring selectedText;
-
-                // Traverse all selected ranges (there might be multiple)
-                for (int i = 0; i < length; i++) {
-                    IUIAutomationTextRange* textRange = nullptr;
-                    if (SUCCEEDED(selectionArray->GetElement(i, &textRange)) && textRange) {
-                        BSTR text = nullptr;
-                        if (SUCCEEDED(textRange->GetText(-1, &text)) && text) {
-                            if (i > 0) selectedText += L" ";
-                            selectedText += text;
-                            SysFreeString(text);
-                        }
-                        textRange->Release();
-                    }
-                }
-
-                selectionArray->Release();
-                textPattern->Release();
-                focusElement->Release();
-
-                selectedText = TrimWhitespace(selectedText);
-                if (!selectedText.empty()) {
-                    return selectedText;
-                }
-            }
-            else {
-                textPattern->Release();
-            }
-        }
-
-        focusElement->Release();
-    }
-
-    // Fallback solution: Try to get from clipboard (if user copied selected text)
-    // Note: This method is not perfect because clipboard may contain previous content
-    // But as a fallback solution, better than nothing
-
-    // Try to search from window's root element
-    IUIAutomationElement* rootElement = nullptr;
-    hr = m_pAutomation->ElementFromHandle(hwnd, &rootElement);
-
-    if (SUCCEEDED(hr) && rootElement) {
-        // Find elements that support TextPattern
-        IUIAutomationTextPattern* textPattern = nullptr;
-        hr = rootElement->GetCurrentPatternAs(UIA_TextPatternId,
-            __uuidof(IUIAutomationTextPattern), (void**)&textPattern);
-
-        if (SUCCEEDED(hr) && textPattern) {
-            IUIAutomationTextRangeArray* selectionArray = nullptr;
-            hr = textPattern->GetSelection(&selectionArray);
-
-            if (SUCCEEDED(hr) && selectionArray) {
-                int length = 0;
-                selectionArray->get_Length(&length);
-
-                std::wstring selectedText;
-
-                for (int i = 0; i < length; i++) {
-                    IUIAutomationTextRange* textRange = nullptr;
-                    if (SUCCEEDED(selectionArray->GetElement(i, &textRange)) && textRange) {
-                        BSTR text = nullptr;
-                        if (SUCCEEDED(textRange->GetText(-1, &text)) && text) {
-                            if (i > 0) selectedText += L" ";
-                            selectedText += text;
-                            SysFreeString(text);
-                        }
-                        textRange->Release();
-                    }
-                }
-
-                selectionArray->Release();
-                textPattern->Release();
-                rootElement->Release();
-
-                selectedText = TrimWhitespace(selectedText);
-                if (!selectedText.empty()) {
-                    return selectedText;
-                }
-            }
-            else {
-                textPattern->Release();
-            }
-        }
-
-        rootElement->Release();
-    }
-
-    return L"[No Text Selected]";
-}
+//std::wstring MouseTracker::GetSelectedText(HWND targetWindow) {
+//    if (!m_pAutomation) return L"";
+//
+//    HWND hwnd = targetWindow;
+//    if (!hwnd || !IsWindow(hwnd)) {
+//        hwnd = GetForegroundWindow();
+//    }
+//
+//    if (!hwnd || !IsWindow(hwnd)) {
+//        return L"";
+//    }
+//
+//    // Get focus element (Focus Element)
+//    IUIAutomationElement* focusElement = nullptr;
+//    HRESULT hr = m_pAutomation->GetFocusedElement(&focusElement);
+//
+//    if (SUCCEEDED(hr) && focusElement) {
+//        // Try to use TextPattern to get selected text
+//        IUIAutomationTextPattern* textPattern = nullptr;
+//        hr = focusElement->GetCurrentPatternAs(UIA_TextPatternId,
+//            __uuidof(IUIAutomationTextPattern), (void**)&textPattern);
+//
+//        if (SUCCEEDED(hr) && textPattern) {
+//            // Get selected text range
+//            IUIAutomationTextRangeArray* selectionArray = nullptr;
+//            hr = textPattern->GetSelection(&selectionArray);
+//
+//            if (SUCCEEDED(hr) && selectionArray) {
+//                int length = 0;
+//                selectionArray->get_Length(&length);
+//
+//                std::wstring selectedText;
+//
+//                // Traverse all selected ranges (there might be multiple)
+//                for (int i = 0; i < length; i++) {
+//                    IUIAutomationTextRange* textRange = nullptr;
+//                    if (SUCCEEDED(selectionArray->GetElement(i, &textRange)) && textRange) {
+//                        BSTR text = nullptr;
+//                        if (SUCCEEDED(textRange->GetText(-1, &text)) && text) {
+//                            if (i > 0) selectedText += L" ";
+//                            selectedText += text;
+//                            SysFreeString(text);
+//                        }
+//                        textRange->Release();
+//                    }
+//                }
+//
+//                selectionArray->Release();
+//                textPattern->Release();
+//                focusElement->Release();
+//
+//                selectedText = TrimWhitespace(selectedText);
+//                if (!selectedText.empty()) {
+//                    return selectedText;
+//                }
+//            }
+//            else {
+//                textPattern->Release();
+//            }
+//        }
+//
+//        focusElement->Release();
+//    }
+//
+//    // Fallback solution: Try to get from clipboard (if user copied selected text)
+//    // Note: This method is not perfect because clipboard may contain previous content
+//    // But as a fallback solution, better than nothing
+//
+//    // Try to search from window's root element
+//    IUIAutomationElement* rootElement = nullptr;
+//    hr = m_pAutomation->ElementFromHandle(hwnd, &rootElement);
+//
+//    if (SUCCEEDED(hr) && rootElement) {
+//        // Find elements that support TextPattern
+//        IUIAutomationTextPattern* textPattern = nullptr;
+//        hr = rootElement->GetCurrentPatternAs(UIA_TextPatternId,
+//            __uuidof(IUIAutomationTextPattern), (void**)&textPattern);
+//
+//        if (SUCCEEDED(hr) && textPattern) {
+//            IUIAutomationTextRangeArray* selectionArray = nullptr;
+//            hr = textPattern->GetSelection(&selectionArray);
+//
+//            if (SUCCEEDED(hr) && selectionArray) {
+//                int length = 0;
+//                selectionArray->get_Length(&length);
+//
+//                std::wstring selectedText;
+//
+//                for (int i = 0; i < length; i++) {
+//                    IUIAutomationTextRange* textRange = nullptr;
+//                    if (SUCCEEDED(selectionArray->GetElement(i, &textRange)) && textRange) {
+//                        BSTR text = nullptr;
+//                        if (SUCCEEDED(textRange->GetText(-1, &text)) && text) {
+//                            if (i > 0) selectedText += L" ";
+//                            selectedText += text;
+//                            SysFreeString(text);
+//                        }
+//                        textRange->Release();
+//                    }
+//                }
+//
+//                selectionArray->Release();
+//                textPattern->Release();
+//                rootElement->Release();
+//
+//                selectedText = TrimWhitespace(selectedText);
+//                if (!selectedText.empty()) {
+//                    return selectedText;
+//                }
+//            }
+//            else {
+//                textPattern->Release();
+//            }
+//        }
+//
+//        rootElement->Release();
+//    }
+//
+//    return L"[No Text Selected]";
+//}

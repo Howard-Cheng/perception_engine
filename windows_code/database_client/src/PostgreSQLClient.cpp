@@ -898,7 +898,7 @@ query << "INSERT INTO " << tableName << " ("
             mouseArray.push_back({
                 {"timestamp", timestampToPostgreSQL(me.timestamp)},
                 //{"event_type", me.eventType},
-                {"content", me.content}/*,
+                {"selectedcontent", me.content}/*,
                 {"pos_x", me.posX},
                 {"pos_y", me.posY},
                 {"element_type", me.elementType}*/

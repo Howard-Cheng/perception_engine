@@ -360,28 +360,8 @@ std::wstring BrowserContentExtractor::GetElementText(IUIAutomationElement* pElem
     
     std::wstring result;
     
-    BSTR name = NULL;
-    if (SUCCEEDED(pElement->get_CurrentName(&name)) && name) {
-        result = name;
-        SysFreeString(name);
-        if (!result.empty()) return result;
-    }
-    
-    CComPtr<IUIAutomationValuePattern> pValuePattern;
-    HRESULT hr = pElement->GetCurrentPatternAs(UIA_ValuePatternId, 
-                                                __uuidof(IUIAutomationValuePattern), 
-                                                (void**)&pValuePattern);
-    if (SUCCEEDED(hr) && pValuePattern) {
-        BSTR value = NULL;
-        if (SUCCEEDED(pValuePattern->get_CurrentValue(&value)) && value) {
-            result = value;
-            SysFreeString(value);
-            if (!result.empty()) return result;
-        }
-    }
-    
     CComPtr<IUIAutomationTextPattern> pTextPattern;
-    hr = pElement->GetCurrentPatternAs(UIA_TextPatternId, 
+    HRESULT hr = pElement->GetCurrentPatternAs(UIA_TextPatternId,
                                        __uuidof(IUIAutomationTextPattern), 
                                        (void**)&pTextPattern);
     if (SUCCEEDED(hr) && pTextPattern) {
@@ -392,6 +372,62 @@ std::wstring BrowserContentExtractor::GetElementText(IUIAutomationElement* pElem
                 result = text;
                 SysFreeString(text);
                 if (!result.empty()) return result;
+            }
+        }
+    }
+
+    CComPtr<IUIAutomationValuePattern> pValuePattern;
+    hr = pElement->GetCurrentPatternAs(UIA_ValuePatternId,
+        __uuidof(IUIAutomationValuePattern),
+        (void**)&pValuePattern);
+    if (SUCCEEDED(hr) && pValuePattern) {
+        BSTR value = NULL;
+        if (SUCCEEDED(pValuePattern->get_CurrentValue(&value)) && value) {
+            result = value;
+            SysFreeString(value);
+            if (!result.empty()) return result;
+        }
+    }
+
+    CComPtr<IUIAutomationLegacyIAccessiblePattern> pLegacyPattern;
+    hr = pElement->GetCurrentPatternAs(UIA_LegacyIAccessiblePatternId, __uuidof(IUIAutomationLegacyIAccessiblePattern), (void**)&pLegacyPattern);
+    if (SUCCEEDED(hr) && pLegacyPattern) {
+        BSTR value = NULL;
+        // 获取 MSAA 的 accValue (很多老式输入框的值在这里)
+        if (SUCCEEDED(pLegacyPattern->get_CurrentValue(&value)) && value) {
+            result = value;
+            SysFreeString(value);
+            if (!result.empty()) return result;
+        }
+
+        // 某些怪异控件把文字放在 Description 里
+        BSTR desc = NULL;
+        if (SUCCEEDED(pLegacyPattern->get_CurrentDescription(&desc)) && desc) {
+            result = desc;
+            SysFreeString(desc);
+            if (!result.empty()) return result;
+        }
+    }
+
+    BSTR name = NULL;
+    if (SUCCEEDED(pElement->get_CurrentName(&name)) && name) {
+        result = name;
+        SysFreeString(name);
+        if (!result.empty()) return result;
+    }
+
+    UIA_HWND nativeHwnd = NULL;
+    if (SUCCEEDED(pElement->get_CurrentNativeWindowHandle(&nativeHwnd)) && nativeHwnd) {
+        HWND hwnd = (HWND)nativeHwnd;
+        if (IsWindow(hwnd)) {
+            // 简单的长度检查，防止过长
+            int len = ::GetWindowTextLengthW(hwnd);
+            if (len > 0 && len < 4096) { // 限制长度防止 buffer overflow 风险
+                std::vector<wchar_t> buffer(len + 1);
+                if (::GetWindowTextW(hwnd, buffer.data(), len + 1)) {
+                    result = buffer.data();
+                    if (!result.empty()) return result;
+                }
             }
         }
     }

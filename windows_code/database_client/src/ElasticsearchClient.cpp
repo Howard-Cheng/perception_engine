@@ -241,11 +241,11 @@ public:
             for (const auto& me : event.mouseEvents) {
                 mouseEventsArray.push_back({
                     {"timestamp", timestampToISO8601(me.timestamp)},
-                    {"event_type", me.eventType},
-                    {"content", sanitizeUtf8ForJson(me.content)},
+                    //{"event_type", me.eventType},
+                    {"content", sanitizeUtf8ForJson(me.content)}/*,
                     {"pos_x", me.posX},
                     {"pos_y", me.posY},
-                    {"element_type", me.elementType}
+                    {"element_type", me.elementType}*/
                 });
             }
             j["mouse_events"] = mouseEventsArray;
@@ -355,7 +355,7 @@ public:
                     if (meJson.contains("timestamp") && !meJson["timestamp"].is_null()) {
                         me.timestamp = iso8601ToTimestamp(meJson["timestamp"].get<std::string>());
                     }
-                    if (meJson.contains("event_type") && !meJson["event_type"].is_null()) {
+                    /*if (meJson.contains("event_type") && !meJson["event_type"].is_null()) {
                         me.eventType = meJson["event_type"].get<std::string>();
                     }
                     if (meJson.contains("content") && !meJson["content"].is_null()) {
@@ -369,7 +369,7 @@ public:
                     }
                     if (meJson.contains("element_type") && !meJson["element_type"].is_null()) {
                         me.elementType = meJson["element_type"].get<std::string>();
-                    }
+                    }*/
                     event.mouseEvents.push_back(me);
                 }
             }

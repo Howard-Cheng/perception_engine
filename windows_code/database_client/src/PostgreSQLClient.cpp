@@ -1082,14 +1082,20 @@ SearchResult PostgreSQLClient::search(const std::string& tableName,
                 PE_INFO("  endTime:   " << endTime << " ms -> " << end_buf);
             }
             
-            // Handle compressed filter (default: only uncompressed)
-            if (!queryJson.contains("includeCompressed") || !queryJson["includeCompressed"].get<bool>()) {
-                conditions.push_back("\"compressed\" = FALSE");
+            if (queryJson.contains("compressed")) {
+                if(queryJson["compressed"].get<bool>()) {
+                    conditions.push_back("\"compressed\" = TRUE");
+                } else {
+                    conditions.push_back("\"compressed\" = FALSE");
+                }
             }
             
-            // NEW: Handle summarized filter (default: only unsummarized)
-            if (!queryJson.contains("includeSummarized") || !queryJson["includeSummarized"].get<bool>()) {
-                conditions.push_back("\"summarized\" = FALSE");
+            if(queryJson.contains("summarized")) {
+                if(queryJson["summarized"].get<bool>()) {
+                    conditions.push_back("\"summarized\" = TRUE");
+                } else {
+                    conditions.push_back("\"summarized\" = FALSE");
+                }
             }
             
             // Override size if specified in JSON

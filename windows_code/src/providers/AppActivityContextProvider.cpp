@@ -26,21 +26,21 @@ bool AppActivityContextProvider::initialize() {
     }
     
     // Initialize MouseTracker asynchronously
-    std::thread([this]() {
-        try {
-            std::lock_guard<std::mutex> lock(mutex_);
-            mouseTracker_ = std::make_unique<MouseTracker>();
-            if (mouseTracker_->Initialize()) {
-                mouseTracker_->Start();
-                std::cout << "[AppActivityContext] MouseTracker initialized" << std::endl;
-            } else {
-                std::cerr << "[AppActivityContext] Failed to initialize MouseTracker" << std::endl;
-                mouseTracker_.reset();
-            }
-        } catch (...) {
-            std::cerr << "[AppActivityContext] Exception in MouseTracker init" << std::endl;
-        }
-    }).detach();
+    //std::thread([this]() {
+    //    try {
+    //        std::lock_guard<std::mutex> lock(mutex_);
+    //        mouseTracker_ = std::make_unique<MouseTracker>();
+    //        if (mouseTracker_->Initialize()) {
+    //            mouseTracker_->Start();
+    //            std::cout << "[AppActivityContext] MouseTracker initialized" << std::endl;
+    //        } else {
+    //            std::cerr << "[AppActivityContext] Failed to initialize MouseTracker" << std::endl;
+    //            mouseTracker_.reset();
+    //        }
+    //    } catch (...) {
+    //        std::cerr << "[AppActivityContext] Exception in MouseTracker init" << std::endl;
+    //    }
+    //}).detach();
     
     // Register window switch callback
     std::cout << "[AppActivityContext] Registering window switch callback..." << std::endl;

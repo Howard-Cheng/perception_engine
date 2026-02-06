@@ -493,18 +493,14 @@ nlohmann::json ContextCollector::GetESDBData(const std::string& keyword,
         PE_INFO("  endTime: " << endTime << " (" << endTimeMs << " ms)");
         PE_INFO("  maxResults: " << maxResults);
 
-        // FIX: Include compressed events by default (set includeCompressed: true)
-        // This ensures we return all matching events, not just uncompressed ones
-        std::ostringstream queryBuilder;
-        queryBuilder << "{"
-            << "\"keyword\":\"" << escapeJsonString(keyword) << "\","
-            << "\"startTime\":" << startTimeMs << ","
-            << "\"endTime\":" << endTimeMs << ","
-            << "\"size\":" << maxResults << ","
-            << "\"includeCompressed\":true"
-            << "}";
+        // Build JSON query object using nlohmann::json
+        nlohmann::json queryJson;
+        queryJson["keyword"] = keyword;
+        queryJson["startTime"] = startTimeMs;
+        queryJson["endTime"] = endTimeMs;
+        queryJson["size"] = maxResults;
 
-        std::string query = queryBuilder.str();
+        std::string query = queryJson.dump();
         PE_INFO("[GetESDBData] Generated JSON query: " << query);
 
         database::SearchResult searchResult = dbClient_->search(dbCollectionName_, query, 0, maxResults);

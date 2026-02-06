@@ -321,8 +321,8 @@ std::vector<database::RawEvent> LinguaCore::queryUnsummarizedEvents(
     query["size"] = config_.batch_size * 10;  // Multiply by 10 to get full session
     
     // FIX: Use includeSummarized to filter for unsummarized events at database level
-    query["includeCompressed"] = true;    // Include compressed events (we want grouped events)
-    query["includeSummarized"] = false;   // Exclude summarized events (only unsummarized)
+    query["compressed"] = true;    // Include compressed events (we want grouped events)
+    query["summarized"] = false;   // Exclude summarized events (only unsummarized)
     
     // NEW: Sort by timestamp ascending (oldest first) for chronological processing
     query["sortOrder"] = "asc";  // "asc" for oldest first, "desc" for newest first

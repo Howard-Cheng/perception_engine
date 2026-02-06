@@ -404,6 +404,12 @@ database::RawEvent ContextCollector::jsonContextToRawEvent(const nlohmann::json&
         event.screenContentHash = std::to_string(hasher(screenContent));
     }
 
+    // Extract content hash
+    std::string contentHash = safeGetString(context, "contentHash", "");
+    if (!contentHash.empty()) {
+        event.screenContentHash = contentHash;
+    }
+
     // Multimodal data
     std::string voiceText = safeGetString(context, "voiceTranscription", "");
     if (!voiceText.empty()) {

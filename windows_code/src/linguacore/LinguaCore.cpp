@@ -631,6 +631,12 @@ bool LinguaCore::processMultipleEvents(const std::vector<database::RawEvent>& ev
 
 std::string LinguaCore::generateSummary(const std::string& content) {
     try {
+        //if (!qtcore_manager_ || !qtcore_manager_->GetSessionId().empty()) {
+        //    return std::string();
+        //}
+        //PE_INFO("Generating summary via QtCoreManager (synchronous)");
+        //return qtcore_manager_->summarize(content);
+
         return llm_client_->summarize(content, config_.llm_max_tokens);
     } catch (const std::exception& e) {
         PE_ERROR("ERROR generating summary: " << e.what());

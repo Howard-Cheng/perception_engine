@@ -105,7 +105,6 @@ bool QtCoreManager::AddMemory(const std::string& model, const std::string& userT
     
     json payload;
     payload["action"] = "add_memory";
-    payload["bucket"] = "PERCEPTION";
     payload["model"] = model;
     payload["userText"] = userText;
     payload["date"] = date;

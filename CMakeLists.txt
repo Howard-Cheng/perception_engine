@@ -579,6 +579,11 @@ endif()
 
 # Post-build commands for PerceptionEngine
 add_custom_command(TARGET PerceptionEngine POST_BUILD
+    # Copy config.ini to build directory root (buildnew)
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/config.ini
+        ${CMAKE_BINARY_DIR}/config.ini
+    
     # For MSVC multi-config: also copy to bin/$<CONFIG>/}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/config.ini

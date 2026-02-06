@@ -23,7 +23,7 @@ public:
     void Stop();
 
     // Add and get memory commands
-    bool AddMemory(const std::string& model, const std::string& userText, const std::string& date);
+    bool AddMemory(const std::string& model, const std::string& userText, const std::string& date, int timeout_ms = 30000);
     bool GetMemory();
 
     // Send a generic session finalize (action is string like "finalize" or "get")

@@ -355,6 +355,17 @@ void BrowserContentExtractor::ExtractElementInfo(IUIAutomationElement* pElement,
     }
 }
 
+// 辅助函数：去除首尾空白
+std::wstring Trim(const std::wstring& str) {
+    auto start = str.begin();
+    while (start != str.end() && std::isspace(*start)) start++;
+
+    auto end = str.end();
+    do { end--; } while (std::distance(start, end) > 0 && std::isspace(*end));
+
+    return std::wstring(start, end + 1);
+}
+
 std::wstring BrowserContentExtractor::GetElementText(IUIAutomationElement* pElement) {
     if (!pElement) return L"" ;
     
@@ -371,7 +382,7 @@ std::wstring BrowserContentExtractor::GetElementText(IUIAutomationElement* pElem
             if (SUCCEEDED(pTextRange->GetText(-1, &text)) && text) {
                 result = text;
                 SysFreeString(text);
-                if (!result.empty()) return result;
+                if (!Trim(result).empty()) return result;
             }
         }
     }
@@ -385,27 +396,19 @@ std::wstring BrowserContentExtractor::GetElementText(IUIAutomationElement* pElem
         if (SUCCEEDED(pValuePattern->get_CurrentValue(&value)) && value) {
             result = value;
             SysFreeString(value);
-            if (!result.empty()) return result;
+            if (!Trim(result).empty()) return result;
         }
     }
 
     CComPtr<IUIAutomationLegacyIAccessiblePattern> pLegacyPattern;
-    hr = pElement->GetCurrentPatternAs(UIA_LegacyIAccessiblePatternId, __uuidof(IUIAutomationLegacyIAccessiblePattern), (void**)&pLegacyPattern);
-    if (SUCCEEDED(hr) && pLegacyPattern) {
+    pElement->GetCurrentPatternAs(UIA_LegacyIAccessiblePatternId, __uuidof(IUIAutomationLegacyIAccessiblePattern), (void**)&pLegacyPattern);
+
+    if (pLegacyPattern) {
         BSTR value = NULL;
-        // 获取 MSAA 的 accValue (很多老式输入框的值在这里)
         if (SUCCEEDED(pLegacyPattern->get_CurrentValue(&value)) && value) {
             result = value;
             SysFreeString(value);
-            if (!result.empty()) return result;
-        }
-
-        // 某些怪异控件把文字放在 Description 里
-        BSTR desc = NULL;
-        if (SUCCEEDED(pLegacyPattern->get_CurrentDescription(&desc)) && desc) {
-            result = desc;
-            SysFreeString(desc);
-            if (!result.empty()) return result;
+            if (!Trim(result).empty()) return result;
         }
     }
 
@@ -413,7 +416,25 @@ std::wstring BrowserContentExtractor::GetElementText(IUIAutomationElement* pElem
     if (SUCCEEDED(pElement->get_CurrentName(&name)) && name) {
         result = name;
         SysFreeString(name);
-        if (!result.empty()) return result;
+        if (!Trim(result).empty()) return result;
+    }
+
+    if (pLegacyPattern) {
+        // 有些怪异程序的 CurrentName 是空的，但 accName 有值
+        BSTR legName = NULL;
+        if (SUCCEEDED(pLegacyPattern->get_CurrentName(&legName)) && legName) {
+            result = legName;
+            SysFreeString(legName);
+            if (!Trim(result).empty()) return result;
+        }
+
+        // Description 优先级很低，通常是 HelpText，不到万不得已不用
+        BSTR desc = NULL;
+        if (SUCCEEDED(pLegacyPattern->get_CurrentDescription(&desc)) && desc) {
+            result = desc;
+            SysFreeString(desc);
+            if (!Trim(result).empty()) return result;
+        }
     }
 
     UIA_HWND nativeHwnd = NULL;
@@ -426,7 +447,7 @@ std::wstring BrowserContentExtractor::GetElementText(IUIAutomationElement* pElem
                 std::vector<wchar_t> buffer(len + 1);
                 if (::GetWindowTextW(hwnd, buffer.data(), len + 1)) {
                     result = buffer.data();
-                    if (!result.empty()) return result;
+                    if (!Trim(result).empty()) return result;
                 }
             }
         }

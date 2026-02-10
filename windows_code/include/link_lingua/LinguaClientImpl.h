@@ -1,5 +1,6 @@
 #pragma once
 #include "link_lingua/LinkLingua.h"
+#include "pe_base/task_queue/task_queue.h"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -34,31 +35,8 @@
 
 namespace link_lingua {
 
-// Command IDs for communication protocol
-enum LinguaCommand : uint32_t {
-    // Request commands (client -> server)
-    kLinguaCommandPing = 0x0001,
-    kLinguaCommandGetStatus = 0x0002,
-    kLinguaCommandProcessText = 0x0003,
-    kLinguaCommandGetVersion = 0x0004,
-    kLinguaCommandShutdown = 0x0005,
-    
-    // Input events (fire-and-forget, no response needed)
-    kLinguaCommandSendMouseEvent = 0x0100,
-    kLinguaCommandSendKeyboardEvent = 0x0101,
-    kLinguaCommandSendInputEvent = 0x0102,
-    
-    // Response commands (server -> client)
-    kLinguaCommandPingComplete = 0x1001,
-    kLinguaCommandGetStatusComplete = 0x1002,
-    kLinguaCommandProcessTextComplete = 0x1003,
-    kLinguaCommandGetVersionComplete = 0x1004,
-    kLinguaCommandShutdownComplete = 0x1005,
-    
-    // Async notifications (server -> client, no wait)
-    kLinguaCommandOnError = 0x2001,
-    kLinguaCommandOnStatusChanged = 0x2002,
-};
+// Note: LinguaCommand enum has been moved to LinkLingua.h (public header)
+// so that both client and server code can use it
 
 class LinguaClientImpl {
 public:
@@ -93,7 +71,7 @@ public:
     void NotifyReceiveData(const std::vector<uint8_t>& data);
 
 private:
-    bool ReadExact(void* buf, size_t size);
+    bool ReadExact(uint8_t* p_buffer, size_t size);
     bool WriteToPipe(const uint8_t* data, size_t size);
     void ReaderLoop();
     void CloseHandlePair();
@@ -103,13 +81,9 @@ private:
     void ProcessDataResponse(const std::vector<uint8_t>& buffer);
 
 private:
-    HANDLE stdoutRead_ = nullptr;
-    HANDLE stdoutWrite_ = nullptr;
-    HANDLE stdinRead_ = nullptr;
-    HANDLE stdinWrite_ = nullptr;
-
-    HANDLE childStdout_ = nullptr;
-    HANDLE childStdin_ = nullptr;
+    HANDLE h_child_stdin_write_ = nullptr;
+    HANDLE h_child_stdout_read_ = nullptr;
+    PROCESS_INFORMATION lingua_process_ = { nullptr };
 
     HANDLE processHandle_ = nullptr;
     HANDLE threadHandle_ = nullptr;
@@ -138,6 +112,9 @@ private:
     LinguaCommand lastResponseCommand_ = static_cast<LinguaCommand>(0);
     std::vector<uint8_t> lastResponsePayload_;
     bool retValue_ = false;
+    
+    // Task queue for serializing response processing
+    pe_base::TaskQueue::Ptr_t taskQueue_;
 };
 
 } // namespace link_lingua

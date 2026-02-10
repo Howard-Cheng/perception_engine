@@ -57,6 +57,9 @@ struct LinguaCoreConfig {
     
     // LLM settings
     std::string llm_model_path = "";
+    std::string llm_api_key = "";        // API key for cloud LLM
+    std::string llm_model = "gpt-3.5-turbo";  // Model name
+    std::string llm_endpoint = "https://api.openai.com/v1";  // API endpoint
     int llm_max_tokens = 200;
     float llm_temperature = 0.7f;
     
@@ -139,6 +142,27 @@ public:
      * @return Number of events processed
      */
     int processOnce();
+
+    // ========== IPC Interface Methods (for LinguaServer) ========= =
+    
+    /**
+     * @brief Get current service status
+     * @return JSON string with status information
+     */
+    std::string getStatus() const;
+    
+    /**
+     * @brief Process text with LLM and return result
+     * @param text Input text to process
+     * @return Processed result (summary or response)
+     */
+    std::string processText(const std::string& text);
+    
+    /**
+     * @brief Get service version
+     * @return Version string
+     */
+    std::string getVersion() const;
 
 private:
     /**

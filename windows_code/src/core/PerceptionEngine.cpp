@@ -88,8 +88,18 @@ public:
                 PE_INFO("? PostgreSQL initialized - auto storage every 5 seconds");
             }
             else {
-                PE_WARN("??  PostgreSQL not available - running without database storage");
+                PE_WARN("? PostgreSQL not available - running without database storage");
                 PE_INFO("   To enable PostgreSQL: Install and start PostgreSQL on 127.0.0.1:5432");
+            }
+
+            // NEW: Initialize LinguaCore IPC client
+            // If LinguaCoreServer is not available, system continues without it
+            if (contextCollector->InitializeLinguaClient(L"LinguaCoreServer.exe")) {
+                PE_INFO("? LinguaCore IPC client initialized successfully");
+            }
+            else {
+                PE_WARN("? LinguaCore IPC client not available - running without NLP processing");
+                PE_INFO("   To enable LinguaCore: Ensure LinguaCoreServer.exe is in the same directory");
             }
 
             // Initialize HTTP server
@@ -273,7 +283,7 @@ private:
                             }
                             // URL decode
                             startTimeStr = urlDecode(startTimeStr);
-                            
+
                             // Parse ISO 8601 format
                             std::tm tm_start = {};
                             std::istringstream ss_start(startTimeStr);
@@ -297,7 +307,7 @@ private:
                             }
                             // URL decode
                             endTimeStr = urlDecode(endTimeStr);
-                            
+
                             // Parse ISO 8601 format
                             std::tm tm_end = {};
                             std::istringstream ss_end(endTimeStr);
@@ -318,7 +328,7 @@ private:
                             }
                             maxResults = std::stoi(maxStr);
                         }
-                        
+
                         // NEW: Parse requesttype parameter
                         size_t typePos = queryString.find("requesttype=");
                         if (typePos != std::string::npos) {
@@ -330,7 +340,7 @@ private:
                             requestType = std::stoi(typeStr);
                             PE_INFO("Request type: " + std::to_string(requestType));
                         }
-                        
+
                         // Fallback: Support old 'hours' parameter for backward compatibility
                         if (startTime == 0) {
                             size_t hoursPos = queryString.find("hours=");
@@ -432,27 +442,27 @@ int main(int argc, char* argv[]) {
         LONG result = RegOpenKeyExA(HKEY_LOCAL_MACHINE,
             "SOFTWARE\\Lenovo\\Perception",
             0, KEY_READ, &hKey);
-        
+
         if (result == ERROR_SUCCESS) {
             DWORD logValue = 0;
             DWORD dataSize = sizeof(DWORD);
             DWORD dataType = 0;
-            
+
             result = RegQueryValueExA(hKey, "Log", nullptr, &dataType,
                 reinterpret_cast<LPBYTE>(&logValue), &dataSize);
-            
+
             if (result == ERROR_SUCCESS && dataType == REG_DWORD) {
                 enablelocallog = (logValue == 1);
             }
-            
+
             RegCloseKey(hKey);
         }
     }
 
-// =========================================
-// Initialize Logger FIRST (before anything)
-// =========================================
-    if(enablelocallog)
+    // =========================================
+    // Initialize Logger FIRST (before anything)
+    // =========================================
+    if (enablelocallog)
     {
         std::filesystem::path log_path = "";
         if (auto* p_appdata = getenv("APPDATA")) {
@@ -589,6 +599,14 @@ int main(int argc, char* argv[]) {
                     PE_WARN("PostgreSQL not available - running without database storage");
                 }
 
+                // NEW: Initialize LinguaCore IPC client
+                if (collector.InitializeLinguaClient(L"LinguaCoreServer.exe")) {
+                    PE_INFO("? LinguaCore IPC client initialized successfully");
+                }
+                else {
+                    PE_WARN("? LinguaCore IPC client not available - running without NLP processing");
+                }
+
                 PE_INFO("Setting up request handler...");
                 server.SetRequestHandler([&collector](const HttpRequest& request, HttpResponse& response) {
                     PE_DEBUG("Received request:" << request.method.c_str() << request.path.c_str())
@@ -597,8 +615,8 @@ int main(int argc, char* argv[]) {
                             nlohmann::json context = collector.CollectCurrentContext();  // Changed from pe_base::Json
                             response.SetHeader("Content-Type", "application/json");
                             response.SetBody(context.dump());  // Changed from .toString() to .dump()
-                        response.status = 200;
-                        PE_DEBUG("Sent context response");
+                            response.status = 200;
+                            PE_DEBUG("Sent context response");
                             response.status = 200;
                             PE_DEBUG("Sent context response");
                         }
@@ -857,7 +875,7 @@ int main(int argc, char* argv[]) {
             }
             catch (const std::exception& e) {
                 PE_ERROR("Exception:" << e.what())
-                return 1;
+                    return 1;
             }
 
             PE_INFO("Background mode shutting down normally");
@@ -866,50 +884,50 @@ int main(int argc, char* argv[]) {
         else if (primaryCommand == "--register-startup") {
             // Register to run at user login
             PE_INFO("Registering Perception Engine to start at user login...");
-            
+
             char exePath[MAX_PATH];
             GetModuleFileNameA(NULL, exePath, MAX_PATH);
             std::string command = std::string(exePath) + " --background";
-            
+
             HKEY hKey;
-            LONG result = RegOpenKeyExA(HKEY_CURRENT_USER, 
-                "Software\\Microsoft\\Windows\\CurrentVersion\\Run", 
+            LONG result = RegOpenKeyExA(HKEY_CURRENT_USER,
+                "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
                 0, KEY_SET_VALUE, &hKey);
-            
+
             if (result == ERROR_SUCCESS) {
                 result = RegSetValueExA(hKey, "PerceptionEngine", 0, REG_SZ,
                     (const BYTE*)command.c_str(), (DWORD)(command.length() + 1));
                 RegCloseKey(hKey);
-                
+
                 if (result == ERROR_SUCCESS) {
                     PE_INFO("Successfully registered to start at user login.");
                     PE_INFO("Command: " << command);
                     return 0;
                 }
             }
-            
+
             PE_ERROR("Failed to register startup. Error code: " << result);
             return 1;
         }
         else if (primaryCommand == "--unregister-startup") {
             // Unregister from user login
             PE_INFO("Unregistering Perception Engine from user login startup...");
-            
+
             HKEY hKey;
-            LONG result = RegOpenKeyExA(HKEY_CURRENT_USER, 
-                "Software\\Microsoft\\Windows\\CurrentVersion\\Run", 
+            LONG result = RegOpenKeyExA(HKEY_CURRENT_USER,
+                "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
                 0, KEY_SET_VALUE, &hKey);
-            
+
             if (result == ERROR_SUCCESS) {
                 result = RegDeleteValueA(hKey, "PerceptionEngine");
                 RegCloseKey(hKey);
-                
+
                 if (result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND) {
                     PE_INFO("Successfully unregistered from user login startup.");
                     return 0;
                 }
             }
-            
+
             PE_ERROR("Failed to unregister. Error code: " << result);
             return 1;
         }
@@ -942,245 +960,254 @@ int main(int argc, char* argv[]) {
                     PE_WARN("??  PostgreSQL not available - running without database storage");
                 }
 
+                // NEW: Initialize LinguaCore IPC client
+                // If LinguaCoreServer is not available, system continues without it
+                if (collector.InitializeLinguaClient(L"LinguaCoreServer.exe")) {
+                    PE_INFO("LinguaCore IPC client initialized successfully");
+                }
+                else {
+                    PE_WARN("LinguaCore IPC client not available - running without NLP processing");
+                }
+
                 PE_INFO("Setting up request handler...");
                 server.SetRequestHandler([&collector](const HttpRequest& request, HttpResponse& response) {
                     PE_DEBUG("Received request:" << request.method.c_str() << request.path.c_str())
 
-                    if (request.path == "/context" && request.method == "GET") {
-                        nlohmann::json context = collector.CollectCurrentContext();  // Changed from pe_base::Json
-                        response.SetHeader("Content-Type", "application/json");
-                        response.SetBody(context.dump());  // Changed from .toString() to .dump()
-                        response.status = 200;
-                        PE_DEBUG("Sent context response");
-                    }
-                    // ? NEW: Elasticsearch query endpoint
-                    else if (request.path.find("/query") == 0 && request.method == "GET") {
-                        if (!collector.IsElasticsearchAvailable()) {
-                            response.SetBody("{\"error\":\"Database not available\"}");
-                            response.status = 503;
-                            return;
+                        if (request.path == "/context" && request.method == "GET") {
+                            nlohmann::json context = collector.CollectCurrentContext();  // Changed from pe_base::Json
+                            response.SetHeader("Content-Type", "application/json");
+                            response.SetBody(context.dump());  // Changed from .toString() to .dump()
+                            response.status = 200;
+                            PE_DEBUG("Sent context response");
                         }
-
-                        try {
-                            // Parse query parameters - FIX: Support new time format (starttime/endtime ISO format)
-                            std::string keyword;
-                            std::time_t startTime = 0;
-                            std::time_t endTime = std::time(nullptr);  // Default: now
-                            int maxResults = 100;
-                            int requestType = 2;  // NEW: Default to VectorDB (type 2)
-
-                            size_t queryPos = request.path.find('?');
-                            if (queryPos != std::string::npos) {
-                                std::string queryString = request.path.substr(queryPos + 1);
-
-                                // Parse keyword - FIX: Apply URL decoding for Chinese/UTF-8 support
-                                size_t keywordPos = queryString.find("keyword=");
-                                if (keywordPos != std::string::npos) {
-                                    size_t keywordEnd = queryString.find('&', keywordPos);
-                                    std::string encodedKeyword;
-                                    if (keywordEnd == std::string::npos) {
-                                        encodedKeyword = queryString.substr(keywordPos + 8);
-                                    }
-                                    else {
-                                        encodedKeyword = queryString.substr(keywordPos + 8, keywordEnd - keywordPos - 8);
-                                    }
-                                    // FIX: URL decode the keyword to support Chinese characters
-                                    keyword = urlDecode(encodedKeyword);
-                                    PE_INFO("Decoded keyword: '" + keyword + "'");
-                                }
-
-                                // Parse starttime (ISO 8601 format: 2025-12-02T15)
-                                size_t startTimePos = queryString.find("starttime=");
-                                if (startTimePos != std::string::npos) {
-                                    size_t startTimeEnd = queryString.find('&', startTimePos);
-                                    std::string startTimeStr;
-                                    if (startTimeEnd == std::string::npos) {
-                                        startTimeStr = queryString.substr(startTimePos + 10);
-                                    }
-                                    else {
-                                        startTimeStr = queryString.substr(startTimePos + 10, startTimeEnd - startTimePos - 10);
-                                    }
-                                    // URL decode
-                                    startTimeStr = urlDecode(startTimeStr);
-                                    
-                                    // Parse ISO 8601 format
-                                    std::tm tm_start = {};
-                                    std::istringstream ss_start(startTimeStr);
-                                    ss_start >> std::get_time(&tm_start, "%Y-%m-%dT%H");
-                                    if (!ss_start.fail()) {
-                                        startTime = std::mktime(&tm_start);
-                                    }
-                                    PE_INFO("Parsed starttime: '" + startTimeStr + "' -> " + std::to_string(startTime));
-                                }
-
-                                // Parse endtime (ISO 8601 format: 2025-12-03T15)
-                                size_t endTimePos = queryString.find("endtime=");
-                                if (endTimePos != std::string::npos) {
-                                    size_t endTimeEnd = queryString.find('&', endTimePos);
-                                    std::string endTimeStr;
-                                    if (endTimeEnd == std::string::npos) {
-                                        endTimeStr = queryString.substr(endTimePos + 8);
-                                    }
-                                    else {
-                                        endTimeStr = queryString.substr(endTimePos + 8, endTimeEnd - endTimePos - 8);
-                                    }
-                                    // URL decode
-                                    endTimeStr = urlDecode(endTimeStr);
-                                    
-                                    // Parse ISO 8601 format
-                                    std::tm tm_end = {};
-                                    std::istringstream ss_end(endTimeStr);
-                                    ss_end >> std::get_time(&tm_end, "%Y-%m-%dT%H");
-                                    if (!ss_end.fail()) {
-                                        endTime = std::mktime(&tm_end);
-                                    }
-                                    PE_INFO("Parsed endtime: '" + endTimeStr + "' -> " + std::to_string(endTime));
-                                }
-
-                                // Parse maxResults
-                                size_t maxPos = queryString.find("max=");
-                                if (maxPos != std::string::npos) {
-                                    std::string maxStr = queryString.substr(maxPos + 4);
-                                    size_t maxEnd = maxStr.find('&');
-                                    if (maxEnd != std::string::npos) {
-                                        maxStr = maxStr.substr(0, maxEnd);
-                                    }
-                                    maxResults = std::stoi(maxStr);
-                                }
-                                
-                                // NEW: Parse requesttype parameter
-                                size_t typePos = queryString.find("requesttype=");
-                                if (typePos != std::string::npos) {
-                                    std::string typeStr = queryString.substr(typePos + 12);
-                                    size_t typeEnd = typeStr.find('&');
-                                    if (typeEnd != std::string::npos) {
-                                        typeStr = typeStr.substr(0, typeEnd);
-                                    }
-                                    requestType = std::stoi(typeStr);
-                                    PE_INFO("Request type: " + std::to_string(requestType));
-                                }
-                                
-                                // Fallback: Support old 'hours' parameter for backward compatibility
-                                if (startTime == 0) {
-                                    size_t hoursPos = queryString.find("hours=");
-                                    if (hoursPos != std::string::npos) {
-                                        size_t hoursEnd = queryString.find('&', hoursPos);
-                                        std::string hoursStr;
-                                        if (hoursEnd == std::string::npos) {
-                                            hoursStr = queryString.substr(hoursPos + 6);
-                                        }
-                                        else {
-                                            hoursStr = queryString.substr(hoursPos + 6, hoursEnd - hoursPos - 6);
-                                        }
-                                        int hours = std::stoi(hoursStr);
-                                        startTime = endTime - (hours * 3600);
-                                        PE_INFO("Using legacy 'hours' parameter: " + std::to_string(hours));
-                                    }
-                                }
-                            }
-
-                            // NEW: Query based on requesttype
-                            nlohmann::json results;  // Changed from pe_base::Json
-                            if (requestType == 1) {
-                                // Type 1: Query PostgreSQL/Elasticsearch raw events
-                                PE_INFO("Querying PostgreSQL/ES raw events (requesttype=1)");
-                                results = collector.GetESDBData(keyword, startTime, endTime, maxResults);
-                            }
-                            else if (requestType == 2) {
-                                // Type 2: Query VectorDB (Qdrant) session summaries
-                                PE_INFO("Querying VectorDB session summaries (requesttype=2)");
-                                results = collector.GetVectorDBData(keyword, startTime, endTime, maxResults);
-                            }
-                            else {
-                                // Invalid request type
-                                response.SetBody("{\"error\":\"Invalid requesttype. Use 1 for raw events or 2 for session summaries.\"}");
-                                response.status = 400;
-                                PE_ERROR("Invalid requesttype: " + std::to_string(requestType));
+                    // ? NEW: Elasticsearch query endpoint
+                        else if (request.path.find("/query") == 0 && request.method == "GET") {
+                            if (!collector.IsElasticsearchAvailable()) {
+                                response.SetBody("{\"error\":\"Database not available\"}");
+                                response.status = 503;
                                 return;
                             }
 
-                            response.SetHeader("Content-Type", "application/json");
-                            response.SetBody(results.dump());  // Changed from .toString() to .dump()
-                            response.status = 200;
+                            try {
+                                // Parse query parameters - FIX: Support new time format (starttime/endtime ISO format)
+                                std::string keyword;
+                                std::time_t startTime = 0;
+                                std::time_t endTime = std::time(nullptr);  // Default: now
+                                int maxResults = 100;
+                                int requestType = 2;  // NEW: Default to VectorDB (type 2)
 
-                            PE_INFO("Database Query: keyword='" + keyword + "' startTime=" + std::to_string(startTime) + " endTime=" + std::to_string(endTime) + " requestType=" + std::to_string(requestType));
+                                size_t queryPos = request.path.find('?');
+                                if (queryPos != std::string::npos) {
+                                    std::string queryString = request.path.substr(queryPos + 1);
 
-                        }
-                        catch (const std::exception& e) {
-                            response.SetBody("{\"error\":\"Query failed: " + std::string(e.what()) + "\"}");
-                            response.status = 500;
-                            PE_ERROR("Database query failed: " + std::string(e.what()));
-                        }
-                    }
-                    else if (request.path == "/dashboard" || request.path == "/" && request.method == "GET") {
-                        std::ifstream file("dashboard.html");
-                        if (file.is_open()) {
-                            std::string html((std::istreambuf_iterator<char>(file)),
-                                std::istreambuf_iterator<char>());
-                            response.SetHeader("Content-Type", "text/html; charset=utf-8");
-                            response.SetBody(html);
-                            response.status = 200;
-                            PE_DEBUG("Served dashboard HTML");
-                        }
-                        else {
-                            response.SetBody("<html><body><h1>Error: dashboard.html not found</h1></body></html>");
-                            response.SetHeader("Content-Type", "text/html");
-                            response.status = 500;
-                            PE_ERROR("dashboard.html not found");
-                        }
-                    }
-                    else if (request.path == "/update_context" && request.method == "POST") {
-                        try {
-                            std::string body = request.body;
-                            PE_DEBUG("POST body:" << body.c_str())
-
-                            // Extract device type
-                            size_t devicePos = body.find("\"device\"");
-                            if (devicePos == std::string::npos) {
-                                PE_ERROR("Missing device field in body");
-                                response.SetBody("{\"error\":\"Missing device field\"}");
-                                response.status = 400;
-                            }
-                            else {
-                                size_t deviceStart = body.find("\"", devicePos + 9);
-                                size_t deviceEnd = body.find("\"", deviceStart + 1);
-                                std::string device = body.substr(deviceStart + 1, deviceEnd - deviceStart - 1);
-
-                                if (device == "Camera") {
-                                    std::string caption;
-                                    size_t objectsPos = body.find("\"objects\"");
-                                    if (objectsPos != std::wstring::npos) {
-                                        size_t captionStart = body.find("\"", objectsPos + 12);
-                                        size_t captionEnd = body.find("\"", captionStart + 1);
-                                        if (captionStart != std::string::npos && captionEnd != std::string::npos) {
-                                            caption = body.substr(captionStart + 1, captionEnd - captionStart - 1);
+                                    // Parse keyword - FIX: Apply URL decoding for Chinese/UTF-8 support
+                                    size_t keywordPos = queryString.find("keyword=");
+                                    if (keywordPos != std::string::npos) {
+                                        size_t keywordEnd = queryString.find('&', keywordPos);
+                                        std::string encodedKeyword;
+                                        if (keywordEnd == std::string::npos) {
+                                            encodedKeyword = queryString.substr(keywordPos + 8);
                                         }
+                                        else {
+                                            encodedKeyword = queryString.substr(keywordPos + 8, keywordEnd - keywordPos - 8);
+                                        }
+                                        // FIX: URL decode the keyword to support Chinese characters
+                                        keyword = urlDecode(encodedKeyword);
+                                        PE_INFO("Decoded keyword: '" + keyword + "'");
                                     }
 
-                                    collector.UpdateCameraContext(caption, 0.0f);
-                                    PE_INFO("Camera update:" << caption.c_str())
+                                    // Parse starttime (ISO 8601 format: 2025-12-02T15)
+                                    size_t startTimePos = queryString.find("starttime=");
+                                    if (startTimePos != std::string::npos) {
+                                        size_t startTimeEnd = queryString.find('&', startTimePos);
+                                        std::string startTimeStr;
+                                        if (startTimeEnd == std::string::npos) {
+                                            startTimeStr = queryString.substr(startTimePos + 10);
+                                        }
+                                        else {
+                                            startTimeStr = queryString.substr(startTimePos + 10, startTimeEnd - startTimePos - 10);
+                                        }
+                                        // URL decode
+                                        startTimeStr = urlDecode(startTimeStr);
 
-                                    response.SetHeader("Content-Type", "application/json");
-                                    response.SetBody("{\"status\":\"ok\"}");
-                                    response.status = 200;
+                                        // Parse ISO 8601 format
+                                        std::tm tm_start = {};
+                                        std::istringstream ss_start(startTimeStr);
+                                        ss_start >> std::get_time(&tm_start, "%Y-%m-%dT%H");
+                                        if (!ss_start.fail()) {
+                                            startTime = std::mktime(&tm_start);
+                                        }
+                                        PE_INFO("Parsed starttime: '" + startTimeStr + "' -> " + std::to_string(startTime));
+                                    }
+
+                                    // Parse endtime (ISO 8601 format: 2025-12-03T15)
+                                    size_t endTimePos = queryString.find("endtime=");
+                                    if (endTimePos != std::string::npos) {
+                                        size_t endTimeEnd = queryString.find('&', endTimePos);
+                                        std::string endTimeStr;
+                                        if (endTimeEnd == std::string::npos) {
+                                            endTimeStr = queryString.substr(endTimePos + 8);
+                                        }
+                                        else {
+                                            endTimeStr = queryString.substr(endTimePos + 8, endTimeEnd - endTimePos - 8);
+                                        }
+                                        // URL decode
+                                        endTimeStr = urlDecode(endTimeStr);
+
+                                        // Parse ISO 8601 format
+                                        std::tm tm_end = {};
+                                        std::istringstream ss_end(endTimeStr);
+                                        ss_end >> std::get_time(&tm_end, "%Y-%m-%dT%H");
+                                        if (!ss_end.fail()) {
+                                            endTime = std::mktime(&tm_end);
+                                        }
+                                        PE_INFO("Parsed endtime: '" + endTimeStr + "' -> " + std::to_string(endTime));
+                                    }
+
+                                    // Parse maxResults
+                                    size_t maxPos = queryString.find("max=");
+                                    if (maxPos != std::string::npos) {
+                                        std::string maxStr = queryString.substr(maxPos + 4);
+                                        size_t maxEnd = maxStr.find('&');
+                                        if (maxEnd != std::string::npos) {
+                                            maxStr = maxStr.substr(0, maxEnd);
+                                        }
+                                        maxResults = std::stoi(maxStr);
+                                    }
+
+                                    // NEW: Parse requesttype parameter
+                                    size_t typePos = queryString.find("requesttype=");
+                                    if (typePos != std::string::npos) {
+                                        std::string typeStr = queryString.substr(typePos + 12);
+                                        size_t typeEnd = typeStr.find('&');
+                                        if (typeEnd != std::string::npos) {
+                                            typeStr = typeStr.substr(0, typeEnd);
+                                        }
+                                        requestType = std::stoi(typeStr);
+                                        PE_INFO("Request type: " + std::to_string(requestType));
+                                    }
+
+                                    // Fallback: Support old 'hours' parameter for backward compatibility
+                                    if (startTime == 0) {
+                                        size_t hoursPos = queryString.find("hours=");
+                                        if (hoursPos != std::string::npos) {
+                                            size_t hoursEnd = queryString.find('&', hoursPos);
+                                            std::string hoursStr;
+                                            if (hoursEnd == std::string::npos) {
+                                                hoursStr = queryString.substr(hoursPos + 6);
+                                            }
+                                            else {
+                                                hoursStr = queryString.substr(hoursPos + 6, hoursEnd - hoursPos - 6);
+                                            }
+                                            int hours = std::stoi(hoursStr);
+                                            startTime = endTime - (hours * 3600);
+                                            PE_INFO("Using legacy 'hours' parameter: " + std::to_string(hours));
+                                        }
+                                    }
+                                }
+
+                                // NEW: Query based on requesttype
+                                nlohmann::json results;  // Changed from pe_base::Json
+                                if (requestType == 1) {
+                                    // Type 1: Query PostgreSQL/Elasticsearch raw events
+                                    PE_INFO("Querying PostgreSQL/ES raw events (requesttype=1)");
+                                    results = collector.GetESDBData(keyword, startTime, endTime, maxResults);
+                                }
+                                else if (requestType == 2) {
+                                    // Type 2: Query VectorDB (Qdrant) session summaries
+                                    PE_INFO("Querying VectorDB session summaries (requesttype=2)");
+                                    results = collector.GetVectorDBData(keyword, startTime, endTime, maxResults);
                                 }
                                 else {
-                                    response.SetBody("{\"error\":\"Unknown device type\"}");
+                                    // Invalid request type
+                                    response.SetBody("{\"error\":\"Invalid requesttype. Use 1 for raw events or 2 for session summaries.\"}");
                                     response.status = 400;
+                                    PE_ERROR("Invalid requesttype: " + std::to_string(requestType));
+                                    return;
                                 }
+
+                                response.SetHeader("Content-Type", "application/json");
+                                response.SetBody(results.dump());  // Changed from .toString() to .dump()
+                                response.status = 200;
+
+                                PE_INFO("Database Query: keyword='" + keyword + "' startTime=" + std::to_string(startTime) + " endTime=" + std::to_string(endTime) + " requestType=" + std::to_string(requestType));
+
+                            }
+                            catch (const std::exception& e) {
+                                response.SetBody("{\"error\":\"Query failed: " + std::string(e.what()) + "\"}");
+                                response.status = 500;
+                                PE_ERROR("Database query failed: " + std::string(e.what()));
                             }
                         }
-                        catch (const std::exception& e) {
-                            PE_ERROR("Failed to parse update_context:" << e.what())
-                            response.SetBody("{\"error\":\"Invalid JSON\"}");
-                            response.status = 400;
+                        else if (request.path == "/dashboard" || request.path == "/" && request.method == "GET") {
+                            std::ifstream file("dashboard.html");
+                            if (file.is_open()) {
+                                std::string html((std::istreambuf_iterator<char>(file)),
+                                    std::istreambuf_iterator<char>());
+                                response.SetHeader("Content-Type", "text/html; charset=utf-8");
+                                response.SetBody(html);
+                                response.status = 200;
+                                PE_DEBUG("Served dashboard HTML");
+                            }
+                            else {
+                                response.SetBody("<html><body><h1>Error: dashboard.html not found</h1></body></html>");
+                                response.SetHeader("Content-Type", "text/html");
+                                response.status = 500;
+                                PE_ERROR("dashboard.html not found");
+                            }
                         }
-                    }
-                    else {
-                        response.SetBody("{\"error\":\"Not found\"}");
-                        response.status = 404;
-                        PE_ERROR("Sent 404 response for:" << request.path.c_str());
-                    }
+                        else if (request.path == "/update_context" && request.method == "POST") {
+                            try {
+                                std::string body = request.body;
+                                PE_DEBUG("POST body:" << body.c_str())
+
+                                    // Extract device type
+                                    size_t devicePos = body.find("\"device\"");
+                                if (devicePos == std::string::npos) {
+                                    PE_ERROR("Missing device field in body");
+                                    response.SetBody("{\"error\":\"Missing device field\"}");
+                                    response.status = 400;
+                                }
+                                else {
+                                    size_t deviceStart = body.find("\"", devicePos + 9);
+                                    size_t deviceEnd = body.find("\"", deviceStart + 1);
+                                    std::string device = body.substr(deviceStart + 1, deviceEnd - deviceStart - 1);
+
+                                    if (device == "Camera") {
+                                        std::string caption;
+                                        size_t objectsPos = body.find("\"objects\"");
+                                        if (objectsPos != std::wstring::npos) {
+                                            size_t captionStart = body.find("\"", objectsPos + 12);
+                                            size_t captionEnd = body.find("\"", captionStart + 1);
+                                            if (captionStart != std::string::npos && captionEnd != std::string::npos) {
+                                                caption = body.substr(captionStart + 1, captionEnd - captionStart - 1);
+                                            }
+                                        }
+
+                                        collector.UpdateCameraContext(caption, 0.0f);
+                                        PE_INFO("Camera update:" << caption.c_str())
+
+                                            response.SetHeader("Content-Type", "application/json");
+                                        response.SetBody("{\"status\":\"ok\"}");
+                                        response.status = 200;
+                                    }
+                                    else {
+                                        response.SetBody("{\"error\":\"Unknown device type\"}");
+                                        response.status = 400;
+                                    }
+                                }
+                            }
+                            catch (const std::exception& e) {
+                                PE_ERROR("Failed to parse update_context:" << e.what())
+                                    response.SetBody("{\"error\":\"Invalid JSON\"}");
+                                response.status = 400;
+                            }
+                        }
+                        else {
+                            response.SetBody("{\"error\":\"Not found\"}");
+                            response.status = 404;
+                            PE_ERROR("Sent 404 response for:" << request.path.c_str());
+                        }
                     });
 
                 PE_INFO("Starting HTTP server on port 8777...");
@@ -1208,7 +1235,7 @@ int main(int argc, char* argv[]) {
             }
             catch (const std::exception& e) {
                 PE_ERROR("Exception:" << e.what())
-                return 1;
+                    return 1;
             }
 
             PE_INFO("Console mode shutting down normally");

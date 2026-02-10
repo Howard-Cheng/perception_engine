@@ -1,22 +1,34 @@
 cmake_minimum_required(VERSION 3.10)
 project(link_lingua)
 
-# link_lingua static library
+# ? link_lingua SHARED library (DLL on Windows)
 set(LINK_LINGUA_SOURCES
     LinkLingua.cpp
-    LinguaClientImpl.h
 )
 
 set(LINK_LINGUA_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include/link_lingua/LinkLingua.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include/link_lingua/link_lingua_export.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include/link_lingua/LinguaClientImpl.h
 )
 
-add_library(link_lingua STATIC ${LINK_LINGUA_SOURCES} ${LINK_LINGUA_HEADERS})
+# ? SHARED library instead of STATIC
+add_library(link_lingua SHARED ${LINK_LINGUA_SOURCES} ${LINK_LINGUA_HEADERS})
 
 # Include directories
 target_include_directories(link_lingua PUBLIC 
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../pe_base/include
 )
+
+# Link dependencies
+target_link_libraries(link_lingua
+    PRIVATE
+        pe_base
+)
+
+# ? Define LINK_LINGUA_EXPORTS when building the DLL
+target_compile_definitions(link_lingua PRIVATE LINK_LINGUA_EXPORTS)
 
 # C++17 standard
 target_compile_features(link_lingua PUBLIC cxx_std_17)
@@ -33,3 +45,10 @@ endif()
 # Visual Studio source groups
 source_group("Source Files" FILES ${LINK_LINGUA_SOURCES})
 source_group("Header Files" FILES ${LINK_LINGUA_HEADERS})
+
+# ? Install rules for DLL
+install(TARGETS link_lingua
+    RUNTIME DESTINATION bin
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+)

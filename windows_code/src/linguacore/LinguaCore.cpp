@@ -812,4 +812,54 @@ void LinguaCore::asyncAddMemoryToQtCore(const std::string& model,
     });
 }
 
+// ========== IPC Interface Methods Implementation ==========
+
+std::string LinguaCore::getStatus() const {
+    json status;
+    status["running"] = running_.load();
+    status["initialized"] = initialized_;
+    status["total_processed"] = total_processed_.load();
+    status["total_errors"] = total_errors_.load();
+    status["last_process_time"] = last_process_time_;
+    status["uptime_seconds"] = std::time(nullptr) - last_process_time_;
+    
+    // Add component status
+    status["postgres_connected"] = (pg_client_ != nullptr);
+    status["llm_ready"] = (llm_client_ != nullptr);
+    status["vector_store_ready"] = (vector_store_ != nullptr);
+    status["qtcore_enabled"] = config_.qtcore_enabled;
+    
+    return status.dump();
+}
+
+std::string LinguaCore::processText(const std::string& text) {
+    if (!initialized_ || !llm_client_) {
+        PE_ERROR("LinguaCore not initialized or LLM client not ready");
+        return "{\"error\": \"Service not ready\"}";
+    }
+    
+    try {
+        // Generate summary using LLM
+        std::string summary = generateSummary(text);
+        
+        json result;
+        result["success"] = true;
+        result["summary"] = summary;
+        result["original_length"] = text.length();
+        result["summary_length"] = summary.length();
+        
+        return result.dump();
+    } catch (const std::exception& e) {
+        PE_ERROR("Error processing text: " << e.what());
+        json error;
+        error["success"] = false;
+        error["error"] = e.what();
+        return error.dump();
+    }
+}
+
+std::string LinguaCore::getVersion() const {
+    return "LinguaCore v1.0.0";
+}
+
 } // namespace linguacore

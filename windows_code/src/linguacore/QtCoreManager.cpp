@@ -78,11 +78,18 @@ bool QtCoreManager::Start()
     }
     // connect with callbacks
     if (!qc_connect_) return false;
-    int rc = qc_connect_(clientHandle_, &QtCoreManager::OnConnectionStatusStatic, &QtCoreManager::OnResultStatic, nullptr);
-    if (rc != 0) {
-        PE_ERROR("qc_connect_ returned " << rc);
+    try {
+        int rc = qc_connect_(clientHandle_, &QtCoreManager::OnConnectionStatusStatic, &QtCoreManager::OnResultStatic, nullptr);
+        if (rc != 0) {
+            PE_ERROR("qc_connect_ returned " << rc);
+            return false;
+        }
+    }
+    catch (const std::exception& e) {
+        PE_ERROR("Exception in Start: " << e.what());
         return false;
     }
+   
     return true;
 }
 
@@ -104,13 +111,13 @@ void QtCoreManager::Stop()
 bool QtCoreManager::AddMemory(const std::string& model, const std::string& userText, const std::string& date, int timeout_ms)
 {
     if (!qc_create_data_container_ || !qc_create_input_data_ || !qc_send_command_) return false;
-    
+
     json payload;
     payload["action"] = "add_memory";
     payload["model"] = model;
     payload["userText"] = userText;
     payload["date"] = date;
-    
+
     std::string payloadStr = payload.dump();
 
     void* dataContainer = qc_create_data_container_(payloadStr.c_str(), nullptr, 0, nullptr);
@@ -128,14 +135,14 @@ bool QtCoreManager::AddMemory(const std::string& model, const std::string& userT
     int64_t jobId = qc_send_command_(clientHandle_, inputData);
     qc_free_ref_(inputData);
     qc_free_ref_(dataContainer);
-    
+
     if (jobId == -1) {
         PE_ERROR("AddMemory: qc_send_command_ returned 0");
         return false;
     }
-    
+
     PE_INFO("AddMemory jobId=" << jobId << ", waiting for result...");
-    
+
     // Wait synchronously for result or timeout by polling result_map_ using jobId (30 seconds timeout)
     std::string text;
     auto start = std::chrono::steady_clock::now();
@@ -157,15 +164,15 @@ bool QtCoreManager::AddMemory(const std::string& model, const std::string& userT
         // Sleep briefly to avoid busy spin
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
-    
+
     PE_INFO("AddMemory completed for jobId=" << jobId << ", response: " << text);
-    
+
     // Parse result to check success based on actual SDK response format
     // Expected format: {"action":"add_memory","entries":"[49]"},
     if (json::accept(text)) {
         try {
             json responseJson = json::parse(text);
-            
+
             // Check if action matches
             if (responseJson.contains("action")) {
                 std::string action = responseJson["action"].get<std::string>();
@@ -173,20 +180,20 @@ bool QtCoreManager::AddMemory(const std::string& model, const std::string& userT
                     PE_WARN("AddMemory: unexpected action in response: " << action);
                 }
             }
-            
+
             // Check for entries field (indicates success)
             if (responseJson.contains("entries")) {
                 std::string entries = responseJson["entries"].get<std::string>();
                 PE_INFO("AddMemory succeeded, entries: " << entries);
                 return true;
             }
-            
+
             // Check for error field
             if (responseJson.contains("error")) {
                 PE_ERROR("AddMemory failed with error: " << responseJson["error"].get<std::string>());
                 return false;
             }
-            
+
             // If no entries and no error, assume success but log warning
             PE_WARN("AddMemory response has no entries field, assuming success");
             return true;
@@ -207,7 +214,7 @@ bool QtCoreManager::AddMemory(const std::string& model, const std::string& userT
 bool QtCoreManager::GetMemory()
 {
     if (!qc_create_data_container_ || !qc_create_input_data_ || !qc_send_command_) return false;
-    
+
     json payload;
     payload["action"] = "get_all_memory";
     payload["model"] = "default";
@@ -215,9 +222,9 @@ bool QtCoreManager::GetMemory()
     payload["fields"].push_back("id");
     payload["fields"].push_back("content");
     payload["fields"].push_back("bucket");
-    
+
     std::string payloadStr = payload.dump();
-    
+
     void* dataContainer = qc_create_data_container_(payloadStr.c_str(), nullptr, 0, nullptr);
     if (!dataContainer) {
         PE_ERROR("qc_create_data_container_ failed");
@@ -241,7 +248,7 @@ bool QtCoreManager::SendSessionFinalize(const std::string& action)
     if (!qc_create_data_container_ || !qc_create_input_data_ || !qc_send_command_) return false;
     std::string sid = sessionId_;
     if (sid.empty()) sid = "";
-    
+
     json finalizeJson;
     finalizeJson["action"] = action;
     finalizeJson["sessionID"] = sid;
@@ -308,7 +315,7 @@ void QtCoreManager::OnConnectionStatus(int status)
                 json createJson;
                 createJson["action"] = "create";
                 std::string finalizeText = createJson.dump();
-                
+
                 void* dataContainer = qc_create_data_container_(finalizeText.c_str(), nullptr, 0, nullptr);
                 if (!dataContainer) { PE_ERROR("create data container failed"); return; }
                 ResourceGuard g(&dataContainer, qc_free_ref_);
@@ -317,7 +324,7 @@ void QtCoreManager::OnConnectionStatus(int status)
                 ResourceGuard g2(&inputData, qc_free_ref_);
                 int64_t jobId = qc_send_command_(clientHandle_, inputData);
                 PE_INFO("session create jobId=" << jobId);
-            });
+                });
         }
     }
 }
@@ -363,7 +370,8 @@ void QtCoreManager::OnResult(void* outputDataPtr)
                 sessionId_ = responseJson["sessionID"].get<std::string>();
                 PE_INFO("Got sessionID=" << sessionId_);
             }
-        } else {
+        }
+        else {
             PE_WARN("OnResult: response text is not valid JSON, skipping JSON parse");
         }
     }
@@ -388,8 +396,8 @@ std::string QtCoreManager::summarize(const std::string& content, int timeout_ms)
 
     // Build prompt JSON similar to blobSyncDemo::summarize()
     json promptMessages = json::array();
-    promptMessages.push_back({{"role", "system"}, {"content", "Please summarize the following text concisely."}});
-    promptMessages.push_back({{"role", "user"}, {"content", content}});
+    promptMessages.push_back({ {"role", "system"}, {"content", "Please summarize the following text concisely."} });
+    promptMessages.push_back({ {"role", "user"}, {"content", content} });
 
     json optParams;
     optParams["temperature"] = 3;

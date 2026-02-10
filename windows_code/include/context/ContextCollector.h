@@ -16,6 +16,11 @@
 #include <thread>
 #include <windows.h>  // For threadpool timer
 
+// Forward declaration for link_lingua
+namespace link_lingua {
+    class LinguaClient;
+}
+
 /**
  * @brief ContextCollector
  * 
@@ -130,6 +135,37 @@ public:
      */
     void OnUserSwitchWindow(const WindowsAPIs::ActiveAppRecord& record);
     
+    // ========================================
+    // LinguaCore IPC Integration (link_lingua)
+    // ========================================
+    
+    /**
+     * @brief Initialize LinguaCore IPC client (starts LinguaCoreServer.exe subprocess)
+     * @param linguaExePath Path to LinguaCoreServer.exe (default: "LinguaCoreServer.exe")
+     * @return true if initialization successful, false otherwise
+     */
+    bool InitializeLinguaClient(const std::wstring& linguaExePath = L"LinguaCoreServer.exe");
+    
+    /**
+     * @brief Shutdown LinguaCore IPC client
+     */
+    void ShutdownLinguaClient();
+    
+    /**
+     * @brief Process text using LinguaCore (synchronous)
+     * @param text Input text to process
+     * @param result Output buffer for result
+     * @param maxSize Maximum size of output buffer
+     * @param actualSize Actual size of result (optional)
+     * @return true if successful, false otherwise
+     */
+    bool ProcessTextWithLingua(const char* text, void* result, size_t maxSize, size_t* actualSize = nullptr);
+    
+    /**
+     * @brief Check if LinguaCore IPC client is running
+     */
+    bool IsLinguaClientRunning() const;
+    
 private:
     /**
      * @brief Periodic update thread function
@@ -206,4 +242,11 @@ private:
     PTP_TIMER compressionTimer_{nullptr};
     std::atomic<bool> compressionTimerRunning_{false};
     std::atomic<bool> compressionTaskRunning_{false};  // Prevent re-entry
+    
+    // ========================================
+    // LinguaCore IPC Client (link_lingua)
+    // ========================================
+    
+    std::unique_ptr<link_lingua::LinguaClient> linguaClient_;
+    mutable std::mutex linguaClientMutex_;
 };

@@ -183,6 +183,8 @@ target_compile_definitions(llm_summary_cpp
 target_include_directories(llm_summary_cpp
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../pe_base/include
 )
 
 target_link_libraries(llm_summary_cpp
@@ -192,6 +194,7 @@ target_link_libraries(llm_summary_cpp
         ggml_base
         ggml_cpu
         ggml
+        pe_base
 )
 
 if(USE_SQLITE)

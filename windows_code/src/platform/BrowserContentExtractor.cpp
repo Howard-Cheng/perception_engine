@@ -424,7 +424,6 @@ std::wstring BrowserContentExtractor::GetElementText(IUIAutomationElement* pElem
     }
 
     if (pLegacyPattern) {
-        // 有些怪异程序的 CurrentName 是空的，但 accName 有值
         BSTR legName = NULL;
         if (SUCCEEDED(pLegacyPattern->get_CurrentName(&legName)) && legName) {
             result = legName;
@@ -433,7 +432,6 @@ std::wstring BrowserContentExtractor::GetElementText(IUIAutomationElement* pElem
                 return result;
         }
 
-        // Description 优先级很低，通常是 HelpText，不到万不得已不用
         BSTR desc = NULL;
         if (SUCCEEDED(pLegacyPattern->get_CurrentDescription(&desc)) && desc) {
             result = desc;
@@ -447,7 +445,6 @@ std::wstring BrowserContentExtractor::GetElementText(IUIAutomationElement* pElem
     if (SUCCEEDED(pElement->get_CurrentNativeWindowHandle(&nativeHwnd)) && nativeHwnd) {
         HWND hwnd = (HWND)nativeHwnd;
         if (IsWindow(hwnd)) {
-            // 简单的长度检查，防止过长
             int len = ::GetWindowTextLengthW(hwnd);
             if (len > 0 && len < 4096) { // 限制长度防止 buffer overflow 风险
                 std::vector<wchar_t> buffer(len + 1);
@@ -462,53 +459,6 @@ std::wstring BrowserContentExtractor::GetElementText(IUIAutomationElement* pElem
     
     return result;
 }
-
-//std::wstring BrowserContentExtractor::GetElementText(IUIAutomationElement* pElement) {
-//    if (!pElement) return L"";
-//
-//    std::wstring result;
-//
-//    BSTR name = NULL;
-//    if (SUCCEEDED(pElement->get_CurrentName(&name)) && name) {
-//        result = name;
-//        SysFreeString(name);
-//        if (!result.empty()) 
-//            return result;
-//    }
-//
-//    CComPtr<IUIAutomationValuePattern> pValuePattern;
-//    HRESULT hr = pElement->GetCurrentPatternAs(UIA_ValuePatternId,
-//        __uuidof(IUIAutomationValuePattern),
-//        (void**)&pValuePattern);
-//    if (SUCCEEDED(hr) && pValuePattern) {
-//        BSTR value = NULL;
-//        if (SUCCEEDED(pValuePattern->get_CurrentValue(&value)) && value) {
-//            result = value;
-//            SysFreeString(value);
-//            if (!result.empty()) 
-//                return result;
-//        }
-//    }
-//
-//    CComPtr<IUIAutomationTextPattern> pTextPattern;
-//    hr = pElement->GetCurrentPatternAs(UIA_TextPatternId,
-//        __uuidof(IUIAutomationTextPattern),
-//        (void**)&pTextPattern);
-//    if (SUCCEEDED(hr) && pTextPattern) {
-//        CComPtr<IUIAutomationTextRange> pTextRange;
-//        if (SUCCEEDED(pTextPattern->get_DocumentRange(&pTextRange)) && pTextRange) {
-//            BSTR text = NULL;
-//            if (SUCCEEDED(pTextRange->GetText(-1, &text)) && text) {
-//                result = text;
-//                SysFreeString(text);
-//                if (!result.empty()) 
-//                    return result;
-//            }
-//        }
-//    }
-//
-//    return result;
-//}
 
 std::wstring BrowserContentExtractor::GetElementProperty(IUIAutomationElement* pElement, 
                                                          PROPERTYID propertyId) {

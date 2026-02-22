@@ -115,6 +115,14 @@ add_subdirectory(voice_module)
 
 # ============================================================================
 
+# Link Lingua Library (subdirectory)
+# ============================================================================
+
+# Add link_lingua as a subdirectory for IPC communication with LinguaCore
+add_subdirectory(src/link_lingua)
+
+# ============================================================================
+
 # Tools
 # ============================================================================
 
@@ -502,6 +510,9 @@ target_link_libraries(PerceptionEngine PRIVATE
     
     # Voice/Speech Recognition Module
     SpeechRecognitionModule
+    
+    # Link Lingua library (IPC communication with LinguaCore)
+    link_lingua
 )
 
 # Link E5 Embedding library

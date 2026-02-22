@@ -26,21 +26,21 @@ bool AppActivityContextProvider::initialize() {
     }
     
     // Initialize MouseTracker asynchronously
-    std::thread([this]() {
-        try {
-            std::lock_guard<std::mutex> lock(mutex_);
-            mouseTracker_ = std::make_unique<MouseTracker>();
-            if (mouseTracker_->Initialize()) {
-                mouseTracker_->Start();
-                std::cout << "[AppActivityContext] MouseTracker initialized" << std::endl;
-            } else {
-                std::cerr << "[AppActivityContext] Failed to initialize MouseTracker" << std::endl;
-                mouseTracker_.reset();
-            }
-        } catch (...) {
-            std::cerr << "[AppActivityContext] Exception in MouseTracker init" << std::endl;
-        }
-    }).detach();
+    //std::thread([this]() {
+    //    try {
+    //        std::lock_guard<std::mutex> lock(mutex_);
+    //        mouseTracker_ = std::make_unique<MouseTracker>();
+    //        if (mouseTracker_->Initialize()) {
+    //            mouseTracker_->Start();
+    //            std::cout << "[AppActivityContext] MouseTracker initialized" << std::endl;
+    //        } else {
+    //            std::cerr << "[AppActivityContext] Failed to initialize MouseTracker" << std::endl;
+    //            mouseTracker_.reset();
+    //        }
+    //    } catch (...) {
+    //        std::cerr << "[AppActivityContext] Exception in MouseTracker init" << std::endl;
+    //    }
+    //}).detach();
     
     // Register window switch callback
     std::cout << "[AppActivityContext] Registering window switch callback..." << std::endl;
@@ -67,6 +67,7 @@ void AppActivityContextProvider::collectContext(nlohmann::json& context) const {
     context["duration"] = dwellTimeSeconds_;
     context["interactionCount"] = static_cast<int64_t>(interactionCount_);
     context["startTime"] = startSwitchTime_;
+    context["contentHash"] = currentContentHash_;
 }
 
 std::string AppActivityContextProvider::getName() const {
@@ -111,6 +112,10 @@ void AppActivityContextProvider::clearWindowSwitchCallback() {
 void AppActivityContextProvider::onWindowSwitch(const WindowsAPIs::ActiveAppRecord& record) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        if(currentContentHash_ == std::to_string(std::hash<std::string>{}(record.appContent))) {
+            // No change screen content, skip updating
+            return;
+        }
         
         currentApp_ = record.appName;
         currentWindowTitle_ = record.windowTitle;
@@ -118,6 +123,7 @@ void AppActivityContextProvider::onWindowSwitch(const WindowsAPIs::ActiveAppReco
         currentUrl_ = record.url;  // Extract URL from record
         dwellTimeSeconds_ = record.durationSeconds;
         startSwitchTime_ = pe_base::TimeUtil::TimestampMs();
+        currentContentHash_ = std::to_string(std::hash<std::string>{}(currentContent_));
         
         // Update interaction count
         if (mouseTracker_) {

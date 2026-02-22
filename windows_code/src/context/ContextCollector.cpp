@@ -3,6 +3,7 @@
 #include "VectorStore.h"
 #include "pe_base/config_manager.h"
 #include "pe_base/logger.h"
+#include "link_lingua/LinkLingua.h"  // ? Add this include
 #include <random>
 #include <iostream>
 #include <sstream>
@@ -129,6 +130,9 @@ ContextCollector::~ContextCollector() {
 
     // Stop compression timer
     StopCompressionTimer();
+
+    // Shutdown LinguaCore IPC client
+    ShutdownLinguaClient();
 
     // Stop session manager
     if (sessionManager_) {
@@ -404,6 +408,12 @@ database::RawEvent ContextCollector::jsonContextToRawEvent(const nlohmann::json&
         event.screenContentHash = std::to_string(hasher(screenContent));
     }
 
+    // Extract content hash
+    std::string contentHash = safeGetString(context, "contentHash", "");
+    if (!contentHash.empty()) {
+        event.screenContentHash = contentHash;
+    }
+
     // Multimodal data
     std::string voiceText = safeGetString(context, "voiceTranscription", "");
     if (!voiceText.empty()) {
@@ -487,18 +497,14 @@ nlohmann::json ContextCollector::GetESDBData(const std::string& keyword,
         PE_INFO("  endTime: " << endTime << " (" << endTimeMs << " ms)");
         PE_INFO("  maxResults: " << maxResults);
 
-        // FIX: Include compressed events by default (set includeCompressed: true)
-        // This ensures we return all matching events, not just uncompressed ones
-        std::ostringstream queryBuilder;
-        queryBuilder << "{"
-            << "\"keyword\":\"" << escapeJsonString(keyword) << "\","
-            << "\"startTime\":" << startTimeMs << ","
-            << "\"endTime\":" << endTimeMs << ","
-            << "\"size\":" << maxResults << ","
-            << "\"includeCompressed\":true"
-            << "}";
+        // Build JSON query object using nlohmann::json
+        nlohmann::json queryJson;
+        queryJson["keyword"] = keyword;
+        queryJson["startTime"] = startTimeMs;
+        queryJson["endTime"] = endTimeMs;
+        queryJson["size"] = maxResults;
 
-        std::string query = queryBuilder.str();
+        std::string query = queryJson.dump();
         PE_INFO("[GetESDBData] Generated JSON query: " << query);
 
         database::SearchResult searchResult = dbClient_->search(dbCollectionName_, query, 0, maxResults);
@@ -802,6 +808,22 @@ void ContextCollector::OnCompressionTimerTick() {
         return;
     }
 
+    // Test connection with ping
+    //if (!linguaClient_->Ping()) {
+    //    PE_ERROR("[ContextCollector] Failed to ping LinguaCoreServer");
+    //    PE_ERROR("[ContextCollector] Error: " << linguaClient_->GetLastError());
+    //}
+    //else {
+    //    PE_INFO("[ContextCollector] LinguaCoreServer ping successful");
+
+    //}
+
+    // Get version information
+    //char version[128] = { 0 };
+    //if (linguaClient_->GetVersion(version, sizeof(version))) {
+    //    PE_INFO("[ContextCollector] LinguaCoreServer version: " << version);
+    //}
+
     try {
         auto startTime = std::chrono::steady_clock::now();
         PE_INFO("[CompressionTimer] Checking compression status...");
@@ -818,4 +840,108 @@ void ContextCollector::OnCompressionTimerTick() {
     catch (const std::exception& e) {
         PE_ERROR("[CompressionTimer] Exception: " << e.what());
     }
+}
+
+// ========================================
+// LinguaCore IPC Integration (link_lingua)
+// ========================================
+
+bool ContextCollector::InitializeLinguaClient(const std::wstring& linguaExePath) {
+    std::lock_guard<std::mutex> lock(linguaClientMutex_);
+    
+    try {
+        PE_INFO("[ContextCollector] Initializing LinguaCore IPC client...");
+        PE_INFO("[ContextCollector] LinguaCoreServer path: " << std::string(linguaExePath.begin(), linguaExePath.end()));
+        
+        // Create LinguaClient instance
+        linguaClient_ = std::make_unique<link_lingua::LinguaClient>();
+        
+        // Start the subprocess
+        if (!linguaClient_->Start(linguaExePath)) {
+            PE_ERROR("[ContextCollector] Failed to start LinguaCoreServer subprocess");
+            PE_ERROR("[ContextCollector] Error: " << linguaClient_->GetLastError());
+            linguaClient_.reset();
+            return false;
+        }
+        
+        PE_INFO("[ContextCollector] LinguaCoreServer subprocess started successfully");
+        
+        // Wait a bit for initialization
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        
+        PE_INFO("[ContextCollector] LinguaCore IPC client initialized successfully");
+        return true;
+        
+    } catch (const std::exception& e) {
+        PE_ERROR("[ContextCollector] Exception initializing LinguaClient: " << e.what());
+        linguaClient_.reset();
+        return false;
+    }
+}
+
+void ContextCollector::ShutdownLinguaClient() {
+    std::lock_guard<std::mutex> lock(linguaClientMutex_);
+    
+    if (!linguaClient_) {
+        return;
+    }
+    
+    try {
+        PE_INFO("[ContextCollector] Shutting down LinguaCore IPC client...");
+        
+        // Send shutdown command to subprocess
+        linguaClient_->Shutdown();
+        
+        // Wait a bit for graceful shutdown
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        
+        // Stop the client
+        linguaClient_->Stop();
+        
+        // Reset the client
+        linguaClient_.reset();
+        
+        PE_INFO("[ContextCollector] LinguaCore IPC client shut down successfully");
+        
+    } catch (const std::exception& e) {
+        PE_ERROR("[ContextCollector] Exception shutting down LinguaClient: " << e.what());
+        linguaClient_.reset();
+    }
+}
+
+bool ContextCollector::ProcessTextWithLingua(const char* text, void* result, size_t maxSize, size_t* actualSize) {
+    std::lock_guard<std::mutex> lock(linguaClientMutex_);
+    
+    if (!linguaClient_ || !linguaClient_->IsRunning()) {
+        PE_ERROR("[ContextCollector] LinguaClient not initialized or not running");
+        return false;
+    }
+    
+    try {
+        PE_INFO("[ContextCollector] Processing text with LinguaCore: " << text);
+        
+        bool success = linguaClient_->ProcessText(text, result, maxSize, actualSize);
+        
+        if (!success) {
+            PE_ERROR("[ContextCollector] Failed to process text");
+            PE_ERROR("[ContextCollector] Error: " << linguaClient_->GetLastError());
+            return false;
+        }
+        
+        PE_INFO("[ContextCollector] Text processing successful");
+        if (actualSize) {
+            PE_INFO("[ContextCollector] Result size: " << *actualSize << " bytes");
+        }
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        PE_ERROR("[ContextCollector] Exception processing text: " << e.what());
+        return false;
+    }
+}
+
+bool ContextCollector::IsLinguaClientRunning() const {
+    std::lock_guard<std::mutex> lock(linguaClientMutex_);
+    return linguaClient_ && linguaClient_->IsRunning();
 }

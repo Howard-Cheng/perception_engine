@@ -7,7 +7,7 @@
 #include <llama.h>
 #include <common.h>
 #include <sampling.h>
-#include <iostream>
+#include "pe_base/logger.h"
 #include <sstream>
 #include <stdexcept>
 #include <algorithm>
@@ -38,6 +38,41 @@ namespace perception
     }
 
     // ============================================================================
+    // llama.cpp log callback - redirect internal logs to pe_base logger
+    // ============================================================================
+
+    static void llamaLogCallback(enum ggml_log_level level, const char * text, void * /*user_data*/)
+    {
+        if (!text || !text[0]) return;
+
+        // Strip trailing newlines for cleaner log output
+        std::string msg(text);
+        while (!msg.empty() && (msg.back() == '\n' || msg.back() == '\r')) {
+            msg.pop_back();
+        }
+        if (msg.empty()) return;
+
+        switch (level) {
+            case GGML_LOG_LEVEL_ERROR:
+                PE_ERROR("llama: " << msg);
+                break;
+            case GGML_LOG_LEVEL_WARN:
+                PE_WARN("llama: " << msg);
+                break;
+            case GGML_LOG_LEVEL_INFO:
+                PE_INFO("llama: " << msg);
+                break;
+            case GGML_LOG_LEVEL_DEBUG:
+                PE_DEBUG("llama: " << msg);
+                break;
+            default:
+                // GGML_LOG_LEVEL_CONT or others - append as debug
+                PE_DEBUG("llama: " << msg);
+                break;
+        }
+    }
+
+    // ============================================================================
     // LLMClient Implementation
     // ============================================================================
 
@@ -61,8 +96,7 @@ namespace perception
 
         if (config_.verbose)
         {
-            std::cout << "LLM Client initialized, model path: "
-                      << config_.model_path << std::endl;
+            PE_INFO("LLM Client initialized, model path: " << config_.model_path.string());
         }
     }
 
@@ -120,11 +154,16 @@ namespace perception
 
         if (config_.verbose)
         {
-            std::cout << "Loading model: " << config_.model_path << std::endl;
+            PE_INFO("Loading model: " << config_.model_path.string());
         }
 
         // Initialize llama backend
         llama_backend_init();
+
+        // Redirect llama.cpp internal logging to pe_base logger
+        // This prevents llama.cpp from writing to stdout/stderr,
+        // which is critical when running as a subprocess with IPC pipes
+        llama_log_set(llamaLogCallback, nullptr);
 
         // Set up model parameters
         llama_model_params model_params = llama_model_default_params();
@@ -155,7 +194,7 @@ namespace perception
 
         if (config_.verbose)
         {
-            std::cout << "✓ Model loaded successfully" << std::endl;
+            PE_INFO("Model loaded successfully");
         }
     }
 
@@ -218,9 +257,9 @@ namespace perception
         {
             if (config_.verbose)
             {
-                std::cout << "Warning: Prompt length (" << prompt_tokens.size() 
+                PE_WARN("Prompt length (" << prompt_tokens.size() 
                           << " tokens) exceeds context window (" << max_prompt_tokens 
-                          << " tokens). Truncating from the beginning..." << std::endl;
+                          << " tokens). Truncating from the beginning...");
             }
             
             // Keep the end of the prompt (more recent context is usually more important)
@@ -298,7 +337,7 @@ namespace perception
             std::string error_msg = "Failed to process prompt, error code: " + std::to_string(decode_result);
             if (config_.verbose)
             {
-                std::cerr << error_msg << std::endl;
+                PE_ERROR(error_msg);
             }
             return "[Error: " + error_msg + "]";
         }
@@ -349,7 +388,7 @@ namespace perception
             {
                 if (config_.verbose)
                 {
-                    std::cerr << "Failed to evaluate token at position " << current_pos - 1 << std::endl;
+                    PE_ERROR("Failed to evaluate token at position " << (current_pos - 1));
                 }
                 break;  // Stop generation instead of throwing
             }
@@ -633,8 +672,8 @@ namespace perception
                 }
                 catch (const std::exception &e)
                 {
-                    std::cerr << "Error summarizing record " << record.id
-                              << ": " << e.what() << std::endl;
+                    PE_ERROR("Error summarizing record " << record.id
+                              << ": " << e.what());
                 }
             }
             // Add more operations as needed

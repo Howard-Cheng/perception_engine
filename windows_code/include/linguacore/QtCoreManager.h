@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <memory>
 #include "pe_base/task_queue/task_queue.h"
+#include <mutex>
+#include <map>
 
 class QtCoreManager
 {
@@ -21,7 +23,7 @@ public:
     void Stop();
 
     // Add and get memory commands
-    bool AddMemory(const std::string& model, const std::string& userText, const std::string& date);
+    bool AddMemory(const std::string& model, const std::string& userText, const std::string& date, int timeout_ms = 30000);
     bool GetMemory();
 
     // Send a generic session finalize (action is string like "finalize" or "get")
@@ -29,6 +31,11 @@ public:
 
     // Get current session id
     std::string GetSessionId();
+
+    // Synchronous summary generation via QtCore SDK (blocks until result or timeout_ms)
+    // content: text to summarize
+    // timeout_ms: timeout in milliseconds to wait for the model result
+    std::string summarize(const std::string& content, int timeout_ms = 30000);
 
 private:
     // non-copyable
@@ -78,4 +85,8 @@ private:
 
     // static instance pointer for callbacks (single instance assumption)
     static QtCoreManager* s_instance_;
+
+    // Synchronous result handling - use polling with jobId instead of condition_variable
+    std::mutex result_mutex_;
+    std::map<int64_t, std::string> result_map_; // jobId -> result text
 };

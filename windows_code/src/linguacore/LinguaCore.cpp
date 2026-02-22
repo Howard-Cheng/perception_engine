@@ -321,8 +321,8 @@ std::vector<database::RawEvent> LinguaCore::queryUnsummarizedEvents(
     query["size"] = config_.batch_size * 10;  // Multiply by 10 to get full session
     
     // FIX: Use includeSummarized to filter for unsummarized events at database level
-    query["includeCompressed"] = true;    // Include compressed events (we want grouped events)
-    query["includeSummarized"] = false;   // Exclude summarized events (only unsummarized)
+    query["compressed"] = true;    // Include compressed events (we want grouped events)
+    query["summarized"] = false;   // Exclude summarized events (only unsummarized)
     
     // NEW: Sort by timestamp ascending (oldest first) for chronological processing
     query["sortOrder"] = "asc";  // "asc" for oldest first, "desc" for newest first
@@ -631,7 +631,91 @@ bool LinguaCore::processMultipleEvents(const std::vector<database::RawEvent>& ev
 
 std::string LinguaCore::generateSummary(const std::string& content) {
     try {
-        return llm_client_->summarize(content, config_.llm_max_tokens);
+        if (!qtcore_manager_ || qtcore_manager_->GetSessionId().empty()) {
+            return std::string();
+        }
+
+        // 4K characters as the max chunk size for qtcore_manager_->summarize()
+        constexpr size_t kMaxChunkSize = 4096;
+
+        // If content fits within the limit, summarize directly
+        if (content.length() <= kMaxChunkSize) {
+            PE_INFO("Generating summary via QtCoreManager (synchronous), content length: " << content.length());
+            std::string result = qtcore_manager_->summarize(content);
+            if (result.empty()) {
+                PE_WARN("QtCoreManager returned empty summary for content of length " << content.length());
+            }
+            return result;
+        }
+
+        // Content exceeds 4K limit - split into chunks and summarize each
+        PE_INFO("Content length (" << content.length() << " chars) exceeds "
+            << kMaxChunkSize << " limit, splitting into chunks for summarization");
+
+        std::vector<std::string> chunks;
+        size_t offset = 0;
+        while (offset < content.length()) {
+            size_t chunk_end = offset + kMaxChunkSize;
+
+            if (chunk_end < content.length()) {
+                // Try to break at a natural boundary (newline, period, or space)
+                size_t break_pos = content.rfind('\n', chunk_end);
+                if (break_pos != std::string::npos && break_pos > offset) {
+                    chunk_end = break_pos + 1;
+                } else {
+                    break_pos = content.rfind('.', chunk_end);
+                    if (break_pos != std::string::npos && break_pos > offset) {
+                        chunk_end = break_pos + 1;
+                    } else {
+                        break_pos = content.rfind(' ', chunk_end);
+                        if (break_pos != std::string::npos && break_pos > offset) {
+                            chunk_end = break_pos + 1;
+                        }
+                        // else: just cut at kMaxChunkSize
+                    }
+                }
+            } else {
+                chunk_end = content.length();
+            }
+
+            chunks.push_back(content.substr(offset, chunk_end - offset));
+            offset = chunk_end;
+        }
+
+        PE_INFO("Split content into " << chunks.size() << " chunks");
+
+        // Summarize each chunk
+        std::ostringstream combined_summary;
+        int successful_chunks = 0;
+        for (size_t i = 0; i < chunks.size(); ++i) {
+            PE_INFO("Summarizing chunk " << (i + 1) << "/" << chunks.size()
+                << " (" << chunks[i].length() << " chars)");
+
+            std::string chunk_summary = qtcore_manager_->summarize(chunks[i]);
+
+            if (!chunk_summary.empty()) {
+                if (successful_chunks > 0) {
+                    combined_summary << "\n";
+                }
+                combined_summary << chunk_summary;
+                successful_chunks++;
+            } else {
+                PE_WARN("Chunk " << (i + 1) << " returned empty summary, skipping");
+            }
+        }
+
+        if (successful_chunks == 0) {
+            PE_ERROR("All chunks returned empty summaries");
+            return std::string();
+        }
+
+        std::string merged = combined_summary.str();
+        PE_INFO("Combined " << successful_chunks << " chunk summaries into "
+            << merged.length() << " chars");
+
+        return merged;
+
+        //return llm_client_->summarize(content, config_.llm_max_tokens);
     } catch (const std::exception& e) {
         PE_ERROR("ERROR generating summary: " << e.what());
         return "";
@@ -804,6 +888,56 @@ void LinguaCore::asyncAddMemoryToQtCore(const std::string& model,
             PE_ERROR("Exception in async QtCore sync: " << e.what());
         }
     });
+}
+
+// ========== IPC Interface Methods Implementation ==========
+
+std::string LinguaCore::getStatus() const {
+    json status;
+    status["running"] = running_.load();
+    status["initialized"] = initialized_;
+    status["total_processed"] = total_processed_.load();
+    status["total_errors"] = total_errors_.load();
+    status["last_process_time"] = last_process_time_;
+    status["uptime_seconds"] = std::time(nullptr) - last_process_time_;
+    
+    // Add component status
+    status["postgres_connected"] = (pg_client_ != nullptr);
+    status["llm_ready"] = (llm_client_ != nullptr);
+    status["vector_store_ready"] = (vector_store_ != nullptr);
+    status["qtcore_enabled"] = config_.qtcore_enabled;
+    
+    return status.dump();
+}
+
+std::string LinguaCore::processText(const std::string& text) {
+    if (!initialized_ || !llm_client_) {
+        PE_ERROR("LinguaCore not initialized or LLM client not ready");
+        return "{\"error\": \"Service not ready\"}";
+    }
+    
+    try {
+        // Generate summary using LLM
+        std::string summary = generateSummary(text);
+        
+        json result;
+        result["success"] = true;
+        result["summary"] = summary;
+        result["original_length"] = text.length();
+        result["summary_length"] = summary.length();
+        
+        return result.dump();
+    } catch (const std::exception& e) {
+        PE_ERROR("Error processing text: " << e.what());
+        json error;
+        error["success"] = false;
+        error["error"] = e.what();
+        return error.dump();
+    }
+}
+
+std::string LinguaCore::getVersion() const {
+    return "LinguaCore v1.0.0";
 }
 
 } // namespace linguacore

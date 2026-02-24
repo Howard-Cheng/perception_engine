@@ -355,33 +355,24 @@ void BrowserContentExtractor::ExtractElementInfo(IUIAutomationElement* pElement,
     }
 }
 
+// 辅助函数：去除首尾空白
+std::wstring Trim(const std::wstring& str) {
+    auto start = str.begin();
+    while (start != str.end() && std::isspace(*start)) start++;
+
+    auto end = str.end();
+    do { end--; } while (std::distance(start, end) > 0 && std::isspace(*end));
+
+    return std::wstring(start, end + 1);
+}
+
 std::wstring BrowserContentExtractor::GetElementText(IUIAutomationElement* pElement) {
     if (!pElement) return L"" ;
     
     std::wstring result;
     
-    BSTR name = NULL;
-    if (SUCCEEDED(pElement->get_CurrentName(&name)) && name) {
-        result = name;
-        SysFreeString(name);
-        if (!result.empty()) return result;
-    }
-    
-    CComPtr<IUIAutomationValuePattern> pValuePattern;
-    HRESULT hr = pElement->GetCurrentPatternAs(UIA_ValuePatternId, 
-                                                __uuidof(IUIAutomationValuePattern), 
-                                                (void**)&pValuePattern);
-    if (SUCCEEDED(hr) && pValuePattern) {
-        BSTR value = NULL;
-        if (SUCCEEDED(pValuePattern->get_CurrentValue(&value)) && value) {
-            result = value;
-            SysFreeString(value);
-            if (!result.empty()) return result;
-        }
-    }
-    
     CComPtr<IUIAutomationTextPattern> pTextPattern;
-    hr = pElement->GetCurrentPatternAs(UIA_TextPatternId, 
+    HRESULT hr = pElement->GetCurrentPatternAs(UIA_TextPatternId,
                                        __uuidof(IUIAutomationTextPattern), 
                                        (void**)&pTextPattern);
     if (SUCCEEDED(hr) && pTextPattern) {
@@ -391,7 +382,77 @@ std::wstring BrowserContentExtractor::GetElementText(IUIAutomationElement* pElem
             if (SUCCEEDED(pTextRange->GetText(-1, &text)) && text) {
                 result = text;
                 SysFreeString(text);
-                if (!result.empty()) return result;
+                if (!Trim(result).empty()) 
+                    return result;
+            }
+        }
+    }
+
+    CComPtr<IUIAutomationValuePattern> pValuePattern;
+    hr = pElement->GetCurrentPatternAs(UIA_ValuePatternId,
+        __uuidof(IUIAutomationValuePattern),
+        (void**)&pValuePattern);
+    if (SUCCEEDED(hr) && pValuePattern) {
+        BSTR value = NULL;
+        if (SUCCEEDED(pValuePattern->get_CurrentValue(&value)) && value) {
+            result = value;
+            SysFreeString(value);
+            if (!Trim(result).empty()) 
+                return result;
+        }
+    }
+
+    CComPtr<IUIAutomationLegacyIAccessiblePattern> pLegacyPattern;
+    pElement->GetCurrentPatternAs(UIA_LegacyIAccessiblePatternId, __uuidof(IUIAutomationLegacyIAccessiblePattern), (void**)&pLegacyPattern);
+
+    if (pLegacyPattern) {
+        BSTR value = NULL;
+        if (SUCCEEDED(pLegacyPattern->get_CurrentValue(&value)) && value) {
+            result = value;
+            SysFreeString(value);
+            if (!Trim(result).empty()) 
+                return result;
+        }
+    }
+
+    BSTR name = NULL;
+    if (SUCCEEDED(pElement->get_CurrentName(&name)) && name) {
+        result = name;
+        SysFreeString(name);
+        if (!Trim(result).empty()) 
+            return result;
+    }
+
+    if (pLegacyPattern) {
+        BSTR legName = NULL;
+        if (SUCCEEDED(pLegacyPattern->get_CurrentName(&legName)) && legName) {
+            result = legName;
+            SysFreeString(legName);
+            if (!Trim(result).empty()) 
+                return result;
+        }
+
+        BSTR desc = NULL;
+        if (SUCCEEDED(pLegacyPattern->get_CurrentDescription(&desc)) && desc) {
+            result = desc;
+            SysFreeString(desc);
+            if (!Trim(result).empty()) 
+                return result;
+        }
+    }
+
+    UIA_HWND nativeHwnd = NULL;
+    if (SUCCEEDED(pElement->get_CurrentNativeWindowHandle(&nativeHwnd)) && nativeHwnd) {
+        HWND hwnd = (HWND)nativeHwnd;
+        if (IsWindow(hwnd)) {
+            int len = ::GetWindowTextLengthW(hwnd);
+            if (len > 0 && len < 4096) { // 限制长度防止 buffer overflow 风险
+                std::vector<wchar_t> buffer(len + 1);
+                if (::GetWindowTextW(hwnd, buffer.data(), len + 1)) {
+                    result = buffer.data();
+                    if (!Trim(result).empty()) 
+                        return result;
+                }
             }
         }
     }

@@ -545,17 +545,17 @@ nlohmann::json ContextCollector::GetESDBData(const std::string& keyword,
                 for (const auto& me : event.mouseEvents) {
                     nlohmann::json meJson;
                     meJson["timestamp"] = me.timestamp;
-                    if (!me.eventType.empty()) {
+                    /*if (!me.eventType.empty()) {
                         meJson["eventType"] = me.eventType;
-                    }
+                    }*/
                     if (!me.content.empty()) {
                         meJson["content"] = me.content;
                     }
-                    meJson["posX"] = me.posX;
+                    /*meJson["posX"] = me.posX;
                     meJson["posY"] = me.posY;
                     if (!me.elementType.empty()) {
                         meJson["elementType"] = me.elementType;
-                    }
+                    }*/
                     mouseEventsArray.push_back(meJson);
                 }
                 eventJson["mouseEvents"] = mouseEventsArray;
